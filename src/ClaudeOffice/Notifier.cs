@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ClaudeOffice.Monitoring;
 
 namespace ClaudeOffice;
 
@@ -62,7 +63,7 @@ internal sealed class Notifier
                 {
                     t.WaitNotified = true;
                     if (s.NotifyWaiting && waited < TooOld.TotalMilliseconds)
-                        notices.Add(new Notice($"✋ {name}", $"{(act == "asking" ? "질문에 답해 주세요" : text)} · {team}", id));
+                        notices.Add(new Notice($"✋ {name}", $"{(act == "asking" ? L.T("질문에 답해 주세요", "Has a question for you") : text)} · {team}", id));
                 }
             }
             else t.WaitNotified = false;
@@ -78,7 +79,8 @@ internal sealed class Notifier
                 {
                     long worked = since - t.BusySince;
                     if (s.NotifyDone && worked >= s.NotifyDoneMinutes * 60_000L && now - since < TooOld.TotalMilliseconds)
-                        notices.Add(new Notice($"✅ {name} 일을 마쳤어요", $"{Duration(worked)} 동안 일했어요 · {team}", id));
+                        notices.Add(new Notice(L.T($"✅ {name} 일을 마쳤어요", $"✅ {name} is done"),
+                                               L.T($"{Duration(worked)} 동안 일했어요 · {team}", $"Worked for {Duration(worked)} · {team}"), id));
                 }
                 t.BusySince = 0;   // 쉬는 중·질문 중·잠·퇴근이면 다음 일은 새로 센다
             }
@@ -89,7 +91,7 @@ internal sealed class Notifier
         if (notices.Count > 1)
         {
             var names = string.Join(", ", notices.Select(n => n.Title));
-            return [new Notice($"Claude Office 알림 {notices.Count}건", names, notices[0].SessionId)];
+            return [new Notice(L.T($"Claude Office 알림 {notices.Count}건", $"Claude Office: {notices.Count} alerts"), names, notices[0].SessionId)];
         }
         return notices;
     }
@@ -97,6 +99,8 @@ internal sealed class Notifier
     private static string Duration(long ms)
     {
         var t = TimeSpan.FromMilliseconds(ms);
-        return t.TotalHours >= 1 ? $"{(int)t.TotalHours}시간 {t.Minutes}분" : $"{Math.Max(1, (int)t.TotalMinutes)}분";
+        return t.TotalHours >= 1
+            ? L.T($"{(int)t.TotalHours}시간 {t.Minutes}분", $"{(int)t.TotalHours}h {t.Minutes}m")
+            : L.T($"{Math.Max(1, (int)t.TotalMinutes)}분", $"{Math.Max(1, (int)t.TotalMinutes)} min");
     }
 }

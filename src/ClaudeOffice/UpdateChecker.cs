@@ -1,11 +1,12 @@
 using System.Net.Http;
 using System.Text.Json;
+using ClaudeOffice.Monitoring;
 
 namespace ClaudeOffice;
 
 /// <summary>
 /// 새 버전 알림: GitHub 릴리스의 최신 버전을 켠 뒤 30초, 그 뒤로 12시간마다 확인한다(설정에서 끌 수 있음).
-/// 보내는 것은 익명 GET 하나(GitHub API 가 요구하는 User-Agent 에 버전만). 받아서 설치하는 일은 사용자가 릴리스 페이지에서.
+/// 보내는 것은 익명 GET 하나(GitHub API 가 요구하는 User-Agent 에 버전만). 받아서 바꾸는 일은 Updater(사용자가 [업데이트]를 누를 때).
 /// </summary>
 internal sealed class UpdateChecker : IDisposable
 {
@@ -30,6 +31,10 @@ internal sealed class UpdateChecker : IDisposable
     public string Url { get; private set; } = ReleasesUrl;
     public string? Error { get; private set; }
     public long CheckedMs { get; private set; }
+
+    /// <summary>최신 릴리스의 zip·SHA-256 파일 주소(없으면 null — 그때는 릴리스 페이지에서 받게).</summary>
+    public string? ZipUrl { get; private set; }
+    public string? ShaUrl { get; private set; }
 
     public bool IsNewer => Version.TryParse(Latest, out var l) && Version.TryParse(App.Version, out var c) && l > c;
 
@@ -57,7 +62,7 @@ internal sealed class UpdateChecker : IDisposable
         {
             using var resp = await _http.GetAsync($"https://api.github.com/repos/{Repo}/releases/latest", _cts.Token);
             if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) { Error = null; Latest = null; }   // 아직 릴리스가 없음
-            else if (!resp.IsSuccessStatusCode) Error = $"확인 실패({(int)resp.StatusCode})";
+            else if (!resp.IsSuccessStatusCode) Error = L.T($"확인 실패({(int)resp.StatusCode})", $"Check failed ({(int)resp.StatusCode})");
             else
             {
                 using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(_cts.Token));
@@ -65,13 +70,24 @@ internal sealed class UpdateChecker : IDisposable
                 Latest = r.GetProperty("tag_name").GetString()?.TrimStart('v', 'V');
                 if (r.TryGetProperty("html_url", out var u) && u.GetString() is { } url && url.StartsWith("https://github.com/", StringComparison.Ordinal))
                     Url = url;
+                // 앱 안 업데이트용: 릴리스에 붙은 zip 과 그 SHA-256 파일(자동 빌드가 함께 올린다). 둘 다 이 저장소의 github.com 주소만
+                ZipUrl = ShaUrl = null;
+                if (r.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
+                    foreach (var a in assets.EnumerateArray())
+                    {
+                        var name = a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                        var dl = a.TryGetProperty("browser_download_url", out var d) ? d.GetString() : null;
+                        if (dl is null || !dl.StartsWith($"https://github.com/{Repo}/releases/download/", StringComparison.Ordinal)) continue;
+                        if (name.EndsWith("-win-x64.zip", StringComparison.OrdinalIgnoreCase)) ZipUrl = dl;
+                        else if (name.EndsWith("-win-x64.zip.sha256", StringComparison.OrdinalIgnoreCase)) ShaUrl = dl;
+                    }
                 Error = null;
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)
         {
             if (_cts.IsCancellationRequested) return;
-            Error = "확인 실패(인터넷 연결?)";
+            Error = L.T("확인 실패(인터넷 연결?)", "Check failed (no internet?)");
         }
         finally
         {

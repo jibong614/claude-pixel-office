@@ -11,6 +11,9 @@ public partial class App : Application
     /// <summary>--autostart : Windows 로그인 때 시작 프로그램으로 켜짐 — 늘 알림 영역에 숨긴 채로 시작한다.</summary>
     public static bool AutoStarted { get; private set; }
 
+    /// <summary>--updated : 앱 안 업데이트가 새 버전으로 바꾼 뒤 실행함 — 켜지면 "업데이트했어요" 알림.</summary>
+    public static bool Updated { get; private set; }
+
     // 한 데이터 폴더에 하나만 실행(숨겨 둔 걸 잊고 또 켜도 새로 뜨지 않고 기존 창을 보여 준다)
     private Mutex? _single;
     private EventWaitHandle? _showSignal, _exitSignal;
@@ -47,8 +50,22 @@ public partial class App : Application
         DemoSelect = e.Args.FirstOrDefault(a => a.StartsWith("--select=", StringComparison.OrdinalIgnoreCase))?["--select=".Length..];
         Offscreen = Has("--offscreen");
         AutoStarted = Has("--autostart");
+        Updated = Has("--updated");
         DispatcherUnhandledException += OnUnhandled;
         base.OnStartup(e);
+
+        // 앱 안 업데이트로 막 바뀐 새 버전: 옛 버전이 완전히 끝나기를 기다렸다 시작한다(아니면 중복 실행 방지에 걸려 바로 꺼진다)
+        if (e.Args.FirstOrDefault(a => a.StartsWith("--wait=", StringComparison.OrdinalIgnoreCase)) is { } wait
+            && int.TryParse(wait["--wait=".Length..], out var oldPid))
+        {
+            try
+            {
+                using var old = System.Diagnostics.Process.GetProcessById(oldPid);
+                old.WaitForExit(30_000);
+            }
+            catch (ArgumentException) { }   // 벌써 끝남
+        }
+        if (!DemoMode) Updater.CleanupLater();   // 지난 업데이트가 비켜 둔 *.old·임시 폴더
 
         // 견본은 몇 개를 띄워도 된다. 실제 감시는 데이터 폴더마다 하나(훅 포트·휴대폰 업로드가 겹치지 않게)
         if (!DemoMode)
@@ -74,6 +91,7 @@ public partial class App : Application
         }
 
         Settings = AppSettings.Load();
+        Monitoring.L.En = Settings.Language == "en";   // 창·알림 영역 아이콘을 만들기 전에(메뉴 글도 이 언어로)
         SessionEnding += (_, _) => (MainWindow as MainWindow)?.PrepareExit();   // Windows 로그오프·종료: 숨기지 말고 끝낸다
 
         var window = new MainWindow();
@@ -101,7 +119,8 @@ public partial class App : Application
         }
         catch (IOException) { }
 
-        MessageBox.Show($"예기치 못한 오류가 발생했습니다.\r\n\r\n{e.Exception.Message}\r\n\r\n자세한 내용: {Path.Combine(DataDir, "error.log")}",
+        MessageBox.Show(Monitoring.L.T($"예기치 못한 오류가 발생했습니다.\r\n\r\n{e.Exception.Message}\r\n\r\n자세한 내용: {Path.Combine(DataDir, "error.log")}",
+                                       $"An unexpected error occurred.\r\n\r\n{e.Exception.Message}\r\n\r\nDetails: {Path.Combine(DataDir, "error.log")}"),
             "Claude Office", MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
     }

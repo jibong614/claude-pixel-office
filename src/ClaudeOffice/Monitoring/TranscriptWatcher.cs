@@ -43,6 +43,7 @@ public sealed class TranscriptWatcher : IDisposable
     private volatile bool _hookCheckNow;
     private long _windowTicks = DefaultWindow.Ticks;   // 화면 설정이 UI 스레드에서 바꾸므로 Interlocked 로 읽고 쓴다
     private volatile bool _discoverNow;
+    private volatile bool _reparseNow;
     private CancellationTokenSource? _cts;
     private volatile string? _lastSnapshot;
 
@@ -84,6 +85,12 @@ public sealed class TranscriptWatcher : IDisposable
             _discoverNow = true;   // 늘렸으면 더 오래된 기록 파일을 3초 기다리지 않고 바로 찾아 들인다
     }
 
+    /// <summary>
+    /// 화면 언어를 바꿨을 때: 말풍선·최근 작업 문구는 읽을 때 만들어 쌓아 두므로, 기록 파일을 처음처럼 다시 읽어 새 언어로 만든다.
+    /// (그대로 두면 쉬는 직원의 "대기 중" 같은 문구가 다음 일을 할 때까지 예전 언어로 남는다)
+    /// </summary>
+    public void Reparse() => _reparseNow = true;
+
     public void Start()
     {
         if (_cts != null) return;
@@ -102,6 +109,11 @@ public sealed class TranscriptWatcher : IDisposable
         {
             try
             {
+                if (_reparseNow)
+                {
+                    _reparseNow = false;
+                    ResetStates();
+                }
                 bool discoverTick = tick++ % DiscoverEveryTicks == 0 || _discoverNow;
                 if (discoverTick)
                 {
@@ -223,6 +235,26 @@ public sealed class TranscriptWatcher : IDisposable
             ReadAgentMeta(s, Path.Combine(fi.DirectoryName!, name + ".meta.json"));
 
         _states[file] = s;
+    }
+
+    /// <summary>
+    /// 모든 기록 파일을 처음 보는 것처럼 다시 읽게 한다(<see cref="Reparse"/>). 기록 파일에 없는 것 — 훅이 알려 준 대기·세션 종료,
+    /// 인턴 메타 — 는 옮겨 둔다. 같은 틱의 Poll 이 바로 다시 읽으므로 화면에 빈 사무실이 보이지 않는다.
+    /// </summary>
+    private void ResetStates()
+    {
+        foreach (var (file, old) in _states.ToList())
+        {
+            _states[file] = new TranscriptState(old.FilePath, old.Id, old.ParentId)
+            {
+                StartedUtc = old.StartedUtc,
+                FileWriteUtc = old.FileWriteUtc,
+                AgentType = old.AgentType,
+                Description = old.Description,
+                Wait = old.Wait,
+                EndedUtc = old.EndedUtc,
+            };
+        }
     }
 
     private static void ReadAgentMeta(TranscriptState s, string metaPath)

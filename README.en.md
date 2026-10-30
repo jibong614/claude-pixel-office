@@ -7,11 +7,12 @@ Each session becomes an employee at a desk. Their pose, monitor and speech bubbl
 Employees raise a hand when they are waiting for your approval, and you can watch the office from your phone too.
 
 > Unofficial tool, not affiliated with Anthropic. It only reads the transcript files Claude Code writes.
-> **The app's interface is in Korean** (an English UI is planned). This page explains everything you need.
+> **English UI**: the app starts in Korean — open ⚙️ → 사무실 (Office) → **화면 언어 / Language → English**.
+> The screen, speech bubbles, notifications and dialogs switch to English, and the phone view follows the PC.
 
 ![The office in motion](docs/screenshots/demo.gif)
 
-Try it in the browser without installing: **https://jibong614.github.io/claude-pixel-office/?demo**
+Try it in the browser without installing: **https://jibong614.github.io/claude-pixel-office/?demo&lang=en**
 
 ## Features
 
@@ -27,7 +28,7 @@ Try it in the browser without installing: **https://jibong614.github.io/claude-p
 
 ## Quick start
 
-1. Download `ClaudePixelOffice-v*-win-x64.zip` from [Releases](https://github.com/jibong614/claude-pixel-office/releases)
+1. Download `ClaudePixelOffice-v*-win-x64.zip` from [Releases](https://github.com/jibong614/claude-pixel-office/releases) (from 1.0.9 on, new versions install from inside the app: it downloads the release zip, checks its SHA-256, swaps the files and restarts)
 2. Unzip and run `ClaudeOffice.exe`
 3. Start a conversation in Claude Code and an employee appears at a desk
 
@@ -48,7 +49,7 @@ Build from source (.NET 8 SDK): `dotnet build ClaudeOffice.sln -c Release`
 | 🚪 / 📌 / ⚙️ | Show/hide employees who went home / always on top / settings |
 | Tray icon 🏢 | Click to open, right-click → Exit. Closing the window (✕) only hides it by default |
 
-Settings (⚙️) include: office name, display period (12h–7d), how many employees and how to pick them (most recent / manual checklist), wait-only filter, office size, window behavior (start hidden, close to tray, run at Windows startup; position and size are remembered), notifications, hooks, phone view, update check and the data folder.
+Settings (⚙️) include: office name, screen language (한국어 / English), display period (12h–7d), how many employees and how to pick them (most recent / manual checklist), wait-only filter, office size, window behavior (start hidden, close to tray, run at Windows startup; position and size are remembered), notifications, hooks, phone view, update check with one-click **Update**, and the data folder.
 
 Command line: `--demo` (sample office), `--exit` (quit the running instance), `--autostart` (start hidden in the tray), `--offscreen` (for test tools).
 
@@ -66,15 +67,16 @@ Click 🔕 to add three hooks to `~/.claude/settings.json` after a confirmation 
 - The hook command is `curl … http://127.0.0.1:47821/hook; exit 0` (run by Git Bash). On PCs without Git Bash an equivalent PowerShell command (`"shell": "powershell"`) is installed instead
 - It always exits successfully, even when the app is closed, so no errors show up in Claude Code and it never approves or blocks anything
 - Click 🔔 again to remove only the hooks this app added. A backup is kept as `settings.json.claudeoffice.bak`
-- Limitation: there is no hook for "approved", so a long command that was approved keeps the hand raised until it finishes
+- There is no hook for "approved". While a Bash/PowerShell approval is pending, the app lowers the hand as soon as **a new process running that command appears** (so an approved long build shows as running). If it can't tell (e.g. an encoded command), the hand comes down when the command finishes
 
 ## Phone view (optional)
 
 The PC compresses and encrypts **only the screen summary** (never the raw conversation) with AES-256-GCM and uploads it to your own Firebase Realtime Database (free tier).
 Your phone opens a shared web page from a QR code, receives updates in real time and **decrypts on the device**.
 The decryption key lives only after the `#` in the QR link, which browsers never send to any server. The page can be installed as an app.
+Optionally you can **edit nicknames and memos from the phone** too (encrypted with the same key and picked up by the PC).
 
-Setup takes about 10 minutes with a Google account: ⚙️ → 휴대폰에서 보기 (Phone view) → **설정 도우미 (Setup wizard)**.
+Setup takes about 10 minutes with a Google account: ⚙️ → Phone view → **Setup wizard** (in the Korean UI: 휴대폰에서 보기 → 설정 도우미).
 Each of the 6 steps opens the right Firebase console page and the app checks the result automatically.
 No Node.js or command line is needed. Details (Korean): [docs/MOBILE.md](docs/MOBILE.md)
 

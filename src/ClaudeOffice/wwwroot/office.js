@@ -60,6 +60,27 @@ const HOSTED = location.protocol === 'https:' && location.hostname !== 'office.l
 const REMOTE = !params.has('demo') && (!!remoteLink || HOSTED);
 const DEMO = !REMOTE && (!host || params.has('demo'));
 
+// 화면 언어(⚙️ → 사무실 → 화면 언어). PC 앱은 주소의 ?lang=en 으로 알려 준다(한국어는 붙이지 않음).
+// 휴대폰 보기는 PC가 요약에 실어 보낸 언어를 이 기기에 저장해 두고 쓴다(startRemote — 다르면 저장하고 다시 연다).
+const LANG_KEY = 'co.m.lang';
+const LANG = (() => {
+  const q = params.get('lang');
+  if (q === 'en' || q === 'ko') return q;
+  if (REMOTE) {
+    try { const s = localStorage.getItem(LANG_KEY); if (s === 'en' || s === 'ko') return s; } catch { /* 저장소를 못 쓰면 기본 */ }
+  }
+  return 'ko';
+})();
+/** 한국어·영어 문구 중 지금 화면 언어의 것. 화면 글은 열 때 정해지므로 언어를 바꾸면 페이지를 다시 연다. */
+const T = (ko, en) => (LANG === 'en' ? en : ko);
+document.documentElement.lang = LANG;
+// index.html 의 고정 글: 영어면 data-en(글)·data-en-title(풍선 도움말)·data-en-ph(입력칸 안내) 로 바꾼다
+if (LANG === 'en') {
+  for (const el of document.querySelectorAll('[data-en]')) el.textContent = el.dataset.en;
+  for (const el of document.querySelectorAll('[data-en-title]')) el.title = el.dataset.enTitle;
+  for (const el of document.querySelectorAll('[data-en-ph]')) el.placeholder = el.dataset.enPh;
+}
+
 /** 앱(C#)에 알리기. 휴대폰 보기에서는 앱이 없으니 보내지 않는다. */
 const send = (msg) => { if (host && !REMOTE) host.postMessage(msg); };
 
@@ -96,7 +117,7 @@ let pickMode = store.get('pickMode', 'recent') === 'manual' ? 'manual' : 'recent
 const pickedIds = new Set(store.get('picked', []));
 
 // 표시 기간(시간): 마지막 대화가 이 안에 있는 세션만 앱(C#)이 보내 준다. 값은 화면이 저장하고 시작할 때마다 앱에 알린다
-const WINDOW_CHOICES = [[12, '12시간'], [24, '24시간'], [72, '3일'], [168, '7일']];
+const WINDOW_CHOICES = [[12, T('12시간', '12 hours')], [24, T('24시간', '24 hours')], [72, T('3일', '3 days')], [168, T('7일', '7 days')]];
 let windowHours = Number(store.get('windowHours', 12));
 if (!WINDOW_CHOICES.some(([h]) => h === windowHours)) windowHours = 12;
 const windowLabel = () => WINDOW_CHOICES.find(([h]) => h === windowHours)[1];
@@ -142,6 +163,7 @@ function onSavedShare(saved) {
       const nick = typeof n.nick === 'string' ? n.nick.slice(0, 30) : '';
       const memo = typeof n.memo === 'string' ? n.memo.slice(0, 2000) : '';
       if (nick || memo) notes[id] = { ...(nick && { nick }), ...(memo && { memo }), t: Number(n.t) || Date.now() };
+      else if (notes[id]) delete notes[id];   // 휴대폰에서 둘 다 지운 것(빈 기록 {t})
     }
     store.set('notes', notes);
     const t = saved.teams;   // 팀 이름·색·순서: 이 화면에 아무것도 없을 때만 사본 것으로
@@ -193,21 +215,21 @@ function onSnapshot(snap) {
 // pose: 사람 자세 / screen: 모니터 화면 / bubble: 말풍선 모양 / tone: 상태 글자색
 
 const ACT = {
-  thinking:   { label: '생각 중',     pose: 'think', screen: 'cursor', bubble: 'thought', tone: '#a9c8ff', busy: true },
-  talking:    { label: '답변 작성',   pose: 'type',  screen: 'doc',    bubble: 'normal',  tone: '#a9c8ff', busy: true },
-  reading:    { label: '읽는 중',     pose: 'read',  screen: 'doc',    bubble: 'normal',  tone: '#a8e6a1', busy: true },
-  searching:  { label: '찾는 중',     pose: 'type',  screen: 'search', bubble: 'normal',  tone: '#a8e6a1', busy: true },
-  writing:    { label: '코드 작성',   pose: 'type',  screen: 'code',   bubble: 'normal',  tone: '#ffd27a', busy: true },
-  running:    { label: '명령 실행',   pose: 'run',   screen: 'term',   bubble: 'normal',  tone: '#7dffa0', busy: true },
-  browsing:   { label: '웹 검색',     pose: 'type',  screen: 'web',    bubble: 'normal',  tone: '#a9c8ff', busy: true },
-  delegating: { label: '인턴 지휘',   pose: 'type',  screen: 'team',   bubble: 'normal',  tone: '#d7a6ff', busy: true },
-  planning:   { label: '계획 정리',   pose: 'think', screen: 'todo',   bubble: 'thought', tone: '#ffd27a', busy: true },
-  working:    { label: '작업 중',     pose: 'type',  screen: 'code',   bubble: 'normal',  tone: '#ffd27a', busy: true },
-  asking:     { label: '답변 기다림', pose: 'raise', screen: 'alert',  bubble: 'alert',   tone: '#ffb347', wait: true },
-  waiting:    { label: '승인 대기',   pose: 'raise', screen: 'alert',  bubble: 'alert',   tone: '#ffb347', wait: true },
-  idle:       { label: '대기',        pose: 'idle',  screen: 'saver',  bubble: 'calm',    tone: '#c9c3d9' },
-  sleeping:   { label: '졸음',        pose: 'sleep', screen: 'off',    bubble: 'zzz',     tone: '#8f88a8' },
-  away:       { label: '퇴근',        pose: 'away',  screen: 'off',    bubble: 'none',    tone: '#6f6987' },
+  thinking:   { label: T('생각 중', 'Thinking'),               pose: 'think', screen: 'cursor', bubble: 'thought', tone: '#a9c8ff', busy: true },
+  talking:    { label: T('답변 작성', 'Answering'),            pose: 'type',  screen: 'doc',    bubble: 'normal',  tone: '#a9c8ff', busy: true },
+  reading:    { label: T('읽는 중', 'Reading'),                pose: 'read',  screen: 'doc',    bubble: 'normal',  tone: '#a8e6a1', busy: true },
+  searching:  { label: T('찾는 중', 'Searching'),              pose: 'type',  screen: 'search', bubble: 'normal',  tone: '#a8e6a1', busy: true },
+  writing:    { label: T('코드 작성', 'Writing code'),         pose: 'type',  screen: 'code',   bubble: 'normal',  tone: '#ffd27a', busy: true },
+  running:    { label: T('명령 실행', 'Running'),              pose: 'run',   screen: 'term',   bubble: 'normal',  tone: '#7dffa0', busy: true },
+  browsing:   { label: T('웹 검색', 'Web search'),             pose: 'type',  screen: 'web',    bubble: 'normal',  tone: '#a9c8ff', busy: true },
+  delegating: { label: T('인턴 지휘', 'Leading interns'),      pose: 'type',  screen: 'team',   bubble: 'normal',  tone: '#d7a6ff', busy: true },
+  planning:   { label: T('계획 정리', 'Planning'),             pose: 'think', screen: 'todo',   bubble: 'thought', tone: '#ffd27a', busy: true },
+  working:    { label: T('작업 중', 'Working'),                pose: 'type',  screen: 'code',   bubble: 'normal',  tone: '#ffd27a', busy: true },
+  asking:     { label: T('답변 기다림', 'Waiting for answer'), pose: 'raise', screen: 'alert',  bubble: 'alert',   tone: '#ffb347', wait: true },
+  waiting:    { label: T('승인 대기', 'Needs approval'),       pose: 'raise', screen: 'alert',  bubble: 'alert',   tone: '#ffb347', wait: true },
+  idle:       { label: T('대기', 'Idle'),                      pose: 'idle',  screen: 'saver',  bubble: 'calm',    tone: '#c9c3d9' },
+  sleeping:   { label: T('졸음', 'Dozing'),                    pose: 'sleep', screen: 'off',    bubble: 'zzz',     tone: '#8f88a8' },
+  away:       { label: T('퇴근', 'Gone home'),                 pose: 'away',  screen: 'off',    bubble: 'none',    tone: '#6f6987' },
 };
 const actOf = (s) => ACT[s.act] || ACT.working;
 
@@ -332,7 +354,7 @@ function ensureLayout() {
   for (let k = kMax; k >= kMin; k--) {
     const lw = Math.floor((vw * dpr) / k);
     const viewLh = Math.floor((innerHeight * dpr) / k);
-    const plan = planZones([...teams.entries()], lw);
+    const plan = planZones([...teams.entries()], lw, cellHFor(k));
     best = { k, lw, viewLh, plan };
     if (plan.height <= viewLh) break;
   }
@@ -340,7 +362,7 @@ function ensureLayout() {
   if (zoom) {   // 사무실 크기 설정: 맞춘 배율에서 단계만큼(크게 하면 넘치는 만큼 세로 스크롤)
     const k = Math.max(1, best.k + zoom);
     const lw = Math.floor((vw * dpr) / k);
-    best = { k, lw, viewLh: Math.floor((innerHeight * dpr) / k), plan: planZones([...teams.entries()], lw) };
+    best = { k, lw, viewLh: Math.floor((innerHeight * dpr) / k), plan: planZones([...teams.entries()], lw, cellHFor(k)) };
   }
   K = best.k;
   U = K / dpr;
@@ -436,14 +458,26 @@ function moveSeat(id, dir) {
   renderPanel();
 }
 
-function planZones(teams, lw) {
+/**
+ * 책상 한 줄 높이(아트 픽셀). 배율이 작으면(휴대폰 등) 글자는 최소 크기에 걸려 그대로인데 줄 간격만 줄어,
+ * 아랫줄 직원의 말풍선이 윗줄 이름표·상태 글을 덮는다 → 그만큼 줄 사이를 벌린다.
+ * 윗줄 상태 글 아래 끝 = (53 아트 + 이름 + 상태 + 5px), 아랫줄 손 든 머리(15 아트) 위 말풍선 위 끝 = (CELL_H + 15 아트 − 말풍선 − 23px)
+ */
+function cellHFor(k) {
+  const u = k / dpr;
+  const fn = clamp(Math.round(4.2 * u), 11, 16), fs = clamp(Math.round(3.7 * u), 10, 14), fb = clamp(Math.round(4 * u), 11, 15);
+  const shortBy = fb + fn + fs + 30 - (CELL_H + 15 - 53) * u;   // 모자란 CSS 픽셀(여유 2px 포함)
+  return CELL_H + Math.max(0, Math.ceil(shortBy / u));
+}
+
+function planZones(teams, lw, cellH = CELL_H) {
   const avail = lw - 16;
   const maxCols = Math.max(1, Math.min(MAX_COLS, Math.floor((avail - ZONE_PAD * 2) / CELL_W)));
 
   const boxes = teams.map(([team, members]) => {
     const cols = Math.min(members.length, maxCols);
     const rows = Math.ceil(members.length / cols);
-    return { team, members, cols, w: cols * CELL_W + ZONE_PAD * 2, h: ZONE_HEAD + rows * CELL_H + ZONE_PAD };
+    return { team, members, cols, w: cols * CELL_W + ZONE_PAD * 2, h: ZONE_HEAD + rows * cellH + ZONE_PAD };
   });
 
   // 한 줄에 들어가는 만큼 팀 영역을 나란히 놓고, 줄마다 가운데 정렬
@@ -466,7 +500,7 @@ function planZones(teams, lw) {
     for (const b of row) {
       zonesOut.push({ team: b.team, x, y, w: b.w, h: b.h, count: b.members.length, color: teamColor(b.team) });
       b.members.forEach((s, i) => {
-        desksOut.push({ s, x: x + ZONE_PAD + (i % b.cols) * CELL_W, y: y + ZONE_HEAD + Math.floor(i / b.cols) * CELL_H });
+        desksOut.push({ s, x: x + ZONE_PAD + (i % b.cols) * CELL_W, y: y + ZONE_HEAD + Math.floor(i / b.cols) * cellH });
       });
       x += b.w + ZONE_GAP;
       rowH = Math.max(rowH, b.h);
@@ -918,7 +952,7 @@ function drawZoneLabel(z) {
   ctx.font = `700 ${fontSmall}px ${FONT}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  const text = `📁 ${teamLabel(z.team)}  ·  ${z.count}명`;
+  const text = T(`📁 ${teamLabel(z.team)}  ·  ${z.count}명`, `📁 ${teamLabel(z.team)}  ·  ${z.count}`);
   const h = clamp(Math.round((ZONE_HEAD - 6) * U), 16, 24);
   const w = Math.min(ctx.measureText(text).width + 16, z.w * U - 8);
   const x = (z.x + 3) * U, y = (z.y + 3) * U;
@@ -1081,15 +1115,21 @@ function frame(ts) {
 // ───────────────────────────── 시간 표시 ─────────────────────────────
 
 function fmtDur(ms) {
-  if (!(ms > 0)) return '방금';
+  if (!(ms > 0)) return T('방금', 'just now');
   const sec = Math.floor(ms / 1000);
-  if (sec < 10) return '방금';
-  if (sec < 60) return `${sec}초`;
+  if (sec < 10) return T('방금', 'just now');
+  if (sec < 60) return T(`${sec}초`, `${sec}s`);
   const m = Math.floor(sec / 60);
-  if (m < 60) return `${m}분`;
+  if (m < 60) return T(`${m}분`, `${m}m`);
   const h = Math.floor(m / 60);
-  if (h >= 24) return `${Math.floor(h / 24)}일`;
-  return m % 60 ? `${h}시간 ${m % 60}분` : `${h}시간`;
+  if (h >= 24) return T(`${Math.floor(h / 24)}일`, `${Math.floor(h / 24)}d`);
+  return m % 60 ? T(`${h}시간 ${m % 60}분`, `${h}h ${m % 60}m`) : T(`${h}시간`, `${h}h`);
+}
+
+/** "3분 전" / "3m ago" — 영어는 "just now ago" 가 되지 않게. */
+function fmtAgo(ms) {
+  const d = fmtDur(ms);
+  return LANG === 'en' ? (ms >= 10000 ? `${d} ago` : d) : `${d} 전`;
 }
 
 function fmtTime(ms) {
@@ -1100,8 +1140,8 @@ function fmtTime(ms) {
 function entryName(e) {
   if (!e) return '-';
   if (e === 'claude-vscode') return 'VS Code';
-  if (e === 'cli') return '터미널';
-  if (e.includes('desktop')) return '데스크톱 앱';
+  if (e === 'cli') return T('터미널', 'Terminal');
+  if (e.includes('desktop')) return T('데스크톱 앱', 'Desktop app');
   if (e.startsWith('sdk')) return 'SDK';
   return e;
 }
@@ -1122,19 +1162,19 @@ function refreshHud() {
     else if (a.busy) busy++;
     else rest++;
   }
-  const parts = [`👥 ${data.sessions.length - away}명`];
+  const parts = [T(`👥 ${data.sessions.length - away}명`, `👥 ${data.sessions.length - away}`)];
   if (REMOTE) {
     parts.unshift(remoteLabel());   // 휴대폰 보기: PC와 이어져 있는지 맨 앞에
     document.body.classList.toggle('stale', remoteStale());   // PC가 꺼졌거나 소식이 없으면 사무실을 흐리게(멈춘 모습임을 알게)
   }
-  if (busy) parts.push(`⚙️ 작업 ${busy}`);
-  if (wait) parts.push(`✋ 확인 필요 ${wait}`);
-  if (rest) parts.push(`☕ 휴식 ${rest}`);
-  if (away) parts.push(`🚪 퇴근 ${away}`);
+  if (busy) parts.push(T(`⚙️ 작업 ${busy}`, `⚙️ Working ${busy}`));
+  if (wait) parts.push(T(`✋ 확인 필요 ${wait}`, `✋ Needs you ${wait}`));
+  if (rest) parts.push(T(`☕ 휴식 ${rest}`, `☕ Resting ${rest}`));
+  if (away) parts.push(T(`🚪 퇴근 ${away}`, `🚪 Gone home ${away}`));
   // 숫자는 숨긴 직원까지 센다(숨긴 직원이 승인을 기다려도 ✋ 개수·창 제목으로는 알 수 있게)
   const shown = visibleSessions().length;
   const cut = data.sessions.filter((s) => showAway || s.act !== 'away').length - shown;
-  if (cut > 0) parts.push(`🙈 숨김 ${cut}`);
+  if (cut > 0) parts.push(T(`🙈 숨김 ${cut}`, `🙈 Hidden ${cut}`));
   summaryEl.textContent = parts.join('  ·  ');
   // 좁은 화면에서는 상단 표시가 맨 위 막대가 된다(office.css) — 그 높이만큼 사무실을 내려 간판을 덮지 않게
   document.body.style.setProperty('--hud-h', innerWidth <= 600 ? `${hudEl.offsetHeight}px` : '0px');
@@ -1176,8 +1216,8 @@ function renderWidget() {
   head.append(elem('b', '', officeTitle()), elem('span', '', wait ? `✋ ${wait}` : `👥 ${list.filter((s) => s.act !== 'away').length}`),
     elem('span', 'sp'));
   if (REMOTE) head.append(elem('span', '', remoteLabel()));
-  const big = elem('button', '', '⤢ 크게');
-  big.title = '사무실 그림으로 보기';
+  const big = elem('button', '', T('⤢ 크게', '⤢ Expand'));
+  big.title = T('사무실 그림으로 보기', 'Back to the office picture');
   big.addEventListener('click', () => setWidget(false));
   head.append(big);
 
@@ -1187,12 +1227,12 @@ function renderWidget() {
     const tx = elem('div', 'tx', s.text || a.label);
     tx.style.color = a.tone;
     row.append(elem('div', 'ic', s.icon), elem('div', 'nm', displayName(s)),
-      elem('div', 'tm', s.act === 'away' ? '퇴근' : fmtDur(now() - (s.since || s.last)) + (a.wait ? ' 기다림' : '')), tx);
-    row.title = `${s.team} — 누르면 크게 보며 이 직원 열기`;
+      elem('div', 'tm', s.act === 'away' ? T('퇴근', 'Gone home') : fmtDur(now() - (s.since || s.last)) + (a.wait ? T(' 기다림', ' wait') : '')), tx);
+    row.title = T(`${s.team} — 누르면 크게 보며 이 직원 열기`, `${s.team} — click to expand and open this employee`);
     row.addEventListener('click', () => { setWidget(false); setTimeout(() => selectSession(s.id), REMOTE ? 0 : 300); });
     return row;
   });
-  wlistEl.replaceChildren(head, ...(rows.length ? rows : [elem('div', 'wempty', $('emptyBig').textContent || '직원이 없어요')]));
+  wlistEl.replaceChildren(head, ...(rows.length ? rows : [elem('div', 'wempty', $('emptyBig').textContent || T('직원이 없어요', 'No employees'))]));
 
   // 앱 창 높이를 목록에 맞춘다(바뀔 때만)
   const h = Math.ceil(wlistEl.getBoundingClientRect().height);
@@ -1205,11 +1245,16 @@ function refreshEmpty(shown) {
   emptyEl.hidden = shown > 0;
   if (shown > 0) return;
   const [big, msg, dim] =
-    REMOTE && remoteError && data.sessions.length === 0 ? ['📱 PC와 아직 이어지지 않았어요', remoteError, '']
-    : data.sessions.length === 0 ? ['🏢 아직 출근한 직원이 없어요', 'Claude Code에서 대화를 시작하면 책상에 직원이 나타납니다.', `최근 ${windowLabel()} 안에 대화한 세션을 봅니다(⚙️ 설정 → 표시 기간).`]
-    : waitOnly ? ['🙌 기다리는 직원이 없어요', '모두 알아서 일하거나 쉬는 중입니다.', "⚙️ 설정 → 직원 표시 → '✋ 기다리는 직원만 보기'를 끄면 모두 보입니다."]
-    : pickMode === 'manual' && pickedCount() === 0 ? ['🗂️ 보일 직원을 아직 고르지 않았어요', '⚙️ 설정 → 직원 표시에서 체크하면 책상에 앉습니다.', '고르는 방식: 직접 고르기']
-    : ['🚪 모두 퇴근했어요', "⚙️ 설정에서 '퇴근한 직원 보이기'를 켜면 빈 책상이 보입니다.", ''];
+    REMOTE && remoteError && data.sessions.length === 0 ? [T('📱 PC와 아직 이어지지 않았어요', '📱 Not connected to the PC yet'), remoteError, '']
+    : data.sessions.length === 0 ? [T('🏢 아직 출근한 직원이 없어요', '🏢 Nobody has come to work yet'),
+      T('Claude Code에서 대화를 시작하면 책상에 직원이 나타납니다.', 'Start a conversation in Claude Code and an employee appears at a desk.'),
+      T(`최근 ${windowLabel()} 안에 대화한 세션을 봅니다(⚙️ 설정 → 표시 기간).`, `Shows sessions active in the last ${windowLabel()} (⚙️ Settings → Display period).`)]
+    : waitOnly ? [T('🙌 기다리는 직원이 없어요', '🙌 Nobody is waiting'), T('모두 알아서 일하거나 쉬는 중입니다.', 'Everyone is working or resting on their own.'),
+      T("⚙️ 설정 → 직원 표시 → '✋ 기다리는 직원만 보기'를 끄면 모두 보입니다.", "Turn off ⚙️ Settings → Employees → '✋ Only show who's waiting' to see everyone.")]
+    : pickMode === 'manual' && pickedCount() === 0 ? [T('🗂️ 보일 직원을 아직 고르지 않았어요', '🗂️ No employees picked yet'),
+      T('⚙️ 설정 → 직원 표시에서 체크하면 책상에 앉습니다.', 'Check them in ⚙️ Settings → Employees to seat them.'), T('고르는 방식: 직접 고르기', 'How to pick: Choose manually')]
+    : [T('🚪 모두 퇴근했어요', '🚪 Everyone has gone home'),
+      T("⚙️ 설정에서 '퇴근한 직원 보이기'를 켜면 빈 책상이 보입니다.", "Turn on 'Show employees who went home' in ⚙️ Settings to see their empty desks."), ''];
   $('emptyBig').textContent = big;
   $('emptyMsg').textContent = msg;
   $('emptyDim').textContent = dim;
@@ -1217,9 +1262,9 @@ function refreshEmpty(shown) {
 
 function refreshButtons() {
   btnAway.classList.toggle('off', !showAway);
-  btnAway.title = showAway ? '퇴근한 직원 숨기기' : '퇴근한 직원 보이기';
+  btnAway.title = showAway ? T('퇴근한 직원 숨기기', 'Hide employees who went home') : T('퇴근한 직원 보이기', 'Show employees who went home');
   btnPin.classList.toggle('on', pinned);
-  btnPin.title = pinned ? '항상 위에 표시 끄기' : '항상 위에 표시';
+  btnPin.title = pinned ? T('항상 위에 표시 끄기', 'Turn off always on top') : T('항상 위에 표시', 'Always on top');
 }
 
 // HUD 버튼과 설정 패널이 같은 함수를 써서 어느 쪽에서 바꿔도 양쪽 표시가 맞는다
@@ -1309,10 +1354,10 @@ btnHook.addEventListener('click', toggleHooks);
 
 function hookStatus() {
   const h = data.hooks;
-  if (!h) return { text: '확인 중…', tone: 'var(--dim)' };
-  if (h.state === 'on') return { text: '🔔 연결됨' + (h.last ? ` · 마지막 수신 ${fmtTime(h.last)}` : ' · 아직 받은 알림 없음'), tone: '#7dffa0' };
-  if (h.state === 'error') return { text: '⚠️ ' + (h.error || '알림을 받지 못하는 중'), tone: '#ffb347' };
-  return { text: '🔕 연결 안 됨 — 승인 대기를 추정만 합니다', tone: 'var(--dim)' };
+  if (!h) return { text: T('확인 중…', 'Checking…'), tone: 'var(--dim)' };
+  if (h.state === 'on') return { text: T('🔔 연결됨', '🔔 Connected') + (h.last ? T(` · 마지막 수신 ${fmtTime(h.last)}`, ` · last received ${fmtTime(h.last)}`) : T(' · 아직 받은 알림 없음', ' · nothing received yet')), tone: '#7dffa0' };
+  if (h.state === 'error') return { text: '⚠️ ' + (h.error || T('알림을 받지 못하는 중', 'Not receiving')), tone: '#ffb347' };
+  return { text: T('🔕 연결 안 됨 — 승인 대기를 추정만 합니다', '🔕 Not connected — approval waits are only guessed'), tone: 'var(--dim)' };
 }
 
 function refreshHookButton() {
@@ -1322,7 +1367,7 @@ function refreshHookButton() {
   btnHook.classList.toggle('off', h.state === 'off');
   btnHook.classList.toggle('warn', h.state === 'error');
   btnHook.textContent = h.state === 'on' ? '🔔' : h.state === 'error' ? '⚠️' : '🔕';
-  btnHook.title = hookStatus().text + (h.state === 'off' ? '\n클릭: Claude Code 설정에 훅 연결' : '\n클릭: 연결 해제');
+  btnHook.title = hookStatus().text + (h.state === 'off' ? T('\n클릭: Claude Code 설정에 훅 연결', '\nClick: add hooks to the Claude Code settings') : T('\n클릭: 연결 해제', '\nClick: disconnect'));
 }
 
 // ───────────────────────────── 휴대폰 보기(앱 쪽 설정) ─────────────────────────────
@@ -1389,26 +1434,32 @@ function setCloudWizard(open) {
 
 function cloudStatus() {
   const c = cloud;
-  if (!c) return { text: '확인 중…', tone: 'var(--dim)' };
+  if (!c) return { text: T('확인 중…', 'Checking…'), tone: 'var(--dim)' };
   if (!c.configured) return {
-    text: c.hasProject ? '데이터베이스를 아직 찾지 못했어요 — 설정 도우미 3단계' : '설정 안 됨 — [설정 도우미]를 눌러 단계별로 따라 하세요(10분쯤)',
+    text: c.hasProject ? T('데이터베이스를 아직 찾지 못했어요 — 설정 도우미 3단계', 'Database not found yet — step 3 of the setup wizard')
+      : T('설정 안 됨 — [설정 도우미]를 눌러 단계별로 따라 하세요(10분쯤)', 'Not set up — click [Setup wizard] and follow the steps (about 10 min)'),
     tone: 'var(--dim)' };
-  if (!c.enabled) return { text: '꺼짐', tone: 'var(--dim)' };
-  if (c.state === 'error') return { text: '⚠️ ' + (c.error || '올리지 못하는 중'), tone: '#ffb347' };
-  if (c.state === 'on') return { text: `📡 올리는 중 · 마지막 ${fmtTime(c.last)}` + (c.notice ? ` · ${c.notice}` : ''), tone: '#7dffa0' };
-  return { text: '연결 중…', tone: 'var(--dim)' };
+  if (!c.enabled) return { text: T('꺼짐', 'Off'), tone: 'var(--dim)' };
+  if (c.state === 'error') return { text: '⚠️ ' + (c.error || T('올리지 못하는 중', 'Not uploading')), tone: '#ffb347' };
+  if (c.state === 'on') return { text: T(`📡 올리는 중 · 마지막 ${fmtTime(c.last)}`, `📡 Uploading · last ${fmtTime(c.last)}`) + (c.notice ? ` · ${c.notice}` : ''), tone: '#7dffa0' };
+  return { text: T('연결 중…', 'Connecting…'), tone: 'var(--dim)' };
 }
 
-const DONE_CHOICES = [[5, '5분'], [10, '10분'], [30, '30분'], [60, '1시간']];
-const doneLabel = () => (DONE_CHOICES.find(([m]) => m === appSettings?.notifyDoneMinutes) || [0, `${appSettings?.notifyDoneMinutes ?? 10}분`])[1];
+const DONE_CHOICES = [[5, T('5분', '5 min')], [10, T('10분', '10 min')], [30, T('30분', '30 min')], [60, T('1시간', '1 hour')]];
+const doneLabel = () => (DONE_CHOICES.find(([m]) => m === appSettings?.notifyDoneMinutes)
+  || [0, T(`${appSettings?.notifyDoneMinutes ?? 10}분`, `${appSettings?.notifyDoneMinutes ?? 10} min`)])[1];
 
 function updateStatus() {
   const u = appSettings?.update;
-  if (!u) return { text: '확인 중…', tone: 'var(--dim)' };
-  if (u.newer) return { text: `🎉 새 버전 ${u.latest} 이 나왔어요`, tone: '#7dffa0' };
+  if (!u) return { text: T('확인 중…', 'Checking…'), tone: 'var(--dim)' };
+  const ins = u.install || {};   // 앱 안 업데이트 진행: downloading(퍼센트) → installing → (새 버전으로 다시 켜짐) / error
+  if (ins.state === 'downloading') return { text: T(`⬇️ 새 버전 받는 중 ${ins.percent}%`, `⬇️ Downloading ${ins.percent}%`), tone: '#a9c8ff' };
+  if (ins.state === 'installing') return { text: T('🔧 확인하고 바꾸는 중… 곧 다시 켜집니다', '🔧 Verifying and installing… restarting soon'), tone: '#a9c8ff' };
+  if (ins.state === 'error') return { text: `⚠️ ${ins.error || T('업데이트하지 못했습니다', 'Update failed')}`, tone: '#ffb347' };
+  if (u.newer) return { text: T(`🎉 새 버전 ${u.latest} 이 나왔어요`, `🎉 Version ${u.latest} is out`), tone: '#7dffa0' };
   if (u.error) return { text: `⚠️ ${u.error}`, tone: '#ffb347' };
-  if (u.latest) return { text: `최신 버전입니다 · 확인 ${fmtTime(u.checkedAt)}`, tone: 'var(--dim)' };
-  return { text: u.checkedAt ? '아직 공개된 버전이 없어요' : '아직 확인 전(켠 뒤 30초쯤)', tone: 'var(--dim)' };
+  if (u.latest) return { text: T(`최신 버전입니다 · 확인 ${fmtTime(u.checkedAt)}`, `Up to date · checked ${fmtTime(u.checkedAt)}`), tone: 'var(--dim)' };
+  return { text: u.checkedAt ? T('아직 공개된 버전이 없어요', 'No release yet') : T('아직 확인 전(켠 뒤 30초쯤)', 'Not checked yet (about 30 s after start)'), tone: 'var(--dim)' };
 }
 
 // ── 휴대폰 보기 설정 도우미: 단계마다 할 일·Firebase 콘솔 바로가기·앱이 자동으로 확인한 결과 ──
@@ -1421,7 +1472,7 @@ function wizCheck(key) {
   if (!cloud?.hasProject) return { s: 'wait', text: '' };
   const r = cloudCheck?.steps?.[key];
   if (r) return { s: r.s === 'skip' ? 'wait' : r.s, text: r.text };
-  return { s: 'wait', text: cloudCheck ? '' : '확인 중…' };   // 앞 단계에서 멈춰 아직 못 본 단계는 빈칸
+  return { s: 'wait', text: cloudCheck ? '' : T('확인 중…', 'Checking…') };   // 앞 단계에서 멈춰 아직 못 본 단계는 빈칸
 }
 
 async function copyRules(e) {
@@ -1429,42 +1480,48 @@ async function copyRules(e) {
   if (!cloudCheck?.rules) { requestCloudCheck(true); return; }
   try {
     await navigator.clipboard.writeText(cloudCheck.rules);
-    btn.textContent = '복사됨 ✓';
+    btn.textContent = T('복사됨 ✓', 'Copied ✓');
   } catch {
-    btn.textContent = '아래 글을 직접 복사';
+    btn.textContent = T('아래 글을 직접 복사', 'Copy the text below');
   }
-  setTimeout(() => { btn.textContent = '규칙 복사'; }, 1800);
+  setTimeout(() => { btn.textContent = T('규칙 복사', 'Copy rules'); }, 1800);
 }
 
 const WIZ = [
-  { title: 'Firebase 프로젝트 만들기',
-    desc: '구글 계정으로 Firebase 콘솔에 들어가 [프로젝트 만들기]. 이름은 아무거나(예: my-claude-office), Google 애널리틱스는 꺼도 됩니다. 요금제는 무료(Spark) 그대로 — 결제 정보는 필요 없습니다.',
-    buttons: () => [['Firebase 콘솔 열기', () => openUrl(FB_CONSOLE + '/')]],
-    state: () => (cloud?.hasProject ? { s: 'ok', text: '만들었어요' } : { s: 'wait', text: '' }) },
-  { title: '웹 앱 등록 → 설정 붙여넣기', form: true,
-    desc: '프로젝트 첫 화면에서 웹(</>) 버튼 → 앱 닉네임(아무거나) → [앱 등록] (Hosting 체크는 안 해도 됩니다). 나오는 firebaseConfig 블록을 통째로 복사해 아래에 붙여 넣고 [저장]. 이미 등록했다면 ⚙️ 프로젝트 설정 → 일반 → 내 앱에 있습니다.',
-    buttons: () => [['프로젝트 설정 열기', () => openUrl(cloud?.project ? fbProject() + '/settings/general' : FB_CONSOLE + '/')]],
-    state: () => (cloud?.hasProject ? { s: 'ok', text: cloud.project ? `프로젝트 ${cloud.project}` : '로컬 시험 서버' } : { s: 'wait', text: '' }) },
-  { title: 'Realtime Database 만들기',
-    desc: '왼쪽 메뉴의 Realtime Database(데이터베이스 또는 빌드 아래) → [데이터베이스 만들기]. 위치는 가까운 싱가포르(asia-southeast1), 보안 규칙은 "잠금 모드로 시작". 만들면 여기서 주소를 저절로 찾습니다.',
-    buttons: () => [['Realtime Database 열기', () => openUrl(fbProject() + '/database')]],
+  { title: T('Firebase 프로젝트 만들기', 'Create a Firebase project'),
+    desc: T('구글 계정으로 Firebase 콘솔에 들어가 [프로젝트 만들기]. 이름은 아무거나(예: my-claude-office), Google 애널리틱스는 꺼도 됩니다. 요금제는 무료(Spark) 그대로 — 결제 정보는 필요 없습니다.',
+      'Open the Firebase console with your Google account and click [Create a project]. Any name works (e.g. my-claude-office) and Google Analytics can be off. Keep the free (Spark) plan — no billing info needed.'),
+    buttons: () => [[T('Firebase 콘솔 열기', 'Open Firebase console'), () => openUrl(FB_CONSOLE + '/')]],
+    state: () => (cloud?.hasProject ? { s: 'ok', text: T('만들었어요', 'Created') } : { s: 'wait', text: '' }) },
+  { title: T('웹 앱 등록 → 설정 붙여넣기', 'Register a web app → paste the config'), form: true,
+    desc: T('프로젝트 첫 화면에서 웹(</>) 버튼 → 앱 닉네임(아무거나) → [앱 등록] (Hosting 체크는 안 해도 됩니다). 나오는 firebaseConfig 블록을 통째로 복사해 아래에 붙여 넣고 [저장]. 이미 등록했다면 ⚙️ 프로젝트 설정 → 일반 → 내 앱에 있습니다.',
+      'On the project home, click the web (</>) button → any app nickname → [Register app] (no need to check Hosting). Copy the whole firebaseConfig block it shows, paste it below and click [Save]. If you already registered one, it is under ⚙️ Project settings → General → Your apps.'),
+    buttons: () => [[T('프로젝트 설정 열기', 'Open project settings'), () => openUrl(cloud?.project ? fbProject() + '/settings/general' : FB_CONSOLE + '/')]],
+    state: () => (cloud?.hasProject ? { s: 'ok', text: cloud.project ? T(`프로젝트 ${cloud.project}`, `Project ${cloud.project}`) : T('로컬 시험 서버', 'Local test server') } : { s: 'wait', text: '' }) },
+  { title: T('Realtime Database 만들기', 'Create a Realtime Database'),
+    desc: T('왼쪽 메뉴의 Realtime Database(데이터베이스 또는 빌드 아래) → [데이터베이스 만들기]. 위치는 가까운 싱가포르(asia-southeast1), 보안 규칙은 "잠금 모드로 시작". 만들면 여기서 주소를 저절로 찾습니다.',
+      'Left menu → Realtime Database (under Databases or Build) → [Create Database]. Pick a location near you and "Start in locked mode" for the security rules. Once it exists, the app finds its address by itself.'),
+    buttons: () => [[T('Realtime Database 열기', 'Open Realtime Database'), () => openUrl(fbProject() + '/database')]],
     state: () => wizCheck('db') },
-  { title: '보안 규칙 붙여넣기', rules: true,
-    desc: 'Realtime Database 의 [규칙] 탭 내용을 모두 지우고 [규칙 복사]로 복사한 것을 붙여 넣은 뒤 [게시]. PC는 로그인한 자기 칸에만 쓰고, 휴대폰은 암호문만 읽게 하는 규칙입니다.',
-    buttons: () => [['규칙 복사', copyRules], ['규칙 화면 열기', () => openUrl(dbInstance() ? `${fbProject()}/database/${dbInstance()}/rules` : fbProject() + '/database')]],
+  { title: T('보안 규칙 붙여넣기', 'Paste the security rules'), rules: true,
+    desc: T('Realtime Database 의 [규칙] 탭 내용을 모두 지우고 [규칙 복사]로 복사한 것을 붙여 넣은 뒤 [게시]. PC는 로그인한 자기 칸에만 쓰고, 휴대폰은 암호문만 읽게 하는 규칙입니다.',
+      'In the [Rules] tab of Realtime Database, delete everything, paste what [Copy rules] copied and click [Publish]. These rules let the PC write only to its own signed-in slot and the phone read only ciphertext.'),
+    buttons: () => [[T('규칙 복사', 'Copy rules'), copyRules], [T('규칙 화면 열기', 'Open rules'), () => openUrl(dbInstance() ? `${fbProject()}/database/${dbInstance()}/rules` : fbProject() + '/database')]],
     state: () => wizCheck('rules') },
-  { title: '익명 로그인 켜기',
-    desc: '왼쪽 메뉴 Authentication(보안 또는 빌드 아래) → [시작하기] → 로그인 방법 → 익명 → 사용 설정 → [저장]. PC의 Claude Office만 이것으로 로그인합니다(휴대폰은 로그인 없음). "익명 계정 자동 정리"는 켜지 마세요 — 30일마다 QR을 다시 찍어야 합니다.',
-    buttons: () => [['Authentication 열기', () => openUrl(fbProject() + '/authentication/providers')]],
+  { title: T('익명 로그인 켜기', 'Turn on anonymous sign-in'),
+    desc: T('왼쪽 메뉴 Authentication(보안 또는 빌드 아래) → [시작하기] → 로그인 방법 → 익명 → 사용 설정 → [저장]. PC의 Claude Office만 이것으로 로그인합니다(휴대폰은 로그인 없음). "익명 계정 자동 정리"는 켜지 마세요 — 30일마다 QR을 다시 찍어야 합니다.',
+      'Left menu → Authentication (under Security or Build) → [Get started] → Sign-in method → Anonymous → Enable → [Save]. Only Claude Office on the PC signs in this way (the phone needs no sign-in). Leave automatic clean-up of anonymous accounts off — otherwise you must rescan the QR every 30 days.'),
+    buttons: () => [[T('Authentication 열기', 'Open Authentication'), () => openUrl(fbProject() + '/authentication/providers')]],
     state: () => wizCheck('auth') },
-  { title: '켜고 휴대폰으로 QR 찍기',
-    desc: '[켜기] → 아래 [QR 보기] → 휴대폰 카메라로 찍으면 열립니다. 크롬 메뉴 → [앱 설치](아이폰은 공유 → 홈 화면에 추가)를 하면 주소창 없이 앱처럼 씁니다.',
-    buttons: () => [[cloud?.enabled ? '켜져 있어요' : '켜기', () => send({ cmd: 'cloud-enable', value: true }), !cloud?.configured || !!cloud?.enabled]],
+  { title: T('켜고 휴대폰으로 QR 찍기', 'Turn on and scan the QR'),
+    desc: T('[켜기] → 아래 [QR 보기] → 휴대폰 카메라로 찍으면 열립니다. 크롬 메뉴 → [앱 설치](아이폰은 공유 → 홈 화면에 추가)를 하면 주소창 없이 앱처럼 씁니다.',
+      '[Turn on] → [Show QR] below → scan it with your phone camera. Chrome menu → [Install app] (iPhone: Share → Add to Home Screen) makes it work like an app without the address bar.'),
+    buttons: () => [[cloud?.enabled ? T('켜져 있어요', 'On') : T('켜기', 'Turn on'), () => send({ cmd: 'cloud-enable', value: true }), !cloud?.configured || !!cloud?.enabled]],
     state: () => {
-      if (cloud?.enabled && cloud.state === 'on') return { s: 'ok', text: '올리는 중 — 아래 [QR 보기]' };
-      if (cloud?.enabled && cloud.state === 'error') return { s: 'fail', text: cloud.error || '올리지 못하는 중' };
+      if (cloud?.enabled && cloud.state === 'on') return { s: 'ok', text: T('올리는 중 — 아래 [QR 보기]', 'Uploading — [Show QR] below') };
+      if (cloud?.enabled && cloud.state === 'error') return { s: 'fail', text: cloud.error || T('올리지 못하는 중', 'Not uploading') };
       const page = wizCheck('page');
-      return page.s === 'fail' ? page : { s: 'wait', text: cloud?.configured ? '[켜기]를 눌러 주세요' : '' };
+      return page.s === 'fail' ? page : { s: 'wait', text: cloud?.configured ? T('[켜기]를 눌러 주세요', 'Click [Turn on]') : '' };
     } },
 ];
 
@@ -1484,110 +1541,127 @@ const WIZ = [
 
 const SETTINGS = [
   {
-    title: '사무실',
+    title: T('사무실', 'Office'),
     items: [
-      { type: 'text', name: '사무실 이름', desc: '벽 간판과 창 제목(작업표시줄)에 씁니다. 비우면 기본 이름입니다.', pcOnly: true,
+      { type: 'text', name: T('사무실 이름', 'Office name'), desc: T('벽 간판과 창 제목(작업표시줄)에 씁니다. 비우면 기본 이름입니다.', 'Shown on the wall sign and the window title (taskbar). Leave empty for the default.'), pcOnly: true,
         placeholder: DEFAULT_OFFICE, max: 30, get: () => officeName, set: setOfficeName },
+      // 언어 이름은 두 언어로 — 읽지 못하는 언어로 켜져 있어도 찾을 수 있게
+      { type: 'choice', name: '화면 언어 / Language', pcOnly: true,
+        desc: T('화면·말풍선·알림을 이 언어로 보여 줍니다. 휴대폰 보기도 PC를 따라갑니다.', 'Screen, speech bubbles and notifications use this language. Phone view follows the PC.'),
+        options: [['ko', '한국어'], ['en', 'English']], get: () => LANG, set: setLanguage },
     ],
   },
   {
-    title: '직원 표시',
+    title: T('직원 표시', 'Employees'),
     // 위에서 아래로 거르는 순서: 표시 기간 → 퇴근 숨김 → 고르는 방식 → 보일 인원
     items: [
-      { type: 'choice', name: '표시 기간', pcOnly: true,
-        desc: () => `마지막 대화가 ${windowLabel()} 안에 있는 세션만 사무실에 들입니다. 3시간 넘게 조용하면 퇴근(🚪)으로 보입니다.`,
+      { type: 'choice', name: T('표시 기간', 'Display period'), pcOnly: true,
+        desc: () => T(`마지막 대화가 ${windowLabel()} 안에 있는 세션만 사무실에 들입니다. 3시간 넘게 조용하면 퇴근(🚪)으로 보입니다.`,
+          `Only sessions whose last message is within ${windowLabel()} come to the office. After 3 quiet hours they go home (🚪).`),
         options: WINDOW_CHOICES, get: () => windowHours, set: setWindowHours },
-      { type: 'toggle', name: '퇴근한 직원 보이기', desc: '퇴근(🚪)한 직원의 빈 책상도 사무실에 남겨 둡니다.',
+      { type: 'toggle', name: T('퇴근한 직원 보이기', 'Show employees who went home'), desc: T('퇴근(🚪)한 직원의 빈 책상도 사무실에 남겨 둡니다.', 'Keeps the empty desks of employees who went home (🚪).'),
         get: () => showAway, set: setShowAway },
-      { type: 'toggle', name: '✋ 기다리는 직원만 보기', desc: '승인·질문을 기다리는 직원만 책상에 앉힙니다. 직원이 많을 때 휴대폰으로 볼 때 좋아요.',
+      { type: 'toggle', name: T('✋ 기다리는 직원만 보기', "✋ Only show who's waiting"),
+        desc: T('승인·질문을 기다리는 직원만 책상에 앉힙니다. 직원이 많을 때 휴대폰으로 볼 때 좋아요.', 'Seats only employees waiting for an approval or an answer. Handy on a phone when there are many.'),
         get: () => waitOnly, set: (v) => { waitOnly = v; store.set('waitOnly', v); layoutKey = ''; refreshHud(); refreshSettings(); } },
-      { type: 'number', name: '보일 인원', desc: '책상에 앉힐 최대 인원입니다.',
-        min: SHOWN_MIN, max: SHOWN_MAX, unit: '명', get: () => maxShown, set: setMaxShown },
-      { type: 'choice', name: '고르는 방식',
+      { type: 'number', name: T('보일 인원', 'Max employees'), desc: T('책상에 앉힐 최대 인원입니다.', 'The most employees seated at desks.'),
+        min: SHOWN_MIN, max: SHOWN_MAX, unit: T('명', ''), get: () => maxShown, set: setMaxShown },
+      { type: 'choice', name: T('고르는 방식', 'How to pick'),
         desc: () => (pickMode === 'manual'
-          ? '체크한 직원만 앉힙니다. 새로 출근한 직원은 체크해야 보입니다.'
-          : `최근에 일한 순서로 ${maxShown}명을 앉힙니다. 자리는 출근 순서대로 그대로입니다.`),
-        options: [['recent', '최근 사용순'], ['manual', '직접 고르기']],
+          ? T('체크한 직원만 앉힙니다. 새로 출근한 직원은 체크해야 보입니다.', 'Seats only checked employees. New arrivals show up once you check them.')
+          : T(`최근에 일한 순서로 ${maxShown}명을 앉힙니다. 자리는 출근 순서대로 그대로입니다.`, `Seats the ${maxShown} most recently active. Seats stay in arrival order.`)),
+        options: [['recent', T('최근 사용순', 'Most recent')], ['manual', T('직접 고르기', 'Choose manually')]],
         get: () => pickMode, set: setPickMode },
       { type: 'picker', shown: () => pickMode === 'manual' },
     ],
   },
   {
-    title: '팀',
+    title: T('팀', 'Teams'),
     items: [
       { type: 'teams', pcOnly: true },
     ],
   },
   {
-    title: '창',
+    title: T('창', 'Window'),
     items: [
-      { type: 'toggle', name: '항상 위에 표시', desc: '다른 창에 가려지지 않게 맨 위에 띄웁니다.', pcOnly: true,
+      { type: 'toggle', name: T('항상 위에 표시', 'Always on top'), desc: T('다른 창에 가려지지 않게 맨 위에 띄웁니다.', 'Keeps the window above other windows.'), pcOnly: true,
         get: () => pinned, set: setPinned },
-      { type: 'choice', name: '사무실 크기', desc: '화면에 맞춘 크기에서 작게·크게 바꿉니다. 크게 하면 넘치는 만큼 아래로 스크롤합니다.',
-        options: [[-2, '더 작게'], [-1, '작게'], [0, '맞춤'], [1, '크게'], [2, '더 크게']],
+      { type: 'choice', name: T('사무실 크기', 'Office size'),
+        desc: T('화면에 맞춘 크기에서 작게·크게 바꿉니다. 크게 하면 넘치는 만큼 아래로 스크롤합니다.', 'Smaller or larger than fit-to-window. When larger, scroll down for the rest.'),
+        options: [[-2, T('더 작게', 'Smallest')], [-1, T('작게', 'Smaller')], [0, T('맞춤', 'Fit')], [1, T('크게', 'Larger')], [2, T('더 크게', 'Largest')]],
         get: () => zoom, set: (v) => { zoom = v; store.set('zoom', v); layoutKey = ''; } },
-      { type: 'toggle', name: '작게 보기(목록)', desc: () => (REMOTE ? '사무실 그림 대신 직원·상태를 한 줄씩 보여 줍니다.' : '창을 작게 줄이고 직원·상태만 한 줄씩 보여 줍니다(맨 위에 떠 있음). 상단 ▤ 버튼과 같습니다. 크기·위치는 따로 기억합니다.'),
+      { type: 'toggle', name: T('작게 보기(목록)', 'Compact view (list)'),
+        desc: () => (REMOTE ? T('사무실 그림 대신 직원·상태를 한 줄씩 보여 줍니다.', 'Shows one line per employee instead of the office picture.')
+          : T('창을 작게 줄이고 직원·상태만 한 줄씩 보여 줍니다(맨 위에 떠 있음). 상단 ▤ 버튼과 같습니다. 크기·위치는 따로 기억합니다.',
+            'Shrinks the window to one line per employee (stays on top). Same as the ▤ button. Its size and position are remembered separately.')),
         get: widgetOn, set: setWidget, enabled: () => LOCAL_WIDGET || appReady() },
-      { type: 'toggle', name: '프로그램 시작 시 작업표시줄로 이동', pcOnly: true,
-        desc: '켜 두면 다음 실행부터 창을 띄우지 않고 작업표시줄 오른쪽 알림 영역(🏢)에 숨긴 채로 켜집니다. 아이콘을 누르면 창이 열립니다. 감시와 휴대폰 보기는 그대로 돌아갑니다.',
+      { type: 'toggle', name: T('프로그램 시작 시 작업표시줄로 이동', 'Start hidden in the tray'), pcOnly: true,
+        desc: T('켜 두면 다음 실행부터 창을 띄우지 않고 작업표시줄 오른쪽 알림 영역(🏢)에 숨긴 채로 켜집니다. 아이콘을 누르면 창이 열립니다. 감시와 휴대폰 보기는 그대로 돌아갑니다.',
+          'From the next launch, starts hidden in the notification area (🏢) without opening the window. Click the icon to open it. Monitoring and phone view keep running.'),
         get: () => !!appSettings?.startMinimized,
         set: (v) => setAppSetting('startMinimized', v),
         enabled: () => !DEMO && !!appSettings },
-      { type: 'toggle', name: '닫기(✕)를 눌러도 끄지 않고 숨기기', pcOnly: true,
-        desc: '✕는 창만 숨기고 알림 영역(🏢)에서 계속 돌아갑니다(휴대폰 보기도 계속). 완전히 끝내려면 🏢 아이콘 오른쪽 클릭 → 끝내기.',
+      { type: 'toggle', name: T('닫기(✕)를 눌러도 끄지 않고 숨기기', 'Close (✕) hides instead of quitting'), pcOnly: true,
+        desc: T('✕는 창만 숨기고 알림 영역(🏢)에서 계속 돌아갑니다(휴대폰 보기도 계속). 완전히 끝내려면 🏢 아이콘 오른쪽 클릭 → 끝내기.',
+          '✕ only hides the window and the app keeps running in the notification area (🏢), phone view too. To quit, right-click the 🏢 icon → Exit.'),
         get: () => !!appSettings?.closeToTray,
         set: (v) => setAppSetting('closeToTray', v),
         enabled: () => !DEMO && !!appSettings },
-      { type: 'toggle', name: 'Windows 시작할 때 자동 실행', pcOnly: true,
-        desc: () => 'PC에 로그인하면 알림 영역(🏢)에 숨긴 채로 자동으로 켜집니다(이 사용자 계정의 시작 프로그램에 등록).'
-          + (appSettings?.autoStartElsewhere ? ' ⚠️ 지금은 다른 위치의 Claude Office가 등록돼 있어요 — 껐다 켜면 이 프로그램으로 바뀝니다.' : ''),
+      { type: 'toggle', name: T('Windows 시작할 때 자동 실행', 'Run at Windows startup'), pcOnly: true,
+        desc: () => T('PC에 로그인하면 알림 영역(🏢)에 숨긴 채로 자동으로 켜집니다(이 사용자 계정의 시작 프로그램에 등록).',
+          "Starts hidden in the notification area (🏢) when you sign in to Windows (registered in this user's startup apps).")
+          + (appSettings?.autoStartElsewhere ? T(' ⚠️ 지금은 다른 위치의 Claude Office가 등록돼 있어요 — 껐다 켜면 이 프로그램으로 바뀝니다.',
+            ' ⚠️ A Claude Office in another folder is registered now — turn this off and on to switch to this one.') : ''),
         get: () => !!appSettings?.autoStart,
         set: (v) => setAppSetting('autoStart', v),
         enabled: () => !DEMO && !!appSettings },
     ],
   },
   {
-    title: '알림',
+    title: T('알림', 'Notifications'),
     // 창을 숨겨 둬도 알아야 하므로 앱(C#)이 판단해 Windows 알림으로 띄운다. 창을 보고 있을 때는 띄우지 않는다
     items: [
-      { type: 'toggle', name: '✋ 기다릴 때 알림', pcOnly: true,
-        desc: '직원이 승인·질문을 기다리기 시작하면 Windows 알림을 띄웁니다. 창을 보고 있을 때는 띄우지 않고, 알림을 누르면 그 직원이 열립니다.',
+      { type: 'toggle', name: T('✋ 기다릴 때 알림', '✋ Notify when waiting'), pcOnly: true,
+        desc: T('직원이 승인·질문을 기다리기 시작하면 Windows 알림을 띄웁니다. 창을 보고 있을 때는 띄우지 않고, 알림을 누르면 그 직원이 열립니다.',
+          "Shows a Windows notification when an employee starts waiting for an approval or an answer. Not while you're looking at the window; clicking it opens that employee."),
         get: () => !!appSettings?.notifyWaiting, set: (v) => setAppSetting('notifyWaiting', v), enabled: appReady },
-      { type: 'toggle', name: '오래 걸린 일이 끝나면 알림', pcOnly: true,
-        desc: () => `${doneLabel()} 넘게 일하던 직원이 일을 마치고 쉬기 시작하면 알립니다.`,
+      { type: 'toggle', name: T('오래 걸린 일이 끝나면 알림', 'Notify when a long task ends'), pcOnly: true,
+        desc: () => T(`${doneLabel()} 넘게 일하던 직원이 일을 마치고 쉬기 시작하면 알립니다.`, `Notifies when an employee who worked over ${doneLabel()} finishes and starts resting.`),
         get: () => !!appSettings?.notifyDone, set: (v) => setAppSetting('notifyDone', v), enabled: appReady },
-      { type: 'choice', name: '오래 걸린 일 기준', pcOnly: true, shown: () => !!appSettings?.notifyDone,
+      { type: 'choice', name: T('오래 걸린 일 기준', 'What counts as long'), pcOnly: true, shown: () => !!appSettings?.notifyDone,
         options: DONE_CHOICES, get: () => appSettings?.notifyDoneMinutes, set: (v) => setAppSetting('notifyDoneMinutes', v) },
-      { type: 'toggle', name: '알림음', pcOnly: true, desc: '끄면 소리 없이 알림만 띄웁니다.',
+      { type: 'toggle', name: T('알림음', 'Sound'), pcOnly: true, desc: T('끄면 소리 없이 알림만 띄웁니다.', 'Off = silent notifications.'),
         get: () => !!appSettings?.notifySound, set: (v) => setAppSetting('notifySound', v), enabled: appReady },
-      { type: 'toggle', name: '방해 금지 시간대', pcOnly: true,
+      { type: 'toggle', name: T('방해 금지 시간대', 'Quiet hours'), pcOnly: true,
         desc: () => (appSettings?.quietEnabled
-          ? `${appSettings.quietStart}시부터 ${appSettings.quietEnd}시까지는 알림을 띄우지 않습니다.`
-          : '정한 시간에는 알림을 띄우지 않습니다(예: 밤).'),
+          ? T(`${appSettings.quietStart}시부터 ${appSettings.quietEnd}시까지는 알림을 띄우지 않습니다.`, `No notifications from ${appSettings.quietStart}:00 to ${appSettings.quietEnd}:00.`)
+          : T('정한 시간에는 알림을 띄우지 않습니다(예: 밤).', 'No notifications during the hours you set (e.g. at night).')),
         get: () => !!appSettings?.quietEnabled, set: (v) => setAppSetting('quietEnabled', v), enabled: appReady },
       { type: 'hours', pcOnly: true, shown: () => !!appSettings?.quietEnabled,
         getStart: () => appSettings?.quietStart ?? 22, setStart: (v) => setAppSetting('quietStart', v),
         getEnd: () => appSettings?.quietEnd ?? 8, setEnd: (v) => setAppSetting('quietEnd', v), enabled: appReady },
-      { type: 'action', name: '알림 시험', pcOnly: true, desc: '지금 알림을 하나 띄워 봅니다(창을 보고 있어도).',
-        label: () => '띄워 보기', run: () => send({ cmd: 'notify-test' }), enabled: () => appReady() && !!appSettings.tray },
+      { type: 'action', name: T('알림 시험', 'Test notification'), pcOnly: true, desc: T('지금 알림을 하나 띄워 봅니다(창을 보고 있어도).', 'Shows a notification now (even while the window is open).'),
+        label: () => T('띄워 보기', 'Try it'), run: () => send({ cmd: 'notify-test' }), enabled: () => appReady() && !!appSettings.tray },
     ],
   },
   {
-    title: 'Claude Code 연동',
+    title: T('Claude Code 연동', 'Claude Code integration'),
     items: [
-      { type: 'action', name: '훅 연결', pcOnly: true,
-        desc: '승인 창·입력 요청·세션 종료를 Claude Code 훅으로 받아 정확히 표시합니다. 연결·해제할 때 ~/.claude/settings.json 을 고치므로 확인 창이 먼저 뜹니다.',
-        label: () => (data.hooks?.state === 'off' ? '연결하기' : '연결 해제'),
+      { type: 'action', name: T('훅 연결', 'Hooks'), pcOnly: true,
+        desc: T('승인 창·입력 요청·세션 종료를 Claude Code 훅으로 받아 정확히 표시합니다. 연결·해제할 때 ~/.claude/settings.json 을 고치므로 확인 창이 먼저 뜹니다.',
+          'Gets permission prompts, input requests and session ends from Claude Code hooks for an exact status. Connecting or removing edits ~/.claude/settings.json, so you confirm first.'),
+        label: () => (data.hooks?.state === 'off' ? T('연결하기', 'Connect') : T('연결 해제', 'Disconnect')),
         enabled: () => !DEMO && !!data.hooks,   // 견본 화면에서는 바꿀 수 없다(앱이 --demo 면 훅 수신기도 안 켠다)
         run: toggleHooks, status: hookStatus },
     ],
   },
   {
-    title: '휴대폰에서 보기',
+    title: T('휴대폰에서 보기', 'Phone view'),
     items: [
-      { type: 'action', name: '휴대폰에서 보기', pcOnly: true,
-        desc: '화면용 요약만 PC에서 암호화해 내 구글 Firebase(무료)에 올리고, 휴대폰은 QR로 열어 봅니다(보기 전용, 로그인 없음, 밖에서도). 대화 원본은 올리지 않습니다.',
-        label: () => (!cloud?.configured ? (cloudWizardOpen ? '도우미 닫기' : '설정 도우미') : cloud.enabled ? '끄기' : '켜기'),
+      { type: 'action', name: T('휴대폰에서 보기', 'Phone view'), pcOnly: true,
+        desc: T('화면용 요약만 PC에서 암호화해 내 구글 Firebase(무료)에 올리고, 휴대폰은 QR로 열어 봅니다(보기 전용, 로그인 없음, 밖에서도). 대화 원본은 올리지 않습니다.',
+          'Only a screen summary is encrypted on the PC and uploaded to your own Google Firebase (free); your phone opens it from a QR code (view only, no sign-in, works anywhere). Conversations are never uploaded.'),
+        label: () => (!cloud?.configured ? (cloudWizardOpen ? T('도우미 닫기', 'Close wizard') : T('설정 도우미', 'Setup wizard')) : cloud.enabled ? T('끄기', 'Turn off') : T('켜기', 'Turn on')),
         enabled: () => !DEMO && !!cloud,   // 견본 화면에서는 쓸 수 없다
         run: () => {
           if (!cloud.configured) setCloudWizard(!cloudWizardOpen);
@@ -1596,44 +1670,67 @@ const SETTINGS = [
         status: cloudStatus },
       { type: 'cloudwizard', pcOnly: true, shown: () => !DEMO && cloudWizardOpen },
       { type: 'cloudqr', pcOnly: true, shown: () => !DEMO && !!cloud?.configured },
-      { type: 'choice', name: '휴대폰 페이지', pcOnly: true, shown: () => !DEMO && !!cloud?.configured && cloud.page !== 'local',
+      { type: 'choice', name: T('휴대폰 페이지', 'Phone page'), pcOnly: true, shown: () => !DEMO && !!cloud?.configured && cloud.page !== 'local',
         desc: () => (cloud?.page === 'own'
-          ? `내 Firebase Hosting(https://${cloud.project}.web.app)에 tools\\deploy-mobile.ps1 로 올려 둔 페이지를 씁니다.`
-          : '모두가 같이 쓰는 페이지(GitHub)라 따로 올릴 것이 없습니다. 데이터는 내 Firebase에만, 해독 키는 휴대폰에만 있습니다.')
-          + ' 바꾸면 휴대폰에서 QR을 다시 찍어야 합니다.',
-        options: [['public', '공용 페이지'], ['own', '내 Firebase Hosting']],
+          ? T(`내 Firebase Hosting(https://${cloud.project}.web.app)에 tools\\deploy-mobile.ps1 로 올려 둔 페이지를 씁니다.`,
+            `Uses the page you uploaded to your Firebase Hosting (https://${cloud.project}.web.app) with tools\\deploy-mobile.ps1.`)
+          : T('모두가 같이 쓰는 페이지(GitHub)라 따로 올릴 것이 없습니다. 데이터는 내 Firebase에만, 해독 키는 휴대폰에만 있습니다.',
+            'A shared page (GitHub), so there is nothing to upload. Data stays in your Firebase and the key only on your phone.'))
+          + T(' 바꾸면 휴대폰에서 QR을 다시 찍어야 합니다.', ' Changing it means scanning the QR again.'),
+        options: [['public', T('공용 페이지', 'Shared page')], ['own', T('내 Firebase Hosting', 'My Firebase Hosting')]],
         get: () => cloud?.page, set: (v) => { if (v !== cloud.page) send({ cmd: 'cloud-page', value: v }); } },
+      { type: 'toggle', name: T('휴대폰에서 별명·메모 고치기', 'Edit nicknames & memos on the phone'), pcOnly: true, shown: () => !DEMO && !!cloud?.configured,
+        desc: T('휴대폰의 직원 상세에서 고친 별명·메모를 PC가 몇 초 안에 받아 반영합니다(같은 키로 암호화). 1.0.9 전에 규칙을 붙여 넣었다면 [점검·설정 도우미] 4단계의 규칙을 새로 붙여 넣어야 합니다.',
+          "Nicknames and memos edited in the phone's employee details reach the PC within seconds (encrypted with the same key). If you pasted the rules before 1.0.9, paste the new rules from step 4 of [Check & setup wizard]."),
+        get: () => !!cloud?.phoneEdit, set: (v) => send({ cmd: 'cloud-phone-edit', value: v }), enabled: () => !DEMO && !!cloud },
     ],
   },
   {
-    title: '정보',
+    title: T('정보', 'About'),
     items: [
-      { type: 'action', name: '버전', pcOnly: true,
-        desc: () => `지금 버전 ${appSettings?.version || '?'} — 새 버전은 GitHub 릴리스에서 받습니다.`,
-        label: () => (appSettings?.update?.newer ? '받으러 가기' : '지금 확인'),
-        run: () => (appSettings.update?.newer ? openUrl(appSettings.update.url) : send({ cmd: 'update-check' })),
-        enabled: appReady, status: updateStatus },
-      { type: 'toggle', name: '새 버전 알림', pcOnly: true,
-        desc: '하루 두 번 GitHub에 새 버전이 나왔는지 물어보고, 나왔으면 한 번 알려 드립니다(보내는 것은 프로그램 버전뿐).',
+      { type: 'action', name: T('버전', 'Version'), pcOnly: true,
+        desc: () => T(`지금 버전 ${appSettings?.version || '?'} — 새 버전이 나오면 [업데이트]로 받아 바로 바꿉니다(GitHub 릴리스, SHA-256 확인).`,
+          `Current version ${appSettings?.version || '?'} — when a new version is out, [Update] downloads and installs it (GitHub Releases, SHA-256 checked).`),
+        label: () => (appSettings?.update?.newer ? (appSettings.update.canInstall ? T('업데이트', 'Update') : T('받으러 가기', 'Download')) : T('지금 확인', 'Check now')),
+        run: () => (!appSettings.update?.newer ? send({ cmd: 'update-check' })
+          : appSettings.update.canInstall ? send({ cmd: 'update-install' })   // 앱이 "업데이트할까요?" 확인 창을 띄운다
+          : openUrl(appSettings.update.url)),
+        enabled: () => appReady() && !['downloading', 'installing'].includes(appSettings.update?.install?.state), status: updateStatus },
+      { type: 'toggle', name: T('새 버전 알림', 'New version alerts'), pcOnly: true,
+        desc: T('하루 두 번 GitHub에 새 버전이 나왔는지 물어보고, 나왔으면 한 번 알려 드립니다(보내는 것은 프로그램 버전뿐).',
+          'Asks GitHub twice a day whether a new version is out and tells you once (only the app version is sent).'),
         get: () => !!appSettings?.updateCheck, set: (v) => setAppSetting('updateCheck', v), enabled: appReady },
-      { type: 'action', name: '별명·메모 내보내기', pcOnly: true,
-        desc: '별명·메모·사무실 이름을 파일 하나로 저장합니다(다른 PC로 옮기거나 백업할 때).',
-        label: () => '내보내기', run: () => send({ cmd: 'share-export' }), enabled: appReady },
-      { type: 'action', name: '별명·메모 가져오기', pcOnly: true,
-        desc: '내보낸 파일을 읽어 합칩니다. 이 PC에 없거나 파일 쪽을 더 나중에 고친 것만 반영합니다.',
-        label: () => '가져오기', run: () => send({ cmd: 'share-import' }), enabled: appReady },
-      { type: 'action', name: '설정 초기화', pcOnly: true,
-        desc: '직원 표시·창·알림 설정을 처음 값으로 되돌립니다. 별명·메모·사무실 이름·팀 이름·휴대폰 보기·훅·자동 실행은 그대로입니다.',
-        label: () => '초기화', run: () => send({ cmd: 'reset-settings' }), enabled: appReady },
-      { type: 'action', name: '문제 보고', pcOnly: true,
-        desc: 'GitHub 이슈 작성 화면을 엽니다. 버전·Windows·WebView2 정보만 미리 채웁니다(대화 내용은 보내지 않음).',
-        label: () => 'GitHub에 쓰기', run: () => send({ cmd: 'report-issue' }), enabled: () => !DEMO },
-      { type: 'action', name: '데이터 폴더', pcOnly: true,
-        desc: '설정과 별명·메모 사본(share.json), 휴대폰 보기 키(cloud.json)가 있는 곳입니다. 다른 PC로 옮길 때는 share.json 을 그 PC의 같은 폴더에 복사하세요. cloud.json 은 남에게 주지 마세요.',
-        label: () => '열기', run: () => send({ cmd: 'open-data-dir' }), enabled: appReady },
+      { type: 'action', name: T('별명·메모 내보내기', 'Export nicknames & memos'), pcOnly: true,
+        desc: T('별명·메모·사무실 이름을 파일 하나로 저장합니다(다른 PC로 옮기거나 백업할 때).', 'Saves nicknames, memos and the office name to one file (to move to another PC or back up).'),
+        label: () => T('내보내기', 'Export'), run: () => send({ cmd: 'share-export' }), enabled: appReady },
+      { type: 'action', name: T('별명·메모 가져오기', 'Import nicknames & memos'), pcOnly: true,
+        desc: T('내보낸 파일을 읽어 합칩니다. 이 PC에 없거나 파일 쪽을 더 나중에 고친 것만 반영합니다.', 'Reads an exported file and merges it. Only entries missing here or edited later in the file are applied.'),
+        label: () => T('가져오기', 'Import'), run: () => send({ cmd: 'share-import' }), enabled: appReady },
+      { type: 'action', name: T('설정 초기화', 'Reset settings'), pcOnly: true,
+        desc: T('직원 표시·창·알림 설정을 처음 값으로 되돌립니다. 별명·메모·사무실 이름·팀 이름·화면 언어·휴대폰 보기·훅·자동 실행은 그대로입니다.',
+          'Restores employee display, window and notification settings to defaults. Nicknames, memos, office and team names, language, phone view, hooks and startup stay.'),
+        label: () => T('초기화', 'Reset'), run: () => send({ cmd: 'reset-settings' }), enabled: appReady },
+      { type: 'action', name: T('문제 보고', 'Report a problem'), pcOnly: true,
+        desc: T('GitHub 이슈 작성 화면을 엽니다. 버전·Windows·WebView2 정보만 미리 채웁니다(대화 내용은 보내지 않음).',
+          'Opens a new GitHub issue with only version, Windows and WebView2 info filled in (no conversation content).'),
+        label: () => T('GitHub에 쓰기', 'Write on GitHub'), run: () => send({ cmd: 'report-issue' }), enabled: () => !DEMO },
+      { type: 'action', name: T('데이터 폴더', 'Data folder'), pcOnly: true,
+        desc: T('설정과 별명·메모 사본(share.json), 휴대폰 보기 키(cloud.json)가 있는 곳입니다. 다른 PC로 옮길 때는 share.json 을 그 PC의 같은 폴더에 복사하세요. cloud.json 은 남에게 주지 마세요.',
+          'Holds the settings, a copy of nicknames & memos (share.json) and the phone-view key (cloud.json). To move to another PC, copy share.json into the same folder there. Never give cloud.json to anyone.'),
+        label: () => T('열기', 'Open'), run: () => send({ cmd: 'open-data-dir' }), enabled: appReady },
     ],
   },
 ];
+
+/** 화면 언어 바꾸기: 앱이 저장하고 새 언어로 화면을 다시 연다. 견본은 앱이 저장하지 않으므로 주소(?lang=)만 바꿔 다시 연다. */
+function setLanguage(v) {
+  if (v === LANG) return;
+  if (DEMO) {
+    const p = new URLSearchParams(location.search);
+    p.set('lang', v);
+    location.search = p.toString();
+  } else setAppSetting('language', v);
+}
 
 const elem = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -1670,8 +1767,8 @@ const RENDER = {
   number(it, row) {
     const box = elem('div', 'stepper');
     const minus = elem('button', '', '−'), val = elem('span', 'val'), plus = elem('button', '', '+');
-    minus.setAttribute('aria-label', `${it.name} 줄이기`);
-    plus.setAttribute('aria-label', `${it.name} 늘리기`);
+    minus.setAttribute('aria-label', T(`${it.name} 줄이기`, `Decrease ${it.name}`));
+    plus.setAttribute('aria-label', T(`${it.name} 늘리기`, `Increase ${it.name}`));
     minus.addEventListener('click', () => it.set(it.get() - 1));
     plus.addEventListener('click', () => it.set(it.get() + 1));
     box.append(minus, val, plus);
@@ -1718,7 +1815,8 @@ const RENDER = {
   teams(it, row) {
     row.classList.add('stack');
     const box = elem('div', 'teamlist');
-    row.append(elem('div', 'desc', '팀은 작업 폴더의 마지막 두 단계입니다. 이름·카펫 색·순서를 정하면 휴대폰에도 같게 보입니다. 직원 자리는 직원 상세의 ◀ ▶ 로 옮깁니다.'), box);
+    row.append(elem('div', 'desc', T('팀은 작업 폴더의 마지막 두 단계입니다. 이름·카펫 색·순서를 정하면 휴대폰에도 같게 보입니다. 직원 자리는 직원 상세의 ◀ ▶ 로 옮깁니다.',
+      "A team is the last two levels of the working folder. Names, rug colors and order look the same on your phone. Move an employee's seat with ◀ ▶ in their details.")), box);
     let builtKey = null;
     const inputs = new Map();
     return () => {
@@ -1739,8 +1837,8 @@ const RENDER = {
           name.addEventListener('input', () => setTeamPref(team, { name: name.value.trim() }));
           inputs.set(team, name);
           const up = elem('button', 'mini', '▲'), down = elem('button', 'mini', '▼');
-          up.title = '앞으로';
-          down.title = '뒤로';
+          up.title = T('앞으로', 'Move up');
+          down.title = T('뒤로', 'Move down');
           up.disabled = i === 0;
           down.disabled = i === teams.length - 1;
           up.addEventListener('click', () => moveTeam(team, -1));
@@ -1748,18 +1846,18 @@ const RENDER = {
           top.append(sw, name, up, down);
           const colors = elem('div', 'tr-colors');
           const cur = teamPrefs[team]?.color;
-          const auto = elem('button', 'c auto' + (Number.isInteger(cur) ? '' : ' on'), '자동');
+          const auto = elem('button', 'c auto' + (Number.isInteger(cur) ? '' : ' on'), T('자동', 'Auto'));
           auto.addEventListener('click', () => setTeamPref(team, { color: undefined }));
           colors.append(auto, ...RUGS.map((c, ci) => {
             const b = elem('button', 'c' + (cur === ci ? ' on' : ''));
             b.style.background = c;
-            b.title = `색 ${ci + 1}`;
+            b.title = T(`색 ${ci + 1}`, `Color ${ci + 1}`);
             b.addEventListener('click', () => setTeamPref(team, { color: ci }));
             return b;
           }));
           r.append(top, elem('div', 'tr-key mono', team), colors);
           return r;
-        }) : [elem('div', 'desc', '아직 사무실에 팀이 없어요.')]));
+        }) : [elem('div', 'desc', T('아직 사무실에 팀이 없어요.', 'No teams in the office yet.'))]));
       }
       for (const [team, input] of inputs) if (document.activeElement !== input) input.value = teamPrefs[team]?.name || '';
     };
@@ -1769,12 +1867,12 @@ const RENDER = {
     const box = elem('div', 'hours');
     const pick = (set) => {
       const sel = elem('select', 'field');
-      for (let h = 0; h < 24; h++) sel.append(new Option(`${h}시`, String(h)));
+      for (let h = 0; h < 24; h++) sel.append(new Option(T(`${h}시`, `${h}:00`), String(h)));
       sel.addEventListener('change', () => set(Number(sel.value)));
       return sel;
     };
     const from = pick(it.setStart), to = pick(it.setEnd);
-    box.append(from, elem('span', '', '부터'), to, elem('span', '', '까지'));
+    box.append(from, elem('span', '', T('부터', 'to')), to, elem('span', '', T('까지', '')));
     row.append(box);
     return (locked) => {
       from.disabled = to.disabled = locked;
@@ -1805,7 +1903,7 @@ const RENDER = {
         ta.spellcheck = false;
         ta.placeholder = 'const firebaseConfig = {\n  apiKey: "…",\n  authDomain: "….firebaseapp.com",\n  projectId: "…",\n  …\n};';
         err = elem('div', 'pick-note');
-        const save = elem('button', 'act', '저장');
+        const save = elem('button', 'act', T('저장', 'Save'));
         save.addEventListener('click', () => send({ cmd: 'cloud-setup', text: ta.value }));   // 결과는 {type:"cloud-setup", error}
         const saveBar = elem('div', 'btnbar');
         saveBar.append(save);
@@ -1821,11 +1919,12 @@ const RENDER = {
     });
 
     const foot = elem('div', 'btnbar'), note = elem('div', 'desc');
-    const recheck = elem('button', 'act', '다시 확인'), close = elem('button', 'act ghost', '도우미 닫기');
+    const recheck = elem('button', 'act', T('다시 확인', 'Check again')), close = elem('button', 'act ghost', T('도우미 닫기', 'Close wizard'));
     recheck.addEventListener('click', () => requestCloudCheck(true));
     close.addEventListener('click', () => setCloudWizard(false));
     foot.append(recheck, close);
-    row.append(elem('div', 'desc', '구글 Firebase(무료)에 내 칸을 만드는 과정입니다. 단계마다 [열기]로 Firebase 콘솔의 그 화면이 열리고, 마치면 여기서 저절로 ✓ 가 됩니다.'),
+    row.append(elem('div', 'desc', T('구글 Firebase(무료)에 내 칸을 만드는 과정입니다. 단계마다 [열기]로 Firebase 콘솔의 그 화면이 열리고, 마치면 여기서 저절로 ✓ 가 됩니다.',
+      'This sets up your own space on Google Firebase (free). The [Open] button of each step opens that page of the Firebase console, and the step turns ✓ here by itself when done.')),
       list, foot, note);
 
     return () => {
@@ -1860,8 +1959,8 @@ const RENDER = {
         p.body.hidden = !(i === current || (current === 0 && i === 1) || opened.has(i) || p.li.dataset.s === 'warn');
       });
       note.textContent = cloudCheck?.error ? `⚠️ ${cloudCheck.error}`
-        : current < 0 ? '🎉 모두 마쳤어요. 휴대폰으로 QR을 찍어 보세요.'
-        : cloudCheck?.at ? `마지막 확인 ${fmtTime(cloudCheck.at)} — 도우미를 열어 두면 5초마다 다시 확인합니다.` : '';
+        : current < 0 ? T('🎉 모두 마쳤어요. 휴대폰으로 QR을 찍어 보세요.', '🎉 All done. Scan the QR with your phone.')
+        : cloudCheck?.at ? T(`마지막 확인 ${fmtTime(cloudCheck.at)} — 도우미를 열어 두면 5초마다 다시 확인합니다.`, `Last checked ${fmtTime(cloudCheck.at)} — rechecks every 5 s while the wizard is open.`) : '';
     };
   },
 
@@ -1869,20 +1968,21 @@ const RENDER = {
   cloudqr(it, row) {
     row.classList.add('stack');
     const bar = elem('div', 'btnbar');
-    const showBtn = elem('button', 'act'), copyBtn = elem('button', 'act ghost', '주소 복사');
-    const rekeyBtn = elem('button', 'act ghost', '키 새로 만들기'), editBtn = elem('button', 'act ghost', '점검·설정 도우미');
+    const showBtn = elem('button', 'act'), copyBtn = elem('button', 'act ghost', T('주소 복사', 'Copy link'));
+    const rekeyBtn = elem('button', 'act ghost', T('키 새로 만들기', 'New key')), editBtn = elem('button', 'act ghost', T('점검·설정 도우미', 'Check & setup wizard'));
     bar.append(showBtn, copyBtn, rekeyBtn, editBtn);
     const box = elem('div', 'qrbox'), qrEl = elem('div', 'qr'), urlEl = elem('div', 'qrurl mono');
     box.append(qrEl, urlEl, elem('div', 'desc',
-      '휴대폰 카메라로 찍어 여세요(홈 화면에 추가하면 앱처럼 쓸 수 있어요). 주소에 해독 키가 들어 있으니 남에게 보이지 않게 하고, 보였다면 "키 새로 만들기".'));
+      T('휴대폰 카메라로 찍어 여세요(홈 화면에 추가하면 앱처럼 쓸 수 있어요). 주소에 해독 키가 들어 있으니 남에게 보이지 않게 하고, 보였다면 "키 새로 만들기".',
+        'Scan it with your phone camera (add it to the home screen to use it like an app). The link contains the decryption key, so keep it private; if someone saw it, use "New key".')));
     row.append(bar, box);
 
     showBtn.addEventListener('click', () => { cloudQrShown = !cloudQrShown; refreshSettings(); });
     copyBtn.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(cloud.url);
-        copyBtn.textContent = '복사됨';
-        setTimeout(() => { copyBtn.textContent = '주소 복사'; }, 1500);
+        copyBtn.textContent = T('복사됨', 'Copied');
+        setTimeout(() => { copyBtn.textContent = T('주소 복사', 'Copy link'); }, 1500);
       } catch {
         cloudQrShown = true;   // 클립보드를 못 쓰면 주소를 보여 줘서 직접 복사하게
         refreshSettings();
@@ -1894,7 +1994,7 @@ const RENDER = {
     let drawnUrl = null;
     return () => {
       const url = cloud?.url;   // 첫 로그인(익명)이 끝나야 생긴다
-      showBtn.textContent = cloudQrShown ? 'QR 숨기기' : 'QR 보기';
+      showBtn.textContent = cloudQrShown ? T('QR 숨기기', 'Hide QR') : T('QR 보기', 'Show QR');
       showBtn.disabled = copyBtn.disabled = !url;
       box.hidden = !(cloudQrShown && url);
       if (!url || !cloudQrShown || url === drawnUrl) return;
@@ -1938,18 +2038,19 @@ const RENDER = {
         ln.icon.textContent = s.icon;
         ln.name.textContent = displayName(s);
         const orig = noteOf(s.id).nick ? `${s.name} · ` : '';   // 별명이 있으면 원래 세션 이름도 같이
-        ln.meta.textContent = `${orig}${s.team} · ${s.act === 'away' ? '퇴근' : fmtDur(now() - s.last) + ' 전'}`;
+        ln.meta.textContent = `${orig}${s.team} · ${s.act === 'away' ? T('퇴근', 'Gone home') : fmtAgo(now() - s.last)}`;
         ln.label.classList.toggle('away', s.act === 'away');
       });
 
       const count = pickedCount();
-      head.textContent = data.sessions.length ? `선택 ${count} / 최대 ${maxShown}명` : '아직 고를 직원이 없어요';
+      head.textContent = data.sessions.length ? T(`선택 ${count} / 최대 ${maxShown}명`, `Picked ${count} / max ${maxShown}`) : T('아직 고를 직원이 없어요', 'No employees to pick yet');
       head.classList.toggle('full', count >= maxShown);
 
       // 방금 넘치게 고르려 했으면 그 안내를, 아니면 보일 인원보다 많이 체크돼 있을 때(인원을 줄인 경우) 그 안내를
       const blocked = Date.now() < pickNoteUntil;
-      note.textContent = blocked ? `최대 ${maxShown}명만 선택할 수 있습니다.`
-        : count > maxShown ? `${count}명이 체크돼 있어 최근에 일한 ${maxShown}명만 보입니다. 보일 인원을 늘리거나 체크를 줄여 주세요.`
+      note.textContent = blocked ? T(`최대 ${maxShown}명만 선택할 수 있습니다.`, `You can pick up to ${maxShown}.`)
+        : count > maxShown ? T(`${count}명이 체크돼 있어 최근에 일한 ${maxShown}명만 보입니다. 보일 인원을 늘리거나 체크를 줄여 주세요.`,
+          `${count} are checked, so only the ${maxShown} most recently active show. Raise Max employees or uncheck some.`)
         : '';
       note.classList.toggle('blocked', blocked);
       if (blocked && flashedFor !== pickNoteUntil) {   // 거듭 눌러도 눈에 띄게 다시 흔든다
@@ -2042,8 +2143,8 @@ function syncDrawers() {
   if (!open) return;
   const s = !panelEl.hidden ? data.sessions.find((x) => x.id === selectedId) : null;
   drawerTab.querySelector('.arrow').textContent = drawerFolded ? '‹' : '›';
-  drawerTab.querySelector('.lbl').textContent = drawerFolded ? (s ? displayName(s) : selectedId === REPORT_ID && !panelEl.hidden ? '근무 일지' : '설정') : '';
-  drawerTab.title = drawerFolded ? '펼치기' : '접기 — 사무실을 넓게 보기';
+  drawerTab.querySelector('.lbl').textContent = drawerFolded ? (s ? displayName(s) : selectedId === REPORT_ID && !panelEl.hidden ? T('근무 일지', 'Work log') : T('설정', 'Settings')) : '';
+  drawerTab.title = drawerFolded ? T('펼치기', 'Expand') : T('접기 — 사무실을 넓게 보기', 'Fold — see more of the office');
 }
 
 drawerTab.addEventListener('click', () => setDrawerFolded(!drawerFolded));
@@ -2070,12 +2171,12 @@ canvas.addEventListener('mousemove', (e) => {
   const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
   const note = noteOf(s.id);
   add('b', displayName(s));
-  if (note.nick) add('div', `세션 이름: ${s.name}`, 'dim');
+  if (note.nick) add('div', T(`세션 이름: ${s.name}`, `Session name: ${s.name}`), 'dim');
   add('div', `${s.icon} ${a.label} — ${s.text}`);
   if (note.memo) add('div', '📝 ' + clip(note.memo.replace(/\s+/g, ' ').trim(), 90));
   if (s.prompt) add('div', '📨 ' + clip(s.prompt, 90), 'dim');
   (s.interns || []).forEach((it) => add('div', `${it.icon} ${it.name}: ${it.text}`, 'dim'));   // 이름이 이미 "탐색 인턴" 꼴
-  add('div', '클릭하면 자세히 보기', 'dim');
+  add('div', T('클릭하면 자세히 보기', 'Click for details'), 'dim');
   tooltipEl.hidden = false;
   const r = tooltipEl.getBoundingClientRect();
   tooltipEl.style.left = clamp(e.clientX + 14, 4, viewW() - r.width - 4) + 'px';
@@ -2115,12 +2216,15 @@ let noteFor = null;   // 입력칸이 지금 어느 세션 것인지
 
 nickEl.addEventListener('input', () => {
   if (!noteFor) return;
+  if (REMOTE) { queuePhoneEdit(noteFor); return; }   // 휴대폰: PC로 보낸다(PC가 반영해 다시 올리면 보임)
   setNote(noteFor, { nick: nickEl.value.trim() });
   renderPanel();
   refreshSettings();   // 체크 목록의 이름도
 });
 memoEl.addEventListener('input', () => {
-  if (noteFor) setNote(noteFor, { memo: memoEl.value });
+  if (!noteFor) return;
+  if (REMOTE) queuePhoneEdit(noteFor);
+  else setNote(noteFor, { memo: memoEl.value });
 });
 
 function listItem(icon, text, time) {
@@ -2145,14 +2249,15 @@ function fmtTok(n) {
   return (n / 1e6).toFixed(n < 1e7 ? 2 : 1) + 'M';
 }
 const tokIn = (t) => (t.in || 0) + (t.cacheRead || 0) + (t.cacheWrite || 0);   // 모델이 읽은 전체(캐시 포함)
-const fmtWork = (ms) => (ms >= 60000 ? fmtDur(ms) : ms > 0 ? '1분 미만' : '0분');
+const fmtWork = (ms) => (ms >= 60000 ? fmtDur(ms) : ms > 0 ? T('1분 미만', 'under 1m') : T('0분', '0m'));
 
 function todayLines(t) {
-  if (!t) return [elem('div', 'dimline', '오늘 기록이 없어요')];
+  if (!t) return [elem('div', 'dimline', T('오늘 기록이 없어요', 'Nothing recorded today'))];
   const tools = (t.tools || []).slice(0, 4).map((x) => `${x.n} ${x.c}`).join(' · ');
   return [
-    elem('div', '', `⏱️ 일한 시간 ${fmtWork(t.work)} · 💬 지시 ${t.prompts}번`),
-    elem('div', '', `🪙 토큰 입력 ${fmtTok(tokIn(t))} (캐시 읽기 ${fmtTok(t.cacheRead)}) · 출력 ${fmtTok(t.out)}`),
+    elem('div', '', T(`⏱️ 일한 시간 ${fmtWork(t.work)} · 💬 지시 ${t.prompts}번`, `⏱️ Worked ${fmtWork(t.work)} · 💬 ${t.prompts} prompts`)),
+    elem('div', '', T(`🪙 토큰 입력 ${fmtTok(tokIn(t))} (캐시 읽기 ${fmtTok(t.cacheRead)}) · 출력 ${fmtTok(t.out)}`,
+      `🪙 Tokens in ${fmtTok(tokIn(t))} (cache read ${fmtTok(t.cacheRead)}) · out ${fmtTok(t.out)}`)),
     ...(tools ? [elem('div', 'dimline', `🔧 ${tools}`)] : []),
   ];
 }
@@ -2162,9 +2267,12 @@ function renderReport() {
   const sum = (f) => rows.reduce((n, s) => n + f(s.today), 0);
   const maxWork = Math.max(1, ...rows.map((s) => s.today.work));
   const d = new Date();
-  const head = [elem('h2', '', '📊 오늘의 근무 일지'), elem('div', 'dim', `${d.getMonth() + 1}월 ${d.getDate()}일 · 직원 ${rows.length}명 · 인턴 몫 포함`)];
+  const head = [elem('h2', '', T('📊 오늘의 근무 일지', "📊 Today's work log")),
+    elem('div', 'dim', T(`${d.getMonth() + 1}월 ${d.getDate()}일 · 직원 ${rows.length}명 · 인턴 몫 포함`,
+      `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${rows.length} employees · interns included`))];
   const tot = elem('div', 'rtot');
-  for (const [label, value] of [['일한 시간', fmtWork(sum((t) => t.work))], ['지시', `${sum((t) => t.prompts)}번`], ['토큰(입력+출력)', fmtTok(sum((t) => tokIn(t) + t.out))]]) {
+  for (const [label, value] of [[T('일한 시간', 'Work time'), fmtWork(sum((t) => t.work))], [T('지시', 'Prompts'), T(`${sum((t) => t.prompts)}번`, `${sum((t) => t.prompts)}`)],
+    [T('토큰(입력+출력)', 'Tokens (in+out)'), fmtTok(sum((t) => tokIn(t) + t.out))]]) {
     const box = elem('div', '', label);
     box.append(elem('b', '', value));
     tot.append(box);
@@ -2178,13 +2286,15 @@ function renderReport() {
     fill.style.width = `${Math.round((t.work / maxWork) * 100)}%`;
     bar.append(fill);
     const tools = (t.tools || []).slice(0, 3).map((x) => `${x.n} ${x.c}`).join(' · ');
-    row.append(h, bar, elem('div', 'rd', `지시 ${t.prompts}번 · 토큰 ${fmtTok(tokIn(t))}/${fmtTok(t.out)}${tools ? ' · ' + tools : ''}`));
-    row.title = '누르면 이 직원 보기';
+    row.append(h, bar, elem('div', 'rd', T(`지시 ${t.prompts}번 · 토큰 ${fmtTok(tokIn(t))}/${fmtTok(t.out)}`, `${t.prompts} prompts · tokens ${fmtTok(tokIn(t))}/${fmtTok(t.out)}`)
+      + (tools ? ' · ' + tools : '')));
+    row.title = T('누르면 이 직원 보기', 'Click to view this employee');
     row.addEventListener('click', () => selectSession(s.id));
     return row;
   });
-  $('pReport').replaceChildren(...head, tot, ...(list.length ? list : [elem('div', 'dim', '오늘은 아직 일한 직원이 없어요.')]),
-    elem('p', 'rnote', '일한 시간: 지시를 받은 뒤 답을 마칠 때까지(승인 기다림·명령 실행 포함, 30분 넘게 조용한 틈은 뺌). 토큰 입력은 캐시에서 읽은 것을 포함합니다.'));
+  $('pReport').replaceChildren(...head, tot, ...(list.length ? list : [elem('div', 'dim', T('오늘은 아직 일한 직원이 없어요.', 'Nobody has worked today yet.'))]),
+    elem('p', 'rnote', T('일한 시간: 지시를 받은 뒤 답을 마칠 때까지(승인 기다림·명령 실행 포함, 30분 넘게 조용한 틈은 뺌). 토큰 입력은 캐시에서 읽은 것을 포함합니다.',
+      'Work time: from receiving a prompt until the answer is finished (approval waits and running commands included, quiet gaps over 30 min left out). Input tokens include cache reads.')));
 }
 
 function renderPanel() {
@@ -2207,12 +2317,13 @@ function renderPanel() {
   const note = noteOf(s.id);
   $('pName').textContent = displayName(s);
   // 별명을 붙였으면 원래 세션 이름(/rename 이름·자동 제목)을 아래에 남겨 둔다
-  $('pTitle').textContent = note.nick ? `세션 이름: ${s.name}${s.title ? ' · ' + s.title : ''}` : (s.title || '');
+  $('pTitle').textContent = note.nick ? T('세션 이름: ', 'Session name: ') + `${s.name}${s.title ? ' · ' + s.title : ''}` : (s.title || '');
   // 입력칸은 다른 직원으로 바꿨을 때만 채운다(스냅샷마다 채우면 쓰는 도중 글자가 되돌아간다)
   if (noteFor !== s.id) {
     noteFor = s.id;
+    $('pSync').textContent = '';
     nickEl.value = note.nick || '';
-    nickEl.placeholder = `별명 (비우면 "${s.name}")`;
+    nickEl.placeholder = T(`별명 (비우면 "${s.name}")`, `Nickname (empty = "${s.name}")`);
     memoEl.value = note.memo || '';
   }
   const st = $('pState');
@@ -2224,14 +2335,14 @@ function renderPanel() {
   $('pEntry').textContent = entryName(s.entry);
   $('pModel').textContent = s.model || '-';
   $('pBranch').textContent = s.branch || '-';
-  $('pLast').textContent = s.last ? `${fmtTime(s.last)} (${fmtDur(now() - s.last)} 전)` : '-';
-  $('pPrompt').textContent = s.prompt || '(없음)';
+  $('pLast').textContent = s.last ? `${fmtTime(s.last)} (${fmtAgo(now() - s.last)})` : '-';
+  $('pPrompt').textContent = s.prompt || T('(없음)', '(none)');
   $('pToday').replaceChildren(...todayLines(s.today));
   const interns = s.interns || [];
   $('pInternsWrap').hidden = interns.length === 0;
   $('pInterns').replaceChildren(...interns.map((it) => listItem(it.icon, `${it.name}${it.desc ? ' · ' + it.desc : ''} — ${it.text}`)));
   $('pLog').replaceChildren(...(s.recent || []).map((r) => listItem(r.icon, r.text, fmtTime(r.t))));
-  $('pId').textContent = `세션 ID ${s.id}`;
+  $('pId').textContent = T(`세션 ID ${s.id}`, `Session ID ${s.id}`);
 }
 
 // ───────────────────────────── 휴대폰 보기(원격) ─────────────────────────────
@@ -2241,6 +2352,8 @@ function renderPanel() {
 let remoteAt = 0;        // PC가 마지막으로 올린 시각(ms) — 1분마다 생존 신호가 온다
 let remoteError = '';
 let remoteNode = null;   // 데이터베이스에서 받은 현재 값
+let remoteKey = null;    // 해독(그리고 휴대폰에서 고친 별명·메모를 PC로 보낼 때 암호화) 키
+let remoteEdit = false;  // PC가 휴대폰에서 고치기를 허용했는지(PC가 올린 요약의 edit)
 
 const b64ToBytes = (s) => {
   s = s.replace(/-/g, '+').replace(/_/g, '/');
@@ -2262,24 +2375,80 @@ const remoteStale = () => !!remoteAt && (!!remoteOffAt() || Date.now() - remoteA
 
 function remoteLabel() {
   if (remoteError) return `⚠️ ${remoteError}`;
-  if (!remoteAt) return '📡 PC 연결 중…';
+  if (!remoteAt) return T('📡 PC 연결 중…', '📡 Connecting to the PC…');
   const off = remoteOffAt();
-  if (off) return `💤 PC에서 꺼짐 · ${fmtTime(off)} (${fmtDur(Date.now() - off)} 전)`;
+  if (off) return T(`💤 PC에서 꺼짐 · ${fmtTime(off)} (${fmtAgo(Date.now() - off)})`, `💤 Off on the PC · ${fmtTime(off)} (${fmtAgo(Date.now() - off)})`);
   const age = Date.now() - remoteAt;
-  return age < 90000 ? '📡 실시간' : `📡 PC 응답 없음 · ${fmtDur(age)} 전`;   // 생존 신호가 1분마다라 1분 반 넘게 없으면 끊긴 것
+  return age < 90000 ? T('📡 실시간', '📡 Live') : T(`📡 PC 응답 없음 · ${fmtAgo(age)}`, `📡 PC not responding · ${fmtAgo(age)}`);   // 생존 신호가 1분마다라 1분 반 넘게 없으면 끊긴 것
+}
+
+// ── 휴대폰에서 별명·메모 고치기(PC가 허용했을 때) ──
+// 고친 것을 같은 키로 암호화해 inbox/<u> 에 남기면(추가만 가능한 규칙) PC가 몇 초 안에 가져가 반영하고 다시 올린다.
+const bytesToB64 = (b) => btoa(String.fromCharCode(...b));
+const NOTES_ON_PC = T('별명·메모는 PC에서 정합니다', 'Nicknames and memos are set on the PC');
+const phoneEditTimers = new Map();
+
+function applyRemoteEdit() {
+  nickEl.readOnly = memoEl.readOnly = !remoteEdit;
+  nickEl.placeholder = remoteEdit ? T('별명 (PC로 보냅니다)', 'Nickname (sent to the PC)') : NOTES_ON_PC;
+  memoEl.placeholder = remoteEdit ? T('메모 (쓰면 PC로 보냅니다)', 'Memo (sent to the PC as you type)') : NOTES_ON_PC;
+}
+
+function setSync(text) { $('pSync').textContent = text; }
+
+function queuePhoneEdit(id) {
+  if (!remoteEdit || !remoteKey) return;
+  clearTimeout(phoneEditTimers.get(id));
+  setSync(T('✏️ 쓰는 중…', '✏️ Typing…'));
+  phoneEditTimers.set(id, setTimeout(() => sendPhoneEdit(id), 1200));   // 다 쓸 때까지 기다렸다가 한 번에
+}
+
+async function sendPhoneEdit(id) {
+  phoneEditTimers.delete(id);
+  const edit = { id, nick: nickEl.value.trim().slice(0, 30), memo: memoEl.value.slice(0, 2000), t: Date.now() };
+  try {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, remoteKey, new TextEncoder().encode(JSON.stringify(edit))));
+    const res = await fetch(`${remoteLink.db.replace(/\/+$/, '')}/inbox/${encodeURIComponent(remoteLink.u)}.json`,
+      { method: 'POST', body: JSON.stringify({ v: 1, iv: bytesToB64(iv), ct: bytesToB64(ct) }) });
+    setSync(res.ok ? T('📤 PC로 보냈어요 — PC가 켜져 있으면 몇 초 뒤 반영돼요', '📤 Sent to the PC — applied in a few seconds if the PC is on')
+      : T(`⚠️ 보내지 못했어요(${res.status}) — PC 설정 도우미에서 규칙을 새로 붙여 넣어 주세요`, `⚠️ Couldn't send (${res.status}) — paste the new rules in the PC setup wizard`));
+  } catch {
+    setSync(T('⚠️ 보내지 못했어요 — 인터넷 연결을 확인해 주세요', "⚠️ Couldn't send — check your internet connection"));
+  }
+}
+
+const RECONNECTING = T('연결이 끊겨 다시 잇는 중…', 'Disconnected, reconnecting…');
+
+/**
+ * PC가 요약에 실어 보낸 화면 언어(lang)를 따른다: 지금과 다르면 이 기기에 저장하고 다시 연다(true).
+ * lang 이 없는 예전 PC 프로그램이거나 주소에 ?lang= 을 직접 붙였으면 그대로. 저장이 안 되는 기기도 그대로(다시 열어도 같아서 끝없이 반복되므로).
+ */
+function followPcLanguage(lang) {
+  if ((lang !== 'en' && lang !== 'ko') || lang === LANG || params.has('lang')) return false;
+  try {
+    localStorage.setItem(LANG_KEY, lang);
+    if (localStorage.getItem(LANG_KEY) !== lang) return false;
+  } catch {
+    return false;
+  }
+  location.reload();
+  return true;
 }
 
 async function startRemote() {
   if (!remoteLink) {
-    remoteError = '이 기기에 연결 정보가 없어요 — PC의 Claude Office ⚙️ → 휴대폰에서 보기 → QR 보기를 찍어 주세요';
+    remoteError = T('이 기기에 연결 정보가 없어요 — PC의 Claude Office ⚙️ → 휴대폰에서 보기 → QR 보기를 찍어 주세요',
+      'No connection info on this device — scan the QR from Claude Office on your PC (⚙️ → Phone view → Show QR)');
     refreshHud();
     return;
   }
   let key;
   try {
-    key = await crypto.subtle.importKey('raw', b64ToBytes(remoteLink.k), 'AES-GCM', false, ['decrypt']);
+    key = await crypto.subtle.importKey('raw', b64ToBytes(remoteLink.k), 'AES-GCM', false, ['decrypt', 'encrypt']);
+    remoteKey = key;
   } catch {
-    remoteError = '주소의 키가 잘못됐어요 — PC에서 QR을 다시 찍어 주세요';
+    remoteError = T('주소의 키가 잘못됐어요 — PC에서 QR을 다시 찍어 주세요', 'The key in the link is invalid — scan the QR on the PC again');
     refreshHud();
     return;
   }
@@ -2292,7 +2461,7 @@ async function startRemote() {
     if (path === '/' || path === '') remoteNode = type === 'patch' ? { ...(remoteNode || {}), ...value } : value;
     else remoteNode = { ...(remoteNode || {}), [path.replace(/^\//, '').split('/')[0]]: value };
     if (!remoteNode || !remoteNode.ct) {
-      remoteError = 'PC가 아직 아무것도 올리지 않았어요 — PC에서 휴대폰 보기를 켜 주세요';
+      remoteError = T('PC가 아직 아무것도 올리지 않았어요 — PC에서 휴대폰 보기를 켜 주세요', 'The PC has not uploaded anything yet — turn on Phone view on the PC');
       refreshHud();
       return;
     }
@@ -2300,22 +2469,24 @@ async function startRemote() {
       const p = remoteNode;
       const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(p.iv) }, key, b64ToBytes(p.ct)));
       const obj = JSON.parse(new TextDecoder().decode(p.z ? await gunzip(plain) : plain));
+      if (followPcLanguage(obj.lang)) return;
       remoteShare = obj.share || {};
+      if (remoteEdit !== (obj.edit === true)) { remoteEdit = obj.edit === true; applyRemoteEdit(); }
       officeName = String(remoteShare.office || '').trim();
       remoteAt = p.t || Date.now();
       remoteError = '';
       onSnapshot(obj.snap);
     } catch {
-      remoteError = '해독하지 못했어요 — PC에서 키를 새로 만들었다면 QR을 다시 찍어 주세요';
+      remoteError = T('해독하지 못했어요 — PC에서 키를 새로 만들었다면 QR을 다시 찍어 주세요', "Couldn't decrypt — if you made a new key on the PC, scan the QR again");
       refreshHud();
     }
   };
 
   es.addEventListener('put', (e) => apply('put', e.data));
   es.addEventListener('patch', (e) => apply('patch', e.data));
-  es.addEventListener('cancel', () => { remoteError = '읽을 권한이 없어요 — 데이터베이스 규칙을 확인해 주세요'; refreshHud(); });
-  es.addEventListener('error', () => { if (!remoteError) { remoteError = '연결이 끊겨 다시 잇는 중…'; refreshHud(); } });   // EventSource 가 알아서 다시 잇는다
-  es.addEventListener('open', () => { if (remoteError.startsWith('연결이 끊겨')) { remoteError = ''; refreshHud(); } });
+  es.addEventListener('cancel', () => { remoteError = T('읽을 권한이 없어요 — 데이터베이스 규칙을 확인해 주세요', 'No permission to read — check the database rules'); refreshHud(); });
+  es.addEventListener('error', () => { if (!remoteError) { remoteError = RECONNECTING; refreshHud(); } });   // EventSource 가 알아서 다시 잇는다
+  es.addEventListener('open', () => { if (remoteError === RECONNECTING) { remoteError = ''; refreshHud(); } });
   setInterval(refreshHud, 5000);   // "N분 전"·끊김 표시를 갱신
 }
 
@@ -2325,27 +2496,27 @@ function startDemo() {
   const base = Date.now();
   const people = [
     // 견본은 가상의 회사·프로젝트(공개 스크린샷에도 쓰인다)
-    { id: 'demo-a1', name: '장바구니 개선', team: 'acme/web-shop', title: '장바구니 수량 버그 수정' },
-    { id: 'demo-a2', name: '디자인 정리', team: 'acme/web-shop', title: '버튼 색상 통일' },
-    { id: 'demo-b1', name: '결제 연동', team: 'acme/api-server', title: '결제 응답 재시도 처리' },
-    { id: 'demo-b2', name: '로그 점검', team: 'acme/api-server', title: '오류 로그 분석' },
-    { id: 'demo-b3', name: '아주아주긴세션이름이라서잘려야하는세션', team: 'acme/api-server' },
-    { id: 'demo-c1', name: '사무실 만들기', team: 'toy/pixel-office', title: 'Claude Pixel Office' },
-    { id: 'demo-c2', name: '어제 작업', team: 'toy/pixel-office' },
+    { id: 'demo-a1', name: T('장바구니 개선', 'Cart fixes'), team: 'acme/web-shop', title: T('장바구니 수량 버그 수정', 'Fix the cart quantity bug') },
+    { id: 'demo-a2', name: T('디자인 정리', 'Design cleanup'), team: 'acme/web-shop', title: T('버튼 색상 통일', 'Unify button colors') },
+    { id: 'demo-b1', name: T('결제 연동', 'Payments'), team: 'acme/api-server', title: T('결제 응답 재시도 처리', 'Retry payment responses') },
+    { id: 'demo-b2', name: T('로그 점검', 'Log review'), team: 'acme/api-server', title: T('오류 로그 분석', 'Analyze error logs') },
+    { id: 'demo-b3', name: T('아주아주긴세션이름이라서잘려야하는세션', 'AVeryVeryLongSessionNameThatGetsCut'), team: 'acme/api-server' },
+    { id: 'demo-c1', name: T('사무실 만들기', 'Building the office'), team: 'toy/pixel-office', title: 'Claude Pixel Office' },
+    { id: 'demo-c2', name: T('어제 작업', "Yesterday's work"), team: 'toy/pixel-office' },
   ];
   const script = [
-    ['thinking', '💭', '생각 중'],
-    ['reading', '📄', 'CartService.cs 읽는 중'],
-    ['writing', '✏️', 'PaymentApi.cs 수정 중'],
-    ['running', '⌨️', '빌드하는 중'],
-    ['searching', '🔍', "'ProcessOrder' 찾는 중"],
-    ['browsing', '🌐', "'재시도 정책' 검색 중"],
-    ['delegating', '👥', '인턴에게: 결제 모듈 구조 분석'],
-    ['waiting', '✋', '승인해 주세요 · 빌드하는 중'],
-    ['talking', '💬', '답변 쓰는 중'],
-    ['asking', '✋', '질문에 답해주세요!'],
-    ['planning', '📋', '할 일 정리 중'],
-    ['idle', '☕', '대기 중'],
+    ['thinking', '💭', T('생각 중', 'Thinking')],
+    ['reading', '📄', T('CartService.cs 읽는 중', 'Reading CartService.cs')],
+    ['writing', '✏️', T('PaymentApi.cs 수정 중', 'Editing PaymentApi.cs')],
+    ['running', '⌨️', T('빌드하는 중', 'Building')],
+    ['searching', '🔍', T("'ProcessOrder' 찾는 중", "Finding 'ProcessOrder'")],
+    ['browsing', '🌐', T("'재시도 정책' 검색 중", "Searching 'retry policy'")],
+    ['delegating', '👥', T('인턴에게: 결제 모듈 구조 분석', 'To intern: map the payment module')],
+    ['waiting', '✋', T('승인해 주세요 · 빌드하는 중', 'Approve? · Building')],
+    ['talking', '💬', T('답변 쓰는 중', 'Writing an answer')],
+    ['asking', '✋', T('질문에 답해주세요!', 'Got a question!')],
+    ['planning', '📋', T('할 일 정리 중', 'Sorting to-dos')],
+    ['idle', '☕', T('대기 중', 'Standing by')],
     ['sleeping', '💤', 'zzz'],
   ];
 
@@ -2356,7 +2527,7 @@ function startDemo() {
       now: t,
       hooks: { state: 'on', last: t - 30000 },
       sessions: people.map((p, i) => {
-        const [act, icon, text] = p.id === 'demo-c2' ? ['away', '🚪', '퇴근'] : script[(step + i * 2) % script.length];
+        const [act, icon, text] = p.id === 'demo-c2' ? ['away', '🚪', T('퇴근', 'Gone home')] : script[(step + i * 2) % script.length];
         const delegating = act === 'delegating';
         return {
           ...p,
@@ -2368,15 +2539,17 @@ function startDemo() {
           since: t - ((t - base) % 4000) - i * 47000,
           last: t - 1500,
           started: base - (people.length - i) * 600000,
-          prompt: '결제 실패 시 재시도 로직을 점검하고, 실패한 요청은 로그에 남겨줘',
+          prompt: T('결제 실패 시 재시도 로직을 점검하고, 실패한 요청은 로그에 남겨줘', 'Check the retry logic for failed payments and log the failed requests'),
           recent: [
             { t: t - 4000, icon, text },
-            { t: t - 9000, icon: '📄', text: 'Program.cs 읽는 중' },
-            { t: t - 15000, icon: '📨', text: '지시: 로그 확인해줘' },
+            { t: t - 9000, icon: '📄', text: T('Program.cs 읽는 중', 'Reading Program.cs') },
+            { t: t - 15000, icon: '📨', text: T('지시: 로그 확인해줘', 'Prompt: check the logs') },
           ],
           interns: delegating ? [
-            { id: p.id + '-i1', name: '일반 인턴', desc: '결제 모듈 구조 분석', act: 'reading', icon: '📄', text: 'PaymentClient.cs 읽는 중', since: t - 3000 },
-            { id: p.id + '-i2', name: '탐색 인턴', desc: '호출부 찾기', act: step % 2 ? 'idle' : 'searching', icon: step % 2 ? '✅' : '🔍', text: step % 2 ? '다 했어요!' : "'ProcessOrderAsync' 찾는 중", since: t - 2000 },
+            { id: p.id + '-i1', name: T('일반 인턴', 'General intern'), desc: T('결제 모듈 구조 분석', 'Map the payment module'), act: 'reading', icon: '📄',
+              text: T('PaymentClient.cs 읽는 중', 'Reading PaymentClient.cs'), since: t - 3000 },
+            { id: p.id + '-i2', name: T('탐색 인턴', 'Explore intern'), desc: T('호출부 찾기', 'Find the callers'), act: step % 2 ? 'idle' : 'searching', icon: step % 2 ? '✅' : '🔍',
+              text: step % 2 ? T('다 했어요!', 'All done!') : T("'ProcessOrderAsync' 찾는 중", "Finding 'ProcessOrderAsync'"), since: t - 2000 },
           ] : [],
           today: p.id === 'demo-c2' ? null : {   // 견본 근무 일지(직원마다 다르게)
             work: (95 - i * 13) * 60000, prompts: 14 - i, in: 41000 + i * 3000, out: 52000 - i * 6000,
@@ -2405,7 +2578,7 @@ if (REMOTE) {
   document.body.classList.add('remote');
   btnPin.hidden = true;
   nickEl.readOnly = memoEl.readOnly = true;
-  nickEl.placeholder = memoEl.placeholder = '별명·메모는 PC에서 정합니다';
+  nickEl.placeholder = memoEl.placeholder = NOTES_ON_PC;
   startRemote();
   if (listView) applyWidget();
   // 설치형 앱(주소창 없이 열기)에 필요. 끊겼을 때 마지막 화면 파일을 보여 주는 정도만 한다(sw.js)

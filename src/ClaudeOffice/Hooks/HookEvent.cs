@@ -15,7 +15,8 @@ internal sealed record HookEvent(
     string? ToolText,          // 말풍선 문구(기록 파일의 도구 호출과 같은 규칙으로 만든다 → 짝 맞추기에도 쓴다)
     string? NotificationType,  // permission_prompt, idle_prompt, elicitation_dialog ...
     string? Reason,            // SessionEnd 이유 : clear, resume, logout, prompt_input_exit, other
-    DateTime Utc)
+    DateTime Utc,
+    string? Command = null)    // 명령 실행(Bash·PowerShell) 승인 요청이면 그 명령 — 승인 뒤 실행 중인지 알아보는 데 쓴다(ApprovalProbe)
 {
     public static HookEvent? TryParse(ReadOnlyMemory<byte> body, DateTime utc)
     {
@@ -38,7 +39,8 @@ internal sealed record HookEvent(
                 tool != null ? ToolCatalog.Describe(tool, input) : null,
                 ToolCatalog.Str(r, "notification_type"),
                 ToolCatalog.Str(r, "reason"),
-                utc);
+                utc,
+                tool is "Bash" or "PowerShell" ? ToolCatalog.Str(input, "command") : null);
         }
         catch (JsonException)
         {

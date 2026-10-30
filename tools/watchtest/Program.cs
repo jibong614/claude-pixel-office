@@ -3,9 +3,16 @@
 //                (settings.json 을 건드리지 않으므로, 훅은 claude --settings <파일> 이나 curl 로 직접 보내 시험한다)
 //   --setup install|uninstall : CLAUDE_CONFIG_DIR 아래 settings.json 에 훅 넣기/빼기 시험(실제 설정 말고 복사본 폴더를 가리킬 것)
 //   --phrases 60 : 실제 대화 기록의 최근 도구 호출 60개에 말풍선 규칙을 적용해 "말풍선 ← 원래 설명"으로 출력(한글화 점검)
+//   --en         : (어느 것과도 함께) 영어 화면 문구로 — 예) --phrases 60 --en
 using System.Text.Json;
 using ClaudeOffice.Hooks;
 using ClaudeOffice.Monitoring;
+
+if (args.Contains("--en"))
+{
+    L.En = true;
+    args = args.Where(a => a != "--en").ToArray();
+}
 
 if (args.Length >= 1 && args[0] == "--phrases")
 {

@@ -58,7 +58,7 @@ internal static partial class TranscriptParser
         if (Bool(r, "isMeta")) return;   // 스킬 본문 등 사람이 쓰지 않은 메시지
         if (Bool(r, "isCompactSummary"))
         {
-            s.Log(ts, "📦", "대화 압축 후 이어서 진행");
+            s.Log(ts, "📦", L.T("대화 압축 후 이어서 진행", "Continuing after compaction"));
             return;
         }
         if (!r.TryGetProperty("message", out var msg) || !msg.TryGetProperty("content", out var content)) return;
@@ -85,7 +85,7 @@ internal static partial class TranscriptParser
                         var body = TextOf(b, "content") ?? "";
                         var rejected = body.Contains("doesn't want to proceed", StringComparison.OrdinalIgnoreCase)
                                        || body.Contains("rejected", StringComparison.OrdinalIgnoreCase);
-                        s.Log(ts, rejected ? "🚫" : "❌", $"{p.Text} — {(rejected ? "거절됨" : "실패")}");
+                        s.Log(ts, rejected ? "🚫" : "❌", $"{p.Text} — {(rejected ? L.T("거절됨", "rejected") : L.T("실패", "failed"))}");
                     }
                     break;
                 case "text":
@@ -96,7 +96,7 @@ internal static partial class TranscriptParser
 
         // 결과를 받았고 더 기다릴 도구가 없으면 다음 행동을 고민하는 중
         if (gotResult && s.Pending.Count == 0)
-            s.SetBase(Activity.Thinking, "💭", "생각 중", ts);
+            s.SetBase(Activity.Thinking, "💭", L.T("생각 중", "Thinking"), ts);
     }
 
     private static void OnPrompt(TranscriptState s, string? raw, DateTime ts)
@@ -106,8 +106,8 @@ internal static partial class TranscriptParser
         if (raw.TrimStart().StartsWith("[Request interrupted", StringComparison.Ordinal))
         {
             s.Pending.Clear();
-            s.SetBase(Activity.Idle, "⏹️", "중단됨", ts);
-            s.Log(ts, "⏹️", "작업이 중단됨");
+            s.SetBase(Activity.Idle, "⏹️", L.T("중단됨", "Stopped"), ts);
+            s.Log(ts, "⏹️", L.T("작업이 중단됨", "Interrupted"));
             return;
         }
 
@@ -115,8 +115,8 @@ internal static partial class TranscriptParser
         if (clean is null) return;   // 슬래시 명령·시스템 알림처럼 태그만 있는 메시지
 
         s.LastPrompt = clean;
-        s.SetBase(Activity.Thinking, "💭", "생각 중", ts);
-        s.Log(ts, "📨", "지시: " + ToolCatalog.Clip(clean, 60));
+        s.SetBase(Activity.Thinking, "💭", L.T("생각 중", "Thinking"), ts);
+        s.Log(ts, "📨", L.T("지시: ", "Prompt: ") + ToolCatalog.Clip(clean, 60));
     }
 
     private static void OnAssistant(TranscriptState s, JsonElement r, DateTime ts)
@@ -129,8 +129,8 @@ internal static partial class TranscriptParser
         if (Bool(r, "isApiErrorMessage"))
         {
             s.Pending.Clear();
-            s.SetBase(Activity.Idle, "⚠️", "오류로 멈춤", ts);
-            s.Log(ts, "⚠️", "API 오류로 멈춤");
+            s.SetBase(Activity.Idle, "⚠️", L.T("오류로 멈춤", "Stopped by an error"), ts);
+            s.Log(ts, "⚠️", L.T("API 오류로 멈춤", "Stopped by an API error"));
             return;
         }
 
@@ -143,12 +143,12 @@ internal static partial class TranscriptParser
                 {
                     case "thinking":
                     case "redacted_thinking":
-                        s.SetBase(Activity.Thinking, "💭", "생각 중", ts);
+                        s.SetBase(Activity.Thinking, "💭", L.T("생각 중", "Thinking"), ts);
                         break;
 
                     case "text":
                         if (Str(b, "text") != null)
-                            s.SetBase(Activity.Talking, "💬", "답변 쓰는 중", ts);
+                            s.SetBase(Activity.Talking, "💬", L.T("답변 쓰는 중", "Writing an answer"), ts);
                         break;
 
                     case "tool_use":
@@ -181,12 +181,12 @@ internal static partial class TranscriptParser
         if (!hasToolUse && stop is "end_turn" or "stop_sequence" or "max_tokens" or "refusal")
         {
             s.Pending.Clear();
-            s.SetBase(Activity.Idle, "☕", "대기 중", ts);
+            s.SetBase(Activity.Idle, "☕", L.T("대기 중", "Standing by"), ts);
             var mid = Str(msg, "id");
             if (mid is null || mid != s.LastCompletedMessageId)
             {
                 s.LastCompletedMessageId = mid;
-                s.Log(ts, "✅", "응답 완료");
+                s.Log(ts, "✅", L.T("응답 완료", "Reply finished"));
             }
         }
     }
@@ -196,7 +196,7 @@ internal static partial class TranscriptParser
         if (Str(r, "subtype") == "compact_boundary")
         {
             if (ts > s.LastEventUtc) s.LastEventUtc = ts;
-            s.Log(ts, "📦", "대화 압축");
+            s.Log(ts, "📦", L.T("대화 압축", "Conversation compacted"));
         }
     }
 

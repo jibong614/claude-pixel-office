@@ -91,7 +91,7 @@ internal static class SnapshotBuilder
             var (ia, ii, itx, isince) = View(it, now, hooksOn);
             bool finished = ia is Activity.Idle or Activity.Sleeping or Activity.Away;
             if (finished && now - it.LastActivityUtc > InternLinger) continue;
-            if (finished) { ia = Activity.Idle; ii = "✅"; itx = "다 했어요!"; }
+            if (finished) { ia = Activity.Idle; ii = "✅"; itx = L.T("다 했어요!", "All done!"); }
             if (ia is Activity.Waiting && it.Wait != null) internWaitSince ??= isince;
             internDtos.Add(new InternDto(it.Id, ToolCatalog.AgentName(it.AgentType), it.Description,
                 Lower(ia), ii, itx, Ms(isince)));
@@ -99,7 +99,7 @@ internal static class SnapshotBuilder
 
         // 인턴의 승인 창도 사람이 응답할 곳은 이 세션 창이므로 직원이 대신 손을 든다
         if (internWaitSince is { } iws && act is not (Activity.Asking or Activity.Waiting or Activity.Away))
-            (act, icon, text, since) = (Activity.Waiting, "✋", "인턴 일에 승인해 주세요", iws);
+            (act, icon, text, since) = (Activity.Waiting, "✋", L.T("인턴 일에 승인해 주세요", "Intern needs approval"), iws);
 
         return new EmployeeDto(
             Id: s.Id,
@@ -127,11 +127,11 @@ internal static class SnapshotBuilder
     private static (Activity, string, string, DateTime) View(TranscriptState s, DateTime now, bool hooksOn)
     {
         if (s.EndedUtc != default && s.EndedUtc >= s.LastActivityUtc)
-            return (Activity.Away, "🚪", "퇴근", s.EndedUtc);   // 세션을 닫음(SessionEnd 훅). 다시 이어서 대화하면 풀린다
+            return (Activity.Away, "🚪", L.T("퇴근", "Gone home"), s.EndedUtc);   // 세션을 닫음(SessionEnd 훅). 다시 이어서 대화하면 풀린다
 
         var quiet = now - s.LastActivityUtc;
         if (quiet > ToAway)
-            return (Activity.Away, "🚪", "퇴근", s.LastActivityUtc);
+            return (Activity.Away, "🚪", L.T("퇴근", "Gone home"), s.LastActivityUtc);
 
         if (s.Wait is { } w)   // 훅이 알려 준 확실한 대기(승인 창·입력 요청)
             return (w.Kind == WaitKind.Input ? Activity.Asking : Activity.Waiting, "✋", w.Text, w.Utc);
@@ -148,13 +148,13 @@ internal static class SnapshotBuilder
             icon = p.Icon;
             text = p.Text;
             since = p.StartUtc;
-            if (s.Pending.Count > 1) text += $" 외 {s.Pending.Count - 1}건";
+            if (s.Pending.Count > 1) text += L.T($" 외 {s.Pending.Count - 1}건", $" +{s.Pending.Count - 1} more");
 
             if (!hooksOn && ToolCatalog.IsEditTool(p.Name) && now - p.StartUtc > EditPendingAsWaiting)
             {
                 act = Activity.Waiting;
                 icon = "✋";
-                text = "승인 기다리는 중?";
+                text = L.T("승인 기다리는 중?", "Needs approval?");
             }
         }
         else
@@ -172,10 +172,10 @@ internal static class SnapshotBuilder
             return (Activity.Sleeping, "💤", "zzz", s.LastActivityUtc + IdleToSleep);
 
         if (!toolRunning && act is Activity.Thinking or Activity.Talking && quiet > IdleToSleep)
-            return (Activity.Sleeping, "💤", "응답 없음", s.LastActivityUtc);   // 창을 닫았거나 멈춤
+            return (Activity.Sleeping, "💤", L.T("응답 없음", "Not responding"), s.LastActivityUtc);   // 창을 닫았거나 멈춤
 
         if (toolRunning && quiet > BusyTooLong)
-            text += " · 오래 걸리는 중";
+            text += L.T(" · 오래 걸리는 중", " · taking long");
 
         return (act, icon, text, since);
     }
@@ -202,7 +202,7 @@ internal static class SnapshotBuilder
         if (s.CustomTitle != null) return s.CustomTitle;
         if (s.AgentName != null) return s.AgentName;
         if (s.AiTitle != null) return ToolCatalog.Clip(s.AiTitle, 18);
-        return "세션 " + s.Id[..Math.Min(8, s.Id.Length)];
+        return L.T("세션 ", "Session ") + s.Id[..Math.Min(8, s.Id.Length)];
     }
 
     /// <summary>
@@ -212,12 +212,12 @@ internal static class SnapshotBuilder
     private static string TeamOf(TranscriptState s)
     {
         if (string.IsNullOrWhiteSpace(s.Cwd))
-            return Path.GetFileName(Path.GetDirectoryName(s.FilePath)) ?? "기타";
+            return Path.GetFileName(Path.GetDirectoryName(s.FilePath)) ?? L.T("기타", "Other");
 
         var parts = s.Cwd.Replace('/', '\\').TrimEnd('\\').Split('\\', StringSplitOptions.RemoveEmptyEntries);
         return parts.Length switch
         {
-            0 => "기타",
+            0 => L.T("기타", "Other"),
             1 => parts[0],
             _ => $"{parts[^2]}/{parts[^1]}",
         };

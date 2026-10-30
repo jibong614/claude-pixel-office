@@ -8,6 +8,16 @@
         ".write": "auth != null && auth.uid === $uid",
         ".validate": "newData.hasChildren(['v', 't', 'iv', 'ct']) && newData.child('ct').isString() && newData.child('ct').val().length < 500000"
       }
+    },
+    "inbox": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "$msg": {
+          ".write": "!data.exists() && newData.exists()",
+          ".validate": "newData.hasChildren(['iv', 'ct']) && newData.child('iv').isString() && newData.child('ct').isString() && newData.child('ct').val().length < 6000"
+        }
+      }
     }
   }
 }

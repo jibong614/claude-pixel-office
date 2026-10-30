@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
+using ClaudeOffice.Monitoring;
 using Forms = System.Windows.Forms;
 
 namespace ClaudeOffice;
@@ -13,15 +14,17 @@ namespace ClaudeOffice;
 internal sealed class TrayIcon : IDisposable
 {
     private readonly Forms.NotifyIcon _icon;
+    private readonly Forms.ToolStripItem _openItem, _exitItem;
     private bool _hintShown;
 
     public TrayIcon(Action open, Action exit)
     {
         var menu = new Forms.ContextMenuStrip();
-        var openItem = menu.Items.Add("열기", null, (_, _) => open());
-        openItem.Font = new System.Drawing.Font(openItem.Font, System.Drawing.FontStyle.Bold);   // 기본 동작
+        _openItem = menu.Items.Add("", null, (_, _) => open());
+        _openItem.Font = new System.Drawing.Font(_openItem.Font, System.Drawing.FontStyle.Bold);   // 기본 동작
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("끝내기", null, (_, _) => exit());
+        _exitItem = menu.Items.Add("", null, (_, _) => exit());
+        ApplyLanguage();
 
         _icon = new Forms.NotifyIcon
         {
@@ -34,6 +37,13 @@ internal sealed class TrayIcon : IDisposable
         _icon.BalloonTipClicked += (_, _) => (_onClick ?? open)();
     }
 
+    /// <summary>메뉴 글을 지금 화면 언어로(언어를 바꾸면 다시 부른다).</summary>
+    public void ApplyLanguage()
+    {
+        _openItem.Text = L.T("열기", "Open");
+        _exitItem.Text = L.T("끝내기", "Exit");
+    }
+
     /// <summary>마우스를 올렸을 때 보일 글(창 제목과 같게 — "(✋2) 우리 팀 사무실 v1.0.6"). 63자 제한.</summary>
     public void SetText(string text) => _icon.Text = text.Length <= 63 ? text : text[..62] + "…";
 
@@ -43,7 +53,8 @@ internal sealed class TrayIcon : IDisposable
         if (_hintShown) return;
         _hintShown = true;
         _onClick = null;
-        _icon.ShowBalloonTip(4000, "Claude Office", "알림 영역에서 계속 실행 중입니다(휴대폰 보기도 계속). 끝내려면 🏢 아이콘 오른쪽 클릭 → 끝내기", Forms.ToolTipIcon.Info);
+        _icon.ShowBalloonTip(4000, "Claude Office", L.T("알림 영역에서 계속 실행 중입니다(휴대폰 보기도 계속). 끝내려면 🏢 아이콘 오른쪽 클릭 → 끝내기",
+                                                        "Still running in the notification area (phone view too). To quit, right-click the 🏢 icon → Exit"), Forms.ToolTipIcon.Info);
     }
 
     private Action? _onClick;

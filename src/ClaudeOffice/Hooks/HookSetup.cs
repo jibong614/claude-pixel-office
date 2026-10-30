@@ -86,7 +86,9 @@ internal static class HookSetup
     }
 
     /// <summary>확인 창에 보일 설명: 어떤 셸로 무엇을 써서 보내는지.</summary>
-    public static string ShellDescription => FindGitBash() != null ? "Git Bash의 curl 사용" : "Git Bash가 없어 PowerShell 사용";
+    public static string ShellDescription => FindGitBash() != null
+        ? L.T("Git Bash의 curl 사용", "uses curl in Git Bash")
+        : L.T("Git Bash가 없어 PowerShell 사용", "no Git Bash, uses PowerShell");
 
     /// <summary>훅이 모두 들어 있는지. 감시 루프가 몇 초마다 부르므로 파일이 바뀌었을 때만 다시 읽는다.</summary>
     public static bool IsInstalled()
@@ -116,7 +118,7 @@ internal static class HookSetup
         var (root, fmt) = Load();
         if (root["hooks"] is not JsonObject hooks)
         {
-            if (root["hooks"] != null) throw new InvalidDataException("settings.json 의 hooks 항목 형식을 알 수 없습니다.");
+            if (root["hooks"] != null) throw new InvalidDataException(L.T("settings.json 의 hooks 항목 형식을 알 수 없습니다.", "The hooks entry in settings.json has an unknown format."));
             hooks = new JsonObject();
             root["hooks"] = hooks;
         }
@@ -127,7 +129,7 @@ internal static class HookSetup
         {
             if (hooks[ev] is not JsonArray groups)
             {
-                if (hooks[ev] != null) throw new InvalidDataException($"settings.json 의 hooks.{ev} 형식을 알 수 없습니다.");
+                if (hooks[ev] != null) throw new InvalidDataException(L.T($"settings.json 의 hooks.{ev} 형식을 알 수 없습니다.", $"hooks.{ev} in settings.json has an unknown format."));
                 groups = new JsonArray();
                 hooks[ev] = groups;
             }
@@ -189,7 +191,7 @@ internal static class HookSetup
 
         // 주석이 있는 파일은 다시 쓰면 주석이 사라지므로 엄격하게 읽고, 안 되면 손대지 않는다
         if (JsonNode.Parse(text) is not JsonObject obj)
-            throw new InvalidDataException("settings.json 이 JSON 객체가 아닙니다.");
+            throw new InvalidDataException(L.T("settings.json 이 JSON 객체가 아닙니다.", "settings.json is not a JSON object."));
         return (obj, new TextFormat(text.Contains("\r\n"), text.EndsWith('\n')));
     }
 

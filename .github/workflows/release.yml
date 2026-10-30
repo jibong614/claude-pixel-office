@@ -45,6 +45,8 @@ jobs:
           Copy-Item -Recurse publish/Assets $name
           Copy-Item LICENSE $name
           Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
+          # 앱 안 업데이트가 받은 zip 이 깨지거나 바뀌지 않았는지 대조하는 SHA-256(16진수 소문자 한 줄)
+          (Get-FileHash -Algorithm SHA256 "$name.zip").Hash.ToLowerInvariant() | Set-Content -NoNewline -Encoding ascii "$name.zip.sha256"
           "ZIP=$name.zip" >> $env:GITHUB_ENV
 
       - name: 릴리스에 올리기
@@ -54,9 +56,9 @@ jobs:
         run: |
           gh release view $env:TAG *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $env:TAG $env:ZIP --clobber
+            gh release upload $env:TAG $env:ZIP "$env:ZIP.sha256" --clobber
           } else {
             $ver = $env:TAG.TrimStart('v')
-            gh release create $env:TAG $env:ZIP --title "Claude Pixel Office $ver" --generate-notes `
+            gh release create $env:TAG $env:ZIP "$env:ZIP.sha256" --title "Claude Pixel Office $ver" --generate-notes `
               --notes "바뀐 내용: [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/docs/CHANGELOG.md)"
           }

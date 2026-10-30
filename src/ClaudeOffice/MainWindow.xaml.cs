@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private readonly CloudSync _cloud = new(App.DataDir);
     private readonly Notifier _notifier = new();
     private readonly UpdateChecker _updates = new();
+    private readonly Updater _updater = new();
     private readonly TrayIcon? _tray;
     private bool _pageReady;
     private bool _exiting, _cleanedUp;
@@ -60,6 +61,10 @@ public partial class MainWindow : Window
         {
             _tray = new TrayIcon(ShowFromTray, ExitApp);
             _tray.SetText(Title);
+            if (App.Updated)
+                _tray.Notify(L.T($"{App.Version} 버전으로 업데이트했어요", $"Updated to {App.Version}"),
+                             L.T("바뀐 내용은 ⚙️ → 정보 → 버전에서 GitHub 릴리스로", "See what's new: ⚙️ → About → Version (GitHub release)"),
+                             silent: true, onClick: ShowFromTray);
         }
 
         Loaded += OnLoaded;   // 숨긴 채 시작하면 처음 열 때 불린다(화면 WebView2 는 그때 준비)
@@ -138,10 +143,13 @@ public partial class MainWindow : Window
             });
         };
         _cloud.StatusChanged += json => Dispatcher.InvokeAsync(() => Post(json));
+        _cloud.NotesFromPhone += edits => Dispatcher.InvokeAsync(() => ApplyPhoneEdits(edits));
+        _cloud.SetLanguage(L.Code);   // 휴대폰도 PC와 같은 언어로
         _cloud.Start();
         _watcher.Start();
 
         _updates.Checked += () => Dispatcher.InvokeAsync(OnUpdateChecked);
+        _updater.Changed += () => Dispatcher.InvokeAsync(() => Post(AppSettingsJson()));   // 받는 중 진행률
         _updates.Start();
     }
 
@@ -177,7 +185,42 @@ public partial class MainWindow : Window
         if (!_updates.IsNewer || _tray is null || _updates.Latest == App.Settings.UpdateNotified) return;
         App.Settings.UpdateNotified = _updates.Latest;   // 같은 버전은 한 번만 알린다
         TrySaveSettings();
-        _tray.Notify($"새 버전 {_updates.Latest} 이 나왔어요", $"지금은 {App.Version} — 누르면 내려받는 페이지가 열립니다", silent: true, onClick: () => OpenUrl(_updates.Url));
+        bool canInstall = CanInstallUpdate();
+        _tray.Notify(L.T($"새 버전 {_updates.Latest} 이 나왔어요", $"Version {_updates.Latest} is out"),
+                     canInstall
+                         ? L.T($"지금은 {App.Version} — 누르면 업데이트할지 묻습니다", $"You have {App.Version} — click to update")
+                         : L.T($"지금은 {App.Version} — 누르면 내려받는 페이지가 열립니다", $"You have {App.Version} — click to open the download page"),
+                     silent: true, onClick: () =>
+                     {
+                         if (!canInstall) { OpenUrl(_updates.Url); return; }
+                         ShowFromTray();
+                         StartUpdate();
+                     });
+    }
+
+    /// <summary>앱 안에서 바로 바꿀 수 있는지: 새 버전이 있고, 릴리스에 zip·SHA-256 이 있고, 이 실행 파일이 배포본이며 폴더에 쓸 수 있을 때.</summary>
+    private bool CanInstallUpdate() =>
+        _updates.IsNewer && _updates.ZipUrl != null && _updates.ShaUrl != null && Updater.CannotReason() is null;
+
+    /// <summary>
+    /// "업데이트할까요?" → 켜진 채로 받기·대조·풀기(진행률은 설정 → 정보) → 파일 바꾸기 → 새 버전 실행 → 이 프로그램 끝내기.
+    /// 바로 바꿀 수 없으면(개발용 빌드·쓰기 권한 없음·옛 릴리스) 릴리스 페이지를 연다.
+    /// </summary>
+    private async void StartUpdate()
+    {
+        if (!CanInstallUpdate()) { OpenUrl(_updates.Url); return; }
+        if (_updater.State is "downloading" or "installing") return;
+        if (!App.Offscreen && MessageBox.Show(this,
+                L.T($"새 버전 {_updates.Latest} 으로 업데이트할까요?\r\n\r\n받는 동안(약 65MB) 계속 쓸 수 있고, 다 받아 확인하면 잠깐 꺼졌다가 새 버전으로 다시 켜집니다.\r\n설정·별명·메모·휴대폰 보기는 그대로입니다.",
+                    $"Update to version {_updates.Latest}?\r\n\r\nYou can keep working while it downloads (about 65 MB). When it's verified, the app closes for a moment and reopens as the new version.\r\nSettings, nicknames, memos and phone view stay as they are."),
+                "Claude Office", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            return;
+        var extra = App.Offscreen ? new[] { "--offscreen" } : Array.Empty<string>();   // 점검 도구로 시험할 때는 새 버전도 화면 밖에
+        if (await _updater.RunAsync(_updates.Latest!, _updates.ZipUrl!, _updates.ShaUrl!, extra))
+            ExitApp();
+        else if (!App.Offscreen)
+            MessageBox.Show(this, L.T($"업데이트하지 못했습니다. 지금 버전은 그대로입니다.\r\n\r\n{_updater.Error}", $"The update failed. Your current version is unchanged.\r\n\r\n{_updater.Error}"),
+                "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     // ───────────────────────── 사무실 이름·별명·메모 사본 ─────────────────────────
@@ -204,6 +247,37 @@ public partial class MainWindow : Window
         catch (JsonException) { return; }
         lock (_shareLock) _nicks = nicks;
         _cloud.OnShare(json);
+    }
+
+    /// <summary>
+    /// 휴대폰에서 고친 별명·메모를 사본(share.json)에 고친 시각(t) 기준으로 합친다. 둘 다 비었으면 지운 것 — 빈 기록 {t} 로 남겨
+    /// 화면이 합칠 때 지우게 한다. 화면이 떠 있으면 합친 것을 보내 화면 저장소에도 반영(화면이 다시 share 로 돌려줘 사본이 맞춰진다).
+    /// </summary>
+    private void ApplyPhoneEdits(List<NoteEdit> edits)
+    {
+        System.Text.Json.Nodes.JsonObject root;
+        try { root = (LoadShare() is { } j ? System.Text.Json.Nodes.JsonNode.Parse(j) as System.Text.Json.Nodes.JsonObject : null) ?? new(); }
+        catch (JsonException) { root = new(); }
+        if (root["notes"] is not System.Text.Json.Nodes.JsonObject notes) root["notes"] = notes = new System.Text.Json.Nodes.JsonObject();
+
+        int applied = 0;
+        foreach (var e in edits)
+        {
+            long cur = 0;
+            try { cur = notes[e.Id]?["t"]?.GetValue<long>() ?? 0; } catch (Exception ex) when (ex is InvalidOperationException or FormatException) { }
+            if (e.T <= cur) continue;
+            var n = new System.Text.Json.Nodes.JsonObject();
+            if (!string.IsNullOrWhiteSpace(e.Nick)) n["nick"] = e.Nick;
+            if (!string.IsNullOrWhiteSpace(e.Memo)) n["memo"] = e.Memo;
+            n["t"] = e.T;
+            notes[e.Id] = n;
+            applied++;
+        }
+        if (applied == 0) return;
+        var json = root.ToJsonString();
+        SaveShare(json);
+        ApplyShare(json);
+        Post("{\"type\":\"share\",\"data\":" + json + "}");
     }
 
     private static void SaveShare(string json)
@@ -341,7 +415,8 @@ public partial class MainWindow : Window
         }
         catch (WebView2RuntimeNotFoundException)
         {
-            MessageBox.Show("Microsoft Edge WebView2 런타임이 필요합니다.\r\nhttps://developer.microsoft.com/microsoft-edge/webview2/ 에서 설치한 뒤 다시 실행하세요.",
+            MessageBox.Show(L.T("Microsoft Edge WebView2 런타임이 필요합니다.\r\nhttps://developer.microsoft.com/microsoft-edge/webview2/ 에서 설치한 뒤 다시 실행하세요.",
+                                "The Microsoft Edge WebView2 Runtime is required.\r\nInstall it from https://developer.microsoft.com/microsoft-edge/webview2/ and run again."),
                 "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
             ExitApp();
             return;
@@ -365,8 +440,33 @@ public partial class MainWindow : Window
             _tray?.SetText(Title);
         };
 
-        var query = App.DemoMode ? "?demo" + (App.DemoSelect != null ? "&select=" + Uri.EscapeDataString(App.DemoSelect) : "") : "";
-        core.Navigate($"https://{VirtualHost}/index.html{query}");
+        core.Navigate(PageUrl());
+    }
+
+    /// <summary>화면 주소: 견본이면 ?demo(&amp;select=), 영어 화면이면 lang=en(한국어는 붙이지 않는다 — 예전 주소 그대로).</summary>
+    private static string PageUrl()
+    {
+        var q = new List<string>();
+        if (App.DemoMode)
+        {
+            q.Add("demo");
+            if (App.DemoSelect != null) q.Add("select=" + Uri.EscapeDataString(App.DemoSelect));
+        }
+        if (L.En) q.Add("lang=en");
+        return $"https://{VirtualHost}/index.html" + (q.Count > 0 ? "?" + string.Join("&", q) : "");
+    }
+
+    /// <summary>
+    /// 화면 언어를 바꿨을 때: 말풍선·기록 문구는 기록 파일을 다시 읽어 새 언어로 만들고(감시기), 알림 영역 메뉴·휴대폰 요약도 맞춘 뒤
+    /// 화면을 새 주소로 다시 연다(화면 글은 열 때 정해지므로).
+    /// </summary>
+    private void ApplyLanguage()
+    {
+        L.En = App.Settings.Language == "en";
+        _tray?.ApplyLanguage();
+        _cloud.SetLanguage(L.Code);
+        _watcher.Reparse();
+        Web.CoreWebView2?.Navigate(PageUrl());
     }
 
     /// <summary>앱 쪽 설정(app.json·시작 프로그램 등록)과 새 버전 확인 결과를 화면 설정 패널에 알린다.</summary>
@@ -390,7 +490,13 @@ public partial class MainWindow : Window
             quietEnd = s.QuietEnd,
             updateCheck = s.UpdateCheck,
             widget = s.Widget,
-            update = new { latest = _updates.Latest, newer = _updates.IsNewer, url = _updates.Url, error = _updates.Error, checkedAt = _updates.CheckedMs },
+            language = s.Language == "en" ? "en" : "ko",
+            update = new
+            {
+                latest = _updates.Latest, newer = _updates.IsNewer, url = _updates.Url, error = _updates.Error, checkedAt = _updates.CheckedMs,
+                canInstall = CanInstallUpdate(),
+                install = new { state = _updater.State, percent = _updater.Percent, error = _updater.Error },
+            },
             tray = _tray != null,
         });
     }
@@ -404,6 +510,8 @@ public partial class MainWindow : Window
 
     private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
+        // 앱 자체 화면(office.local)이 보낸 것만 — 다른 주소의 페이지(휴대폰 페이지 등)가 설정을 바꾸지 못하게
+        if (!Uri.TryCreate(e.Source, UriKind.Absolute, out var source) || !source.Host.Equals(VirtualHost, StringComparison.OrdinalIgnoreCase)) return;
         try
         {
             using var doc = JsonDocument.Parse(e.WebMessageAsJson);
@@ -428,6 +536,7 @@ public partial class MainWindow : Window
                         bool on = val.ValueKind == JsonValueKind.True;
                         int num = val.ValueKind == JsonValueKind.Number && val.TryGetInt32(out var n) ? n : 0;
                         var s = App.Settings;
+                        bool langChanged = false;
                         try
                         {
                             switch (key.GetString())
@@ -446,14 +555,23 @@ public partial class MainWindow : Window
                                     if (on) _ = _updates.CheckAsync();
                                     break;
                                 case "autoStart": AutoStart.Set(on); break;
+                                case "language":   // 화면 언어(값은 글자 "ko" | "en") — 저장한 뒤 새 언어로 다시 연다(아래)
+                                {
+                                    var lang = val.ValueKind == JsonValueKind.String && val.GetString() == "en" ? "en" : "ko";
+                                    langChanged = lang != (s.Language == "en" ? "en" : "ko");
+                                    s.Language = lang;
+                                    break;
+                                }
                             }
                             s.Save();
                         }
                         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
                         {
-                            MessageBox.Show(this, $"설정을 저장하지 못했습니다.\r\n\r\n{ex.Message}", "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            MessageBox.Show(this, L.T($"설정을 저장하지 못했습니다.\r\n\r\n{ex.Message}", $"Couldn't save the setting.\r\n\r\n{ex.Message}"),
+                                "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
                         }
                         Post(AppSettingsJson());   // 실제로 바뀐 값으로 스위치를 맞춘다
+                        if (langChanged) ApplyLanguage();
                     }
                     break;
                 case "share":   // 사무실 이름·별명·메모 — 휴대폰에서도 같은 이름으로 보이게 함께 올리고, 사본을 파일로
@@ -475,6 +593,9 @@ public partial class MainWindow : Window
                 case "cloud-check":
                     if (!App.DemoMode) RunCloudCheck();
                     break;
+                case "cloud-phone-edit":
+                    if (!App.DemoMode) _cloud.SetPhoneEdit(root.TryGetProperty("value", out var pe) && pe.ValueKind == JsonValueKind.True);
+                    break;
                 case "cloud-page":
                     if (!App.DemoMode && root.TryGetProperty("value", out var page)) _cloud.SetPage(page.GetString() ?? "public");
                     break;
@@ -486,7 +607,11 @@ public partial class MainWindow : Window
                     break;
                 case "notify-test":
                     if (_tray is null) break;
-                    _tray.Notify("✋ 알림 시험", "이렇게 알려 드려요 — 누르면 창이 열립니다", silent: !App.Settings.NotifySound, onClick: ShowFromTray);
+                    _tray.Notify(L.T("✋ 알림 시험", "✋ Test notification"), L.T("이렇게 알려 드려요 — 누르면 창이 열립니다", "This is how you'll be notified — click to open the window"),
+                                 silent: !App.Settings.NotifySound, onClick: ShowFromTray);
+                    break;
+                case "update-install":
+                    if (!App.DemoMode) StartUpdate();
                     break;
                 case "update-check":
                     if (!App.DemoMode) _ = _updates.CheckAsync();
@@ -522,9 +647,11 @@ public partial class MainWindow : Window
                     break;
                 case "cloud-rekey":
                     if (!App.DemoMode && MessageBox.Show(this,
-                            "휴대폰 보기용 암호 키를 새로 만들까요?\r\n\r\n지금 휴대폰에 열려 있는 화면은 더 이상 해독하지 못하고, QR을 다시 찍어야 합니다.\r\n" +
-                            "QR이나 주소가 다른 사람에게 보였을 때 쓰세요.",
-                            "Claude Office — 휴대폰 보기", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+                            L.T("휴대폰 보기용 암호 키를 새로 만들까요?\r\n\r\n지금 휴대폰에 열려 있는 화면은 더 이상 해독하지 못하고, QR을 다시 찍어야 합니다.\r\n" +
+                                "QR이나 주소가 다른 사람에게 보였을 때 쓰세요.",
+                                "Make a new encryption key for phone view?\r\n\r\nPhones that have the page open can no longer decrypt it and must scan the QR again.\r\n" +
+                                "Use this if someone else saw the QR code or link."),
+                            L.T("Claude Office — 휴대폰 보기", "Claude Office — Phone view"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
                         _cloud.Rekey();
                     break;
                 case "topmost":
@@ -558,9 +685,9 @@ public partial class MainWindow : Window
     {
         var dlg = new Microsoft.Win32.SaveFileDialog
         {
-            Title = "별명·메모 내보내기",
+            Title = L.T("별명·메모 내보내기", "Export nicknames & memos"),
             FileName = $"claude-office-notes-{DateTime.Now:yyyyMMdd}.json",
-            Filter = "JSON 파일|*.json",
+            Filter = L.T("JSON 파일|*.json", "JSON files|*.json"),
         };
         if (dlg.ShowDialog(this) != true) return;
         try
@@ -569,14 +696,14 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show(this, $"저장하지 못했습니다.\r\n\r\n{ex.Message}", "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, L.T($"저장하지 못했습니다.\r\n\r\n{ex.Message}", $"Couldn't save.\r\n\r\n{ex.Message}"), "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
     /// <summary>내보낸 파일을 읽어 화면에 넘긴다 — 화면이 고친 시각(t) 기준으로 합친다(이 PC에 없거나 파일 쪽이 더 나중 것만).</summary>
     private void ImportShare()
     {
-        var dlg = new Microsoft.Win32.OpenFileDialog { Title = "별명·메모 가져오기", Filter = "JSON 파일|*.json" };
+        var dlg = new Microsoft.Win32.OpenFileDialog { Title = L.T("별명·메모 가져오기", "Import nicknames & memos"), Filter = L.T("JSON 파일|*.json", "JSON files|*.json") };
         if (dlg.ShowDialog(this) != true) return;
         string text;
         int count;
@@ -585,25 +712,29 @@ public partial class MainWindow : Window
             text = File.ReadAllText(dlg.FileName);
             using var doc = JsonDocument.Parse(text);
             if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("notes", out var notes) || notes.ValueKind != JsonValueKind.Object)
-                throw new InvalidDataException("Claude Office 에서 내보낸 별명·메모 파일이 아닙니다.");
+                throw new InvalidDataException(L.T("Claude Office 에서 내보낸 별명·메모 파일이 아닙니다.", "This is not a nickname & memo file exported from Claude Office."));
             count = notes.EnumerateObject().Count();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {
-            MessageBox.Show(this, $"가져오지 못했습니다.\r\n\r\n{ex.Message}", "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, L.T($"가져오지 못했습니다.\r\n\r\n{ex.Message}", $"Couldn't import.\r\n\r\n{ex.Message}"), "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         Post("{\"type\":\"share\",\"data\":" + text + "}");
-        MessageBox.Show(this, $"별명·메모 {count}개를 읽었습니다. 이 PC에 없거나 파일 쪽이 더 나중에 고친 것만 반영합니다.", "Claude Office", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show(this, L.T($"별명·메모 {count}개를 읽었습니다. 이 PC에 없거나 파일 쪽이 더 나중에 고친 것만 반영합니다.",
+                                  $"Read {count} nicknames & memos. Only the ones missing on this PC or edited later in the file are applied."),
+            "Claude Office", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     /// <summary>화면·알림·창 설정을 처음 값으로. 별명·메모·사무실 이름·휴대폰 보기 설정·자동 실행은 그대로 둔다.</summary>
     private void ResetSettings()
     {
         if (MessageBox.Show(this,
-                "설정을 처음 값으로 되돌릴까요?\r\n\r\n직원 표시·창·알림·새 버전 알림 설정이 처음 값이 됩니다.\r\n" +
-                "별명·메모, 사무실 이름, 팀 이름·순서, 휴대폰 보기 설정, 훅 연결, Windows 자동 실행은 그대로 둡니다.",
-                "Claude Office — 설정 초기화", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+                L.T("설정을 처음 값으로 되돌릴까요?\r\n\r\n직원 표시·창·알림·새 버전 알림 설정이 처음 값이 됩니다.\r\n" +
+                    "별명·메모, 사무실 이름, 팀 이름·순서, 화면 언어, 휴대폰 보기 설정, 훅 연결, Windows 자동 실행은 그대로 둡니다.",
+                    "Restore the default settings?\r\n\r\nEmployee display, window, notification and update alert settings go back to defaults.\r\n" +
+                    "Nicknames, memos, the office name, team names and order, phone view, hooks, language and Windows startup stay as they are."),
+                L.T("Claude Office — 설정 초기화", "Claude Office — Reset settings"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             return;
         bool wasWidget = App.Settings.Widget;
         App.Settings.StartMinimized = false;
@@ -626,13 +757,17 @@ public partial class MainWindow : Window
     {
         string webview;
         try { webview = CoreWebView2Environment.GetAvailableBrowserVersionString(); }
-        catch (WebView2RuntimeNotFoundException) { webview = "없음"; }
+        catch (WebView2RuntimeNotFoundException) { webview = L.T("없음", "none"); }
         bool hasErrorLog = File.Exists(Path.Combine(App.DataDir, "error.log"));
-        var body =
-            "**무슨 일이 있었나요?**\n\n\n**어떻게 하면 다시 생기나요?**\n\n\n---\n" +
-            $"- 버전: {App.Version}\n- Windows: {Environment.OSVersion.Version}\n- WebView2: {webview}\n" +
-            $"- 훅: {(HookSetup.IsInstalled() ? "연결됨" : "안 됨")} · Git Bash: {(HookSetup.FindGitBash() != null ? "있음" : "없음")}\n" +
-            (hasErrorLog ? "- 오류 기록: 데이터 폴더(⚙️ → 정보 → 데이터 폴더)의 error.log 에서 관련 부분을 붙여 주세요 — 폴더 경로·사용자 이름이 들어 있을 수 있으니 확인 후\n" : "");
+        var body = L.En
+            ? "**What happened?**\n\n\n**How can it be reproduced?**\n\n\n---\n" +
+              $"- Version: {App.Version}\n- Windows: {Environment.OSVersion.Version}\n- WebView2: {webview}\n" +
+              $"- Hooks: {(HookSetup.IsInstalled() ? "connected" : "not connected")} · Git Bash: {(HookSetup.FindGitBash() != null ? "yes" : "no")}\n" +
+              (hasErrorLog ? "- Error log: please paste the relevant part of error.log in the data folder (⚙️ → About → Data folder) — check it first, it may contain folder paths and your user name\n" : "")
+            : "**무슨 일이 있었나요?**\n\n\n**어떻게 하면 다시 생기나요?**\n\n\n---\n" +
+              $"- 버전: {App.Version}\n- Windows: {Environment.OSVersion.Version}\n- WebView2: {webview}\n" +
+              $"- 훅: {(HookSetup.IsInstalled() ? "연결됨" : "안 됨")} · Git Bash: {(HookSetup.FindGitBash() != null ? "있음" : "없음")}\n" +
+              (hasErrorLog ? "- 오류 기록: 데이터 폴더(⚙️ → 정보 → 데이터 폴더)의 error.log 에서 관련 부분을 붙여 주세요 — 폴더 경로·사용자 이름이 들어 있을 수 있으니 확인 후\n" : "");
         return $"https://github.com/{UpdateChecker.Repo}/issues/new?body={Uri.EscapeDataString(body)}";
     }
 
@@ -663,18 +798,30 @@ public partial class MainWindow : Window
     {
         var path = HookSetup.SettingsPath;
         bool installed = HookSetup.IsInstalled();
-        var question = installed
-            ? $"Claude Code 설정에서 Claude Office 훅을 뺄까요?\r\n\r\n{path}\r\n\r\n" +
-              "Claude Office가 넣은 훅만 지우고 다른 설정은 그대로 둡니다.\r\n" +
-              "빼고 나면 승인 대기는 다시 '추정'으로만 표시됩니다."
-            : $"Claude Code 설정에 훅 3개를 추가할까요?\r\n\r\n{path}\r\n\r\n" +
-              "  · PermissionRequest — 승인 창이 뜨면 손을 듭니다\r\n" +
-              "  · Notification — 승인·입력 요청 알림\r\n" +
-              "  · SessionEnd — 세션을 닫으면 바로 퇴근으로 표시\r\n\r\n" +
-              $"훅은 이 프로그램(127.0.0.1:{HookServer.Port})으로 알림만 보냅니다({HookSetup.ShellDescription}).\r\n" +
-              "승인을 대신하거나 작업을 막지 않고, 프로그램이 꺼져 있으면 조용히 넘어갑니다.\r\n" +
-              "고치기 전 원본은 settings.json.claudeoffice.bak 으로 남깁니다.";
-        if (MessageBox.Show(this, question, "Claude Office — 훅 연결", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+        var question = L.En
+            ? installed
+                ? $"Remove the Claude Office hooks from the Claude Code settings?\r\n\r\n{path}\r\n\r\n" +
+                  "Only the hooks Claude Office added are removed; other settings stay as they are.\r\n" +
+                  "Afterwards, approval waits are only 'guessed' again."
+                : $"Add 3 hooks to the Claude Code settings?\r\n\r\n{path}\r\n\r\n" +
+                  "  · PermissionRequest — raises a hand when a permission prompt opens\r\n" +
+                  "  · Notification — permission and input requests\r\n" +
+                  "  · SessionEnd — closing a session shows the employee going home right away\r\n\r\n" +
+                  $"The hooks only send notices to this app (127.0.0.1:{HookServer.Port}, {HookSetup.ShellDescription}).\r\n" +
+                  "They never approve or block anything, and quietly do nothing when the app is closed.\r\n" +
+                  "The original is kept as settings.json.claudeoffice.bak before editing."
+            : installed
+                ? $"Claude Code 설정에서 Claude Office 훅을 뺄까요?\r\n\r\n{path}\r\n\r\n" +
+                  "Claude Office가 넣은 훅만 지우고 다른 설정은 그대로 둡니다.\r\n" +
+                  "빼고 나면 승인 대기는 다시 '추정'으로만 표시됩니다."
+                : $"Claude Code 설정에 훅 3개를 추가할까요?\r\n\r\n{path}\r\n\r\n" +
+                  "  · PermissionRequest — 승인 창이 뜨면 손을 듭니다\r\n" +
+                  "  · Notification — 승인·입력 요청 알림\r\n" +
+                  "  · SessionEnd — 세션을 닫으면 바로 퇴근으로 표시\r\n\r\n" +
+                  $"훅은 이 프로그램(127.0.0.1:{HookServer.Port})으로 알림만 보냅니다({HookSetup.ShellDescription}).\r\n" +
+                  "승인을 대신하거나 작업을 막지 않고, 프로그램이 꺼져 있으면 조용히 넘어갑니다.\r\n" +
+                  "고치기 전 원본은 settings.json.claudeoffice.bak 으로 남깁니다.";
+        if (MessageBox.Show(this, question, L.T("Claude Office — 훅 연결", "Claude Office — Hooks"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             return;
 
         try
@@ -684,8 +831,9 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {
-            MessageBox.Show(this, $"settings.json 을 고치지 못했습니다. 파일은 그대로입니다.\r\n\r\n{ex.Message}",
-                "Claude Office — 훅 연결", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, L.T($"settings.json 을 고치지 못했습니다. 파일은 그대로입니다.\r\n\r\n{ex.Message}",
+                                      $"Couldn't edit settings.json. The file is unchanged.\r\n\r\n{ex.Message}"),
+                L.T("Claude Office — 훅 연결", "Claude Office — Hooks"), MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         _watcher.RefreshHookStatus();
     }

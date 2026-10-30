@@ -8,6 +8,8 @@ Firebase Realtime Database 흉내 — 휴대폰 보기 시험용. 진짜 Firebas
   GET /offices/<id>.json + Accept: text/event-stream
                                               Firebase REST 스트리밍과 같은 모양으로 계속 보냄
                                               (event: put / data: {"path":"/","data":...}, 25초마다 keep-alive)
+  POST /inbox/<id>.json                       휴대폰 → PC 변경(별명·메모) 추가 → {"name": 키}
+  GET /inbox/<id>.json · DELETE /inbox/<id>/<키>.json   PC가 가져가고 지움
   그 밖의 GET                                 --web 폴더의 파일(휴대폰 화면 페이지, / 는 index.html)
 
 예) python tools/fake-rtdb.py --port 8765 --web src/ClaudeOffice/wwwroot
@@ -18,6 +20,7 @@ import argparse
 import json
 import mimetypes
 import os
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -26,6 +29,8 @@ versions = {}    # id → 바뀐 횟수(스트림이 새 값을 알아채는 데
 patches = {}     # id → (그 PATCH 의 버전, 덧붙인 값) — 바로 다음 이벤트는 Firebase 처럼 patch 로 보낸다
 cond = threading.Condition()
 WEB_ROOT = ""
+inbox = {}       # id → {키: 값} — 휴대폰이 보낸 암호화 변경
+inbox_seq = [0]
 
 
 def office_key(path):
@@ -52,9 +57,25 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, PUT, PATCH, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+
+    def do_POST(self):   # 휴대폰 → PC: inbox/<id> 에 새 키로 추가(Firebase push 와 같은 응답)
+        m = re.match(r"^/inbox/([^/]+)\.json$", self.path.split("?")[0])
+        if not m:
+            return self._send(404, b'{"error":"not found"}')
+        raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            return self._send(400, b'{"error":"Invalid data"}')
+        with cond:
+            inbox_seq[0] += 1
+            name = f"-N{inbox_seq[0]:06d}"
+            inbox.setdefault(m.group(1), {})[name] = value
+        print(f"POST inbox/{m.group(1)} {len(raw)}B", flush=True)
+        self._send(200, json.dumps({"name": name}).encode())
 
     def do_PUT(self):
         key = office_key(self.path.split("?")[0])
@@ -90,6 +111,12 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, raw)
 
     def do_DELETE(self):   # 휴대폰 보기를 끄면 앱이 지운다 → 스트림에는 data: null 이 간다
+        m = re.match(r"^/inbox/([^/]+)/([^/]+)\.json$", self.path.split("?")[0])
+        if m:
+            with cond:
+                inbox.get(m.group(1), {}).pop(m.group(2), None)
+            print(f"DELETE inbox/{m.group(1)}/{m.group(2)}", flush=True)
+            return self._send(200, b"null")
         key = office_key(self.path.split("?")[0])
         if key is None:
             return self._send(404, b'{"error":"not found"}')
@@ -102,6 +129,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        m = re.match(r"^/inbox/([^/]+)\.json$", path)
+        if m:
+            with cond:
+                value = inbox.get(m.group(1)) or None
+            return self._send(200, json.dumps(value).encode())
         key = office_key(path)
         if key is not None:
             if "text/event-stream" in self.headers.get("Accept", ""):

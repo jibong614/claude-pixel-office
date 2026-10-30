@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using ClaudeOffice.Monitoring;
 
 namespace ClaudeOffice.Cloud;
 
@@ -22,6 +23,9 @@ internal sealed partial class CloudConfig
     public string? Key { get; set; }           // AES-256 키(base64url)
     public string? Uid { get; set; }           // 익명 로그인 사용자 ID = 데이터 경로 offices/<Uid>
     public string? RefreshToken { get; set; }
+
+    /// <summary>휴대폰에서 별명·메모 고치기 허용 — 휴대폰이 같은 키로 암호화한 변경을 inbox/&lt;Uid&gt; 에 남기면 PC가 가져가 반영한다(새 규칙 필요).</summary>
+    public bool PhoneEdit { get; set; }
 
     /// <summary>
     /// 누구나 쓰는 휴대폰 화면 페이지(GitHub Pages — 이 저장소의 wwwroot 를 그대로 올린 것).
@@ -105,17 +109,19 @@ internal sealed partial class CloudConfig
         if (!string.IsNullOrEmpty(db))
         {
             if (!Uri.TryCreate(db, UriKind.Absolute, out var u) || (u.Scheme != Uri.UriSchemeHttps && !u.IsLoopback))
-                return (null, null, null, $"databaseURL 모양이 이상합니다: {db}");
+                return (null, null, null, L.T($"databaseURL 모양이 이상합니다: {db}", $"databaseURL looks wrong: {db}"));
             local = u.IsLoopback;
             db = db.TrimEnd('/');
         }
         if (local) return (apiKey, db, project, null);
         if (string.IsNullOrEmpty(apiKey) && string.IsNullOrEmpty(project))
-            return (null, null, null, "설정을 알아보지 못했습니다. 웹 앱 등록 화면의 firebaseConfig 블록({ apiKey: … } 부분)을 통째로 붙여 넣어 주세요.");
+            return (null, null, null, L.T("설정을 알아보지 못했습니다. 웹 앱 등록 화면의 firebaseConfig 블록({ apiKey: … } 부분)을 통째로 붙여 넣어 주세요.",
+                                          "Couldn't read the config. Paste the whole firebaseConfig block ({ apiKey: … }) from the web app registration screen."));
         if (string.IsNullOrEmpty(apiKey))
-            return (null, null, null, "apiKey 가 없습니다. firebaseConfig 블록을 통째로 붙여 넣어 주세요.");
+            return (null, null, null, L.T("apiKey 가 없습니다. firebaseConfig 블록을 통째로 붙여 넣어 주세요.", "apiKey is missing. Paste the whole firebaseConfig block."));
         if (string.IsNullOrEmpty(project) || !ProjectIdShape().IsMatch(project))
-            return (null, null, null, "projectId 가 없거나 모양이 이상합니다. firebaseConfig 블록을 통째로 붙여 넣어 주세요.");
+            return (null, null, null, L.T("projectId 가 없거나 모양이 이상합니다. firebaseConfig 블록을 통째로 붙여 넣어 주세요.",
+                                          "projectId is missing or looks wrong. Paste the whole firebaseConfig block."));
         return (apiKey, string.IsNullOrEmpty(db) ? null : db, project, null);
     }
 

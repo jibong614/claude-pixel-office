@@ -24,6 +24,8 @@ internal sealed class HookWait(WaitKind kind, string? toolName, string? toolText
     public string Text { get; } = text;            // 머리 위 말풍선
     public DateTime Utc { get; } = utc;
     public string? ToolUseId { get; set; }
+    public string? Command { get; init; }        // 명령 실행 승인 요청이면 그 명령(ApprovalProbe)
+    public DateTime ProbedUtc { get; set; }      // 마지막으로 프로세스를 살펴본 시각
 }
 
 /// <summary>
@@ -75,7 +77,7 @@ internal sealed class TranscriptState
     // 도구를 쓰지 않을 때의 기본 상태
     public Activity BaseActivity = Activity.Idle;
     public string BaseIcon = "☕";
-    public string BaseText = "대기 중";
+    public string BaseText = L.T("대기 중", "Standing by");
     public DateTime BaseSinceUtc;
     public string? LastCompletedMessageId;
 

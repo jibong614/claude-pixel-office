@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using ClaudeOffice.Monitoring;
 
 namespace ClaudeOffice.Hooks;
 
@@ -59,8 +60,9 @@ internal sealed class HookServer : IDisposable
         catch (SocketException ex)
         {
             Error = ex.SocketErrorCode == SocketError.AddressAlreadyInUse
-                ? $"{Port} 포트를 이미 쓰는 프로그램이 있습니다(Claude Office가 두 개 켜져 있나요?)"
-                : $"훅 수신을 시작하지 못했습니다: {ex.Message}";
+                ? L.T($"{Port} 포트를 이미 쓰는 프로그램이 있습니다(Claude Office가 두 개 켜져 있나요?)",
+                      $"Another program is using port {Port} (is Claude Office running twice?)")
+                : L.T($"훅 수신을 시작하지 못했습니다: {ex.Message}", $"Couldn't start the hook receiver: {ex.Message}");
         }
     }
 

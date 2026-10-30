@@ -32,6 +32,9 @@ internal sealed class AppSettings
     public bool UpdateCheck { get; set; } = true;
     public string? UpdateNotified { get; set; }
 
+    /// <summary>화면 언어: ko(기본) | en. 말풍선·알림 문구를 만드는 감시기도 알아야 해서 화면 저장소가 아니라 여기에.</summary>
+    public string Language { get; set; } = "ko";
+
     /// <summary>마지막 창 위치·크기(화면 밖이면 쓰지 않는다).</summary>
     public WindowPlacement? Window { get; set; }
 
