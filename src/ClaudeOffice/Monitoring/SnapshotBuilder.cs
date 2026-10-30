@@ -28,7 +28,13 @@ internal sealed record EmployeeDto(
     long Started,
     string? Prompt,
     List<LogDto> Recent,
-    List<InternDto> Interns);
+    List<InternDto> Interns,
+    DayDto? Today);
+
+/// <summary>오늘의 근무 일지(인턴 몫 포함). Work: 일한 시간(ms), In·Out·CacheRead·CacheWrite: 토큰, Tools: 많이 쓴 도구 [이름, 횟수].</summary>
+internal sealed record DayDto(long Work, int Prompts, long In, long Out, long CacheRead, long CacheWrite, List<ToolCountDto> Tools);
+
+internal sealed record ToolCountDto(string N, int C);
 
 internal sealed record InternDto(string Id, string Name, string? Desc, string Act, string Icon, string Text, long Since);
 
@@ -113,7 +119,8 @@ internal static class SnapshotBuilder
             Prompt: s.LastPrompt != null ? ToolCatalog.Clip(s.LastPrompt, 300) : null,
             Recent: s.Recent.AsEnumerable().Reverse().Take(RecentToSend)
                      .Select(x => new LogDto(Ms(x.Utc), x.Icon, x.Text)).ToList(),
-            Interns: internDtos);
+            Interns: internDtos,
+            Today: Day(s, interns, now));
     }
 
     /// <summary>지금 보여 줄 행동·아이콘·말풍선 문구·그 상태가 시작된 시각.</summary>
@@ -171,6 +178,23 @@ internal static class SnapshotBuilder
             text += " · 오래 걸리는 중";
 
         return (act, icon, text, since);
+    }
+
+    /// <summary>세션과 그 인턴들의 오늘 기록을 합친다(일한 시간·지시는 세션 것만, 도구·토큰은 인턴 몫까지). 오늘 기록이 없으면 null.</summary>
+    private static DayDto? Day(TranscriptState s, IEnumerable<TranscriptState> interns, DateTime now)
+    {
+        var all = new[] { s }.Concat(interns).Where(x => x.Today.IsToday(now)).ToList();
+        if (all.Count == 0) return null;
+        long tin = 0, tout = 0, cr = 0, cw = 0;
+        var tools = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var x in all)
+        {
+            foreach (var u in x.Today.Messages.Values) { tin += u.In; tout += u.Out; cr += u.CacheRead; cw += u.CacheWrite; }
+            foreach (var (name, c) in x.Today.Tools) tools[name] = tools.GetValueOrDefault(name) + c;
+        }
+        var mine = s.Today.IsToday(now) ? s.Today : null;
+        return new DayDto(mine?.WorkMs ?? 0, mine?.Prompts ?? 0, tin, tout, cr, cw,
+            tools.OrderByDescending(kv => kv.Value).Take(6).Select(kv => new ToolCountDto(kv.Key, kv.Value)).ToList());
     }
 
     private static string NameOf(TranscriptState s)

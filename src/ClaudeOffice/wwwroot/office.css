@@ -187,7 +187,7 @@ body.drawer-folded #drawerTab { right: 0; color: var(--text); }
 #panel .mini { margin-left: 2px; padding: 1px 7px; border-radius: 6px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05);
   color: var(--text); font: 11px var(--font); cursor: pointer; white-space: nowrap; }
 #panel .mini:hover { background: rgba(124, 107, 224, 0.3); }
-body.remote #pOpenDir { display: none; }   /* 휴대폰에서는 PC 폴더를 열 수 없다 */
+body.remote #pOpenDir, body.remote .seat { display: none; }   /* 휴대폰에서는 PC 폴더를 열 수 없다 */
 .prompt {
   margin: 0;
   font-size: 12px;
@@ -364,9 +364,60 @@ body.stale #summary { border-color: #8f88a8; color: #d8d2ea; }
   color: #cfc8ea; white-space: pre; user-select: all; }
 .rules:empty { display: none; }
 
+/* 팀 설정: 이름·색·순서 */
+.teamlist { display: flex; flex-direction: column; gap: 8px; }
+.team-row { padding: 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
+.tr-top { display: flex; align-items: center; gap: 6px; }
+.tr-top .field { margin: 0; flex: 1; min-width: 0; }
+.tr-top .sw { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 4px; }
+.tr-key { margin: 4px 0 6px 20px; color: var(--dim); word-break: break-all; }
+.tr-colors { display: flex; flex-wrap: wrap; gap: 5px; margin-left: 20px; }
+.tr-colors .c { width: 20px; height: 20px; padding: 0; border-radius: 5px; border: 2px solid transparent; cursor: pointer; }
+.tr-colors .c.auto { width: auto; padding: 0 6px; font: 11px var(--font); color: var(--dim); background: rgba(255, 255, 255, 0.06); }
+.tr-colors .c.on { border-color: #fff; }
+.mini, .setting .mini { padding: 1px 7px; border-radius: 6px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05);
+  color: var(--text); font: 11px var(--font); cursor: pointer; white-space: nowrap; }
+.mini:disabled { opacity: 0.35; cursor: default; }
+.seat { display: inline-flex; gap: 4px; margin-left: 4px; }
+
 /* 방해 금지 시간대: [22시] 부터 [8시] 까지 */
 .hours { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--dim); }
 .hours select.field { display: inline-block; width: auto; margin: 0; padding: 4px 6px; }
+
+/* 오늘의 근무 일지 — 직원 상세의 "오늘" 칸과 📊 전체 일지 */
+.today { font-size: 12px; line-height: 1.6; }
+.today .dimline { color: var(--dim); font-size: 11px; }
+#pReport h2 { margin: 0 0 2px; font-size: 16px; }
+.rtot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0 12px; }
+.rtot div { padding: 7px 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); font-size: 11px; color: var(--dim); }
+.rtot b { display: block; margin-top: 2px; font-size: 15px; color: var(--text); }
+.rrow { padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+.rrow:hover { background: rgba(124, 107, 224, 0.15); }
+.rrow .rh { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 600; }
+.rrow .rh span:last-child { color: var(--dim); font-weight: 400; white-space: nowrap; }
+.rrow .bar { height: 5px; margin: 5px 0 4px; border-radius: 3px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.rrow .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.rrow .rd { font-size: 11px; color: var(--dim); }
+#pReport .rnote { margin: 14px 0 0; font-size: 11px; line-height: 1.55; color: var(--dim); }
+
+/* 작게 보기(위젯): 그림 대신 목록 */
+body.widget canvas#office, body.widget #hud, body.widget #drawerTab { display: none !important; }
+#wlist { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 4px; }
+#wlist .whd { display: flex; align-items: center; gap: 8px; padding: 0 2px 4px; font-size: 12px; color: var(--dim); }
+#wlist .whd b { color: var(--text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#wlist .whd .sp { flex: 1; }
+#wlist .whd button { all: unset; cursor: pointer; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); color: var(--text); font-size: 12px; }
+#wlist .whd button:hover { background: rgba(124, 107, 224, 0.3); }
+.wrow { display: grid; grid-template-columns: 20px 1fr auto; gap: 2px 8px; align-items: center; padding: 5px 8px; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04); cursor: pointer; }
+.wrow:hover { background: rgba(124, 107, 224, 0.18); }
+.wrow.wait { background: rgba(255, 179, 71, 0.16); box-shadow: inset 3px 0 0 #ffb347; }
+.wrow.away { opacity: 0.5; }
+.wrow .ic { grid-row: span 2; text-align: center; }
+.wrow .nm { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrow .tm { font-size: 11px; color: var(--dim); white-space: nowrap; }
+.wrow .tx { grid-column: 2 / 4; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wempty { padding: 14px 4px; text-align: center; font-size: 12px; color: var(--dim); }
 
 /* 새 버전이 나오면 ⚙️ 에 작은 점 */
 #hud button.dot { position: relative; }

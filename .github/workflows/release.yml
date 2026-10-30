@@ -1,0 +1,62 @@
+# 릴리스 자동 빌드: v1.2.3 같은 태그를 올리면 자체 포함 단일 exe 를 만들어 zip 으로 릴리스에 붙인다.
+# 릴리스가 이미 있으면(손으로 만든 경우) zip 만 바꿔 끼우고, 없으면 새로 만든다(설명은 GitHub 자동 생성 + CHANGELOG 링크).
+#   git tag v1.0.9 && git push origin v1.0.9
+name: 릴리스 빌드
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '릴리스 태그(예: v1.0.9) — 이미 있는 태그'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: 빌드(자체 포함 단일 exe)
+        shell: pwsh
+        run: |
+          dotnet publish src/ClaudeOffice -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish
+
+      - name: zip 만들기
+        shell: pwsh
+        run: |
+          $name = "ClaudePixelOffice-$env:TAG-win-x64"
+          New-Item -ItemType Directory $name | Out-Null
+          Copy-Item publish/ClaudeOffice.exe $name
+          Copy-Item -Recurse publish/wwwroot $name
+          Copy-Item -Recurse publish/Assets $name
+          Copy-Item LICENSE $name
+          Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
+          "ZIP=$name.zip" >> $env:GITHUB_ENV
+
+      - name: 릴리스에 올리기
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG $env:ZIP --clobber
+          } else {
+            $ver = $env:TAG.TrimStart('v')
+            gh release create $env:TAG $env:ZIP --title "Claude Pixel Office $ver" --generate-notes `
+              --notes "바뀐 내용: [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/docs/CHANGELOG.md)"
+          }

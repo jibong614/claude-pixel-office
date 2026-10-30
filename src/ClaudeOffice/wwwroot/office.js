@@ -80,7 +80,13 @@ const store = {
 };
 
 let showAway = store.get('showAway', true);
+// 팀(작업 폴더) 표시: {팀: {name, color(RUGS 번호)}} · 팀 순서 · 직원 자리 순서(세션 ID). 휴대폰은 PC가 보낸 것을 쓴다(remoteShare)
+const teamPrefs = store.get('teams', {}) || {};
+let teamOrder = store.get('teamOrder', []) || [];
+let seatOrder = store.get('seatOrder', []) || [];
+let teamRev = 0;   // 바뀌면 배치를 다시 한다
 let waitOnly = store.get('waitOnly', false);   // ✋ 기다리는 직원만 보기
+let zoom = Math.max(-2, Math.min(2, Math.round(Number(store.get('zoom', 0)) || 0)));   // 사무실 크기: 화면에 맞춘 배율에서 몇 단계 작게(−)·크게(+)
 let pinned = store.get('pinned', false);
 
 // 직원 표시: 최대 인원(maxShown)과 고르는 방식(pickMode: recent=최근 사용순 / manual=직접 고르기, pickedIds=체크한 세션)
@@ -110,7 +116,7 @@ const noteOf = (id) => (REMOTE ? remoteShare?.notes?.[id] : notes[id]) || {};
 const displayName = (s) => noteOf(s.id).nick || s.name;
 
 /** 사무실 이름·별명·메모를 앱에 넘긴다 — 휴대폰 보기를 켰으면 요약과 함께 암호화해 올라간다. */
-const shareToApp = () => send({ cmd: 'share', data: { office: officeName, notes } });
+const shareToApp = () => send({ cmd: 'share', data: { office: officeName, notes, teams: { prefs: teamPrefs, order: teamOrder, seats: seatOrder } } });
 
 function setNote(id, patch) {
   const n = { ...noteOf(id), ...patch, t: Date.now() };
@@ -138,11 +144,28 @@ function onSavedShare(saved) {
       if (nick || memo) notes[id] = { ...(nick && { nick }), ...(memo && { memo }), t: Number(n.t) || Date.now() };
     }
     store.set('notes', notes);
+    const t = saved.teams;   // 팀 이름·색·순서: 이 화면에 아무것도 없을 때만 사본 것으로
+    if (t && typeof t === 'object' && !Object.keys(teamPrefs).length && !teamOrder.length && !seatOrder.length) {
+      if (t.prefs && typeof t.prefs === 'object') Object.assign(teamPrefs, t.prefs);
+      if (Array.isArray(t.order)) teamOrder = t.order.filter((x) => typeof x === 'string');
+      if (Array.isArray(t.seats)) seatOrder = t.seats.filter((x) => typeof x === 'string');
+      store.set('teams', teamPrefs); store.set('teamOrder', teamOrder); store.set('seatOrder', seatOrder);
+      teamRev++; layoutKey = '';
+    }
     if (!officeName && typeof saved.office === 'string' && saved.office.trim()) setOfficeName(saved.office.slice(0, 30));
   }
   shareToApp();
   if (selectedId) { noteFor = null; renderPanel(); }
   refreshSettings();
+}
+
+/** 설정 초기화(앱이 확인을 받은 뒤): 화면 설정을 지우고 다시 읽는다. 별명·메모·사무실 이름·팀 이름·순서는 남긴다(사람이 쓴 것). */
+function resetScreenSettings() {
+  const keep = new Set(['notes', 'officeName', 'teams', 'teamOrder', 'seatOrder'].map((k) => STORE_PREFIX + k));
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith(STORE_PREFIX) && !keep.has(k)) localStorage.removeItem(k);
+  } catch { /* 저장소를 못 쓰면 그대로 */ }
+  location.reload();
 }
 
 /** 알림을 눌러 창을 열었을 때: 그 직원의 상세 패널을 연다. */
@@ -289,7 +312,7 @@ const pickedCount = () => data.sessions.filter((s) => pickedIds.has(s.id)).lengt
 function ensureLayout() {
   const list = visibleSessions();
   const vw = viewW();   // 펼친 서랍(상세 패널·설정) 자리를 뺀 폭 — 서랍이 직원을 가리지 않게
-  const key = [vw, innerHeight, devicePixelRatio, ...list.map((s) => s.id + '|' + s.team)].join(',');
+  const key = [vw, innerHeight, devicePixelRatio, zoom, teamRev, ...list.map((s) => s.id + '|' + s.team)].join(',');
   if (key === layoutKey) return;
   layoutKey = key;
 
@@ -300,6 +323,7 @@ function ensureLayout() {
     if (!teams.has(s.team)) teams.set(s.team, []);
     teams.get(s.team).push(s);
   }
+  orderTeams(teams);
 
   // 화면에 다 들어가는 가장 큰 배율을 고른다(아트 1픽셀 = 화면 k픽셀, k는 정수). 그래도 넘치면 세로 스크롤.
   // 고해상도(배율 125% 등)에서는 k를 1씩 내려가며 더 촘촘하게 맞춘다.
@@ -313,6 +337,11 @@ function ensureLayout() {
     if (plan.height <= viewLh) break;
   }
 
+  if (zoom) {   // 사무실 크기 설정: 맞춘 배율에서 단계만큼(크게 하면 넘치는 만큼 세로 스크롤)
+    const k = Math.max(1, best.k + zoom);
+    const lw = Math.floor((vw * dpr) / k);
+    best = { k, lw, viewLh: Math.floor((innerHeight * dpr) / k), plan: planZones([...teams.entries()], lw) };
+  }
   K = best.k;
   U = K / dpr;
   logicalW = best.lw;
@@ -331,6 +360,80 @@ function ensureLayout() {
   fontName = clamp(Math.round(4.2 * U), 11, 16);
   fontSmall = clamp(Math.round(3.7 * U), 10, 14);
   fontBubble = clamp(Math.round(4 * U), 11, 15);
+}
+
+// ── 팀 이름·색·순서, 직원 자리 순서 ──
+const prefsOf = () => (REMOTE ? remoteShare?.teams?.prefs || {} : teamPrefs);
+const teamLabel = (team) => prefsOf()[team]?.name || team;
+function teamColor(team) {
+  const c = prefsOf()[team]?.color;
+  return Number.isInteger(c) && c >= 0 && c < RUGS.length ? RUGS[c] : RUGS[hash(team) % RUGS.length];
+}
+
+/** 정해 둔 팀 순서·자리 순서대로(정하지 않은 것은 출근 순서 그대로 뒤에). teams: Map(팀 → 직원들) 을 그 자리에서 바꾼다. */
+function orderTeams(teams) {
+  const tOrder = REMOTE ? remoteShare?.teams?.order || [] : teamOrder;
+  const sOrder = REMOTE ? remoteShare?.teams?.seats || [] : seatOrder;
+  const rank = (arr, k) => { const i = arr.indexOf(k); return i < 0 ? Infinity : i; };
+  const entries = [...teams.entries()];
+  entries.forEach(([, members], i) => {
+    const pos = new Map(members.map((s, j) => [s.id, j]));
+    members.sort((a, b) => (rank(sOrder, a.id) - rank(sOrder, b.id)) || (pos.get(a.id) - pos.get(b.id)));
+  });
+  const first = new Map(entries.map(([t], i) => [t, i]));
+  entries.sort(([a], [b]) => (rank(tOrder, a) - rank(tOrder, b)) || (first.get(a) - first.get(b)));
+  teams.clear();
+  for (const [t, m] of entries) teams.set(t, m);
+}
+
+/** 지금 사무실에 있는 팀(보이는 순서). */
+function currentTeams() {
+  const m = new Map();
+  for (const s of data.sessions) { if (!m.has(s.team)) m.set(s.team, []); m.get(s.team).push(s); }
+  orderTeams(m);
+  return [...m.keys()];
+}
+
+function saveTeams() {
+  store.set('teams', teamPrefs);
+  store.set('teamOrder', teamOrder);
+  store.set('seatOrder', seatOrder);
+  teamRev++;
+  layoutKey = '';
+  shareToApp();   // 휴대폰에도 같은 이름·색·순서
+}
+
+function setTeamPref(team, patch) {
+  const p = { ...(teamPrefs[team] || {}), ...patch };
+  if (!p.name) delete p.name;
+  if (!Number.isInteger(p.color)) delete p.color;
+  if (Object.keys(p).length) teamPrefs[team] = p; else delete teamPrefs[team];
+  saveTeams();
+}
+
+/** 팀을 한 칸 앞(-1)·뒤(+1)로. 지금 보이는 순서를 통째로 저장한다. */
+function moveTeam(team, dir) {
+  const order = currentTeams();
+  const i = order.indexOf(team), j = i + dir;
+  if (i < 0 || j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  teamOrder = [...order, ...teamOrder.filter((t) => !order.includes(t))].slice(0, 100);
+  saveTeams();
+}
+
+/** 직원 자리를 같은 팀 안에서 한 칸 앞(-1)·뒤(+1)로. */
+function moveSeat(id, dir) {
+  const s = data.sessions.find((x) => x.id === id);
+  if (!s) return;
+  const m = new Map([[s.team, data.sessions.filter((x) => x.team === s.team)]]);
+  orderTeams(m);
+  const order = m.get(s.team).map((x) => x.id);
+  const i = order.indexOf(id), j = i + dir;
+  if (j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  seatOrder = [...order, ...seatOrder.filter((x) => !order.includes(x))].slice(0, 300);
+  saveTeams();
+  renderPanel();
 }
 
 function planZones(teams, lw) {
@@ -361,7 +464,7 @@ function planZones(teams, lw) {
     let x = Math.max(8, Math.floor((lw - rowW) / 2));
     let rowH = 0;
     for (const b of row) {
-      zonesOut.push({ team: b.team, x, y, w: b.w, h: b.h, count: b.members.length, color: RUGS[hash(b.team) % RUGS.length] });
+      zonesOut.push({ team: b.team, x, y, w: b.w, h: b.h, count: b.members.length, color: teamColor(b.team) });
       b.members.forEach((s, i) => {
         desksOut.push({ s, x: x + ZONE_PAD + (i % b.cols) * CELL_W, y: y + ZONE_HEAD + Math.floor(i / b.cols) * CELL_H });
       });
@@ -815,7 +918,7 @@ function drawZoneLabel(z) {
   ctx.font = `700 ${fontSmall}px ${FONT}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  const text = `📁 ${z.team}  ·  ${z.count}명`;
+  const text = `📁 ${teamLabel(z.team)}  ·  ${z.count}명`;
   const h = clamp(Math.round((ZONE_HEAD - 6) * U), 16, 24);
   const w = Math.min(ctx.measureText(text).width + 16, z.w * U - 8);
   const x = (z.x + 3) * U, y = (z.y + 3) * U;
@@ -1007,7 +1110,7 @@ function entryName(e) {
 
 const $ = (id) => document.getElementById(id);
 const summaryEl = $('summary'), emptyEl = $('empty'), tooltipEl = $('tooltip'), panelEl = $('panel');
-const btnAway = $('btnAway'), btnPin = $('btnPin'), btnHook = $('btnHook'), btnSettings = $('btnSettings');
+const btnAway = $('btnAway'), btnPin = $('btnPin'), btnHook = $('btnHook'), btnSettings = $('btnSettings'), btnWidget = $('btnWidget'), btnToday = $('btnToday');
 const settingsEl = $('settings'), settingsBody = $('sBody'), drawerTab = $('drawerTab');
 
 function refreshHud() {
@@ -1036,8 +1139,66 @@ function refreshHud() {
   // 좁은 화면에서는 상단 표시가 맨 위 막대가 된다(office.css) — 그 높이만큼 사무실을 내려 간판을 덮지 않게
   document.body.style.setProperty('--hud-h', innerWidth <= 600 ? `${hudEl.offsetHeight}px` : '0px');
   refreshEmpty(shown);
+  if (widgetOn()) renderWidget();
   document.title = wait ? `(✋${wait}) ${officeTitle()}` : officeTitle();   // 앱 창 제목·작업표시줄에도 반영됨
 }
+
+// ───────────────────────────── 작게 보기(위젯) ─────────────────────────────
+// 그림 대신 직원·상태를 한 줄씩. PC 앱은 창도 작게(앱이 크기·위치를 따로 기억), 휴대폰은 목록으로만.
+// PC에서는 앱(app.json)이 켜짐 여부의 원본 — 다음에 켤 때 처음부터 작은 창으로 뜨게.
+const wlistEl = $('wlist');
+const LOCAL_WIDGET = REMOTE || DEMO;   // 휴대폰·견본은 창 크기를 안 바꾸고 목록으로만(이 기기에 저장)
+let listView = LOCAL_WIDGET && store.get('listView', false);
+const widgetOn = () => (LOCAL_WIDGET ? listView : !!appSettings?.widget);
+
+function setWidget(on) {
+  if (LOCAL_WIDGET) { listView = on; store.set('listView', on); applyWidget(); }
+  else send({ cmd: 'widget', value: on });   // 앱이 창 크기를 바꾸고 {type:"app", widget} 으로 알려 준다 → applyWidget
+}
+
+function applyWidget() {
+  const on = widgetOn();
+  document.body.classList.toggle('widget', on);
+  wlistEl.hidden = !on;
+  btnWidget.classList.toggle('on', on);
+  if (on) { selectedId = null; renderPanel(); setSettingsOpen(false); renderWidget(); }
+  else { lastWidgetH = 0; layoutKey = ''; if (!LOCAL_WIDGET) send({ cmd: 'topmost', value: pinned }); }
+}
+
+// 기다리는 직원 → 일하는 직원 → 쉬는 직원 → 퇴근 순, 같은 무리 안에서는 최근 순
+const WIDGET_RANK = (s) => (s.act === 'away' ? 3 : actOf(s).wait ? 0 : actOf(s).busy ? 1 : 2);
+let lastWidgetH = 0;
+
+function renderWidget() {
+  const list = visibleSessions().slice().sort((a, b) => WIDGET_RANK(a) - WIDGET_RANK(b) || (b.last || 0) - (a.last || 0));
+  const wait = data.sessions.filter((s) => s.act !== 'away' && actOf(s).wait).length;
+  const head = elem('div', 'whd');
+  head.append(elem('b', '', officeTitle()), elem('span', '', wait ? `✋ ${wait}` : `👥 ${list.filter((s) => s.act !== 'away').length}`),
+    elem('span', 'sp'));
+  if (REMOTE) head.append(elem('span', '', remoteLabel()));
+  const big = elem('button', '', '⤢ 크게');
+  big.title = '사무실 그림으로 보기';
+  big.addEventListener('click', () => setWidget(false));
+  head.append(big);
+
+  const rows = list.map((s) => {
+    const a = actOf(s);
+    const row = elem('div', 'wrow' + (a.wait ? ' wait' : '') + (s.act === 'away' ? ' away' : ''));
+    const tx = elem('div', 'tx', s.text || a.label);
+    tx.style.color = a.tone;
+    row.append(elem('div', 'ic', s.icon), elem('div', 'nm', displayName(s)),
+      elem('div', 'tm', s.act === 'away' ? '퇴근' : fmtDur(now() - (s.since || s.last)) + (a.wait ? ' 기다림' : '')), tx);
+    row.title = `${s.team} — 누르면 크게 보며 이 직원 열기`;
+    row.addEventListener('click', () => { setWidget(false); setTimeout(() => selectSession(s.id), REMOTE ? 0 : 300); });
+    return row;
+  });
+  wlistEl.replaceChildren(head, ...(rows.length ? rows : [elem('div', 'wempty', $('emptyBig').textContent || '직원이 없어요')]));
+
+  // 앱 창 높이를 목록에 맞춘다(바뀔 때만)
+  const h = Math.ceil(wlistEl.getBoundingClientRect().height);
+  if (!LOCAL_WIDGET && h !== lastWidgetH) { lastWidgetH = h; send({ cmd: 'widget-size', height: h }); }
+}
+setInterval(() => { if (widgetOn()) renderWidget(); }, 5000);   // "N분 전" 갱신
 
 /** 책상이 하나도 없을 때 왜 비었는지 알려 준다. */
 function refreshEmpty(shown) {
@@ -1135,6 +1296,14 @@ function togglePick(id, checked) {
 const toggleHooks = () => send({ cmd: 'hooks' });
 
 btnAway.addEventListener('click', () => setShowAway(!showAway));
+btnWidget.addEventListener('click', () => setWidget(!widgetOn()));
+btnToday.addEventListener('click', () => {   // 📊 오늘의 근무 일지 — 다시 누르면 닫기
+  const open = selectedId === REPORT_ID && !panelEl.hidden;
+  if (!open && !settingsEl.hidden) setSettingsOpen(false);
+  selectedId = open ? null : REPORT_ID;
+  drawerFolded = false;
+  renderPanel();
+});
 btnPin.addEventListener('click', () => setPinned(!pinned));
 btnHook.addEventListener('click', toggleHooks);
 
@@ -1177,6 +1346,7 @@ let appSettings = null;
 function onApp(msg) {
   appSettings = msg;
   btnSettings.classList.toggle('dot', !!msg.update?.newer);   // 새 버전이 나오면 ⚙️ 에 점
+  if (!!msg.widget !== document.body.classList.contains('widget')) applyWidget();
   refreshSettings();
 }
 
@@ -1343,10 +1513,21 @@ const SETTINGS = [
     ],
   },
   {
+    title: '팀',
+    items: [
+      { type: 'teams', pcOnly: true },
+    ],
+  },
+  {
     title: '창',
     items: [
       { type: 'toggle', name: '항상 위에 표시', desc: '다른 창에 가려지지 않게 맨 위에 띄웁니다.', pcOnly: true,
         get: () => pinned, set: setPinned },
+      { type: 'choice', name: '사무실 크기', desc: '화면에 맞춘 크기에서 작게·크게 바꿉니다. 크게 하면 넘치는 만큼 아래로 스크롤합니다.',
+        options: [[-2, '더 작게'], [-1, '작게'], [0, '맞춤'], [1, '크게'], [2, '더 크게']],
+        get: () => zoom, set: (v) => { zoom = v; store.set('zoom', v); layoutKey = ''; } },
+      { type: 'toggle', name: '작게 보기(목록)', desc: () => (REMOTE ? '사무실 그림 대신 직원·상태를 한 줄씩 보여 줍니다.' : '창을 작게 줄이고 직원·상태만 한 줄씩 보여 줍니다(맨 위에 떠 있음). 상단 ▤ 버튼과 같습니다. 크기·위치는 따로 기억합니다.'),
+        get: widgetOn, set: setWidget, enabled: () => LOCAL_WIDGET || appReady() },
       { type: 'toggle', name: '프로그램 시작 시 작업표시줄로 이동', pcOnly: true,
         desc: '켜 두면 다음 실행부터 창을 띄우지 않고 작업표시줄 오른쪽 알림 영역(🏢)에 숨긴 채로 켜집니다. 아이콘을 누르면 창이 열립니다. 감시와 휴대폰 보기는 그대로 돌아갑니다.',
         get: () => !!appSettings?.startMinimized,
@@ -1435,6 +1616,18 @@ const SETTINGS = [
       { type: 'toggle', name: '새 버전 알림', pcOnly: true,
         desc: '하루 두 번 GitHub에 새 버전이 나왔는지 물어보고, 나왔으면 한 번 알려 드립니다(보내는 것은 프로그램 버전뿐).',
         get: () => !!appSettings?.updateCheck, set: (v) => setAppSetting('updateCheck', v), enabled: appReady },
+      { type: 'action', name: '별명·메모 내보내기', pcOnly: true,
+        desc: '별명·메모·사무실 이름을 파일 하나로 저장합니다(다른 PC로 옮기거나 백업할 때).',
+        label: () => '내보내기', run: () => send({ cmd: 'share-export' }), enabled: appReady },
+      { type: 'action', name: '별명·메모 가져오기', pcOnly: true,
+        desc: '내보낸 파일을 읽어 합칩니다. 이 PC에 없거나 파일 쪽을 더 나중에 고친 것만 반영합니다.',
+        label: () => '가져오기', run: () => send({ cmd: 'share-import' }), enabled: appReady },
+      { type: 'action', name: '설정 초기화', pcOnly: true,
+        desc: '직원 표시·창·알림 설정을 처음 값으로 되돌립니다. 별명·메모·사무실 이름·팀 이름·휴대폰 보기·훅·자동 실행은 그대로입니다.',
+        label: () => '초기화', run: () => send({ cmd: 'reset-settings' }), enabled: appReady },
+      { type: 'action', name: '문제 보고', pcOnly: true,
+        desc: 'GitHub 이슈 작성 화면을 엽니다. 버전·Windows·WebView2 정보만 미리 채웁니다(대화 내용은 보내지 않음).',
+        label: () => 'GitHub에 쓰기', run: () => send({ cmd: 'report-issue' }), enabled: () => !DEMO },
       { type: 'action', name: '데이터 폴더', pcOnly: true,
         desc: '설정과 별명·메모 사본(share.json), 휴대폰 보기 키(cloud.json)가 있는 곳입니다. 다른 PC로 옮길 때는 share.json 을 그 PC의 같은 폴더에 복사하세요. cloud.json 은 남에게 주지 마세요.',
         label: () => '열기', run: () => send({ cmd: 'open-data-dir' }), enabled: appReady },
@@ -1518,6 +1711,57 @@ const RENDER = {
     row.append(input);
     return () => {
       if (document.activeElement !== input) input.value = it.get();   // 쓰는 도중엔 덮어쓰지 않는다
+    };
+  },
+
+  // 팀(작업 폴더)마다 표시 이름·카펫 색·순서. 팀 목록·색·순서가 바뀔 때만 다시 만든다(이름 칸에 쓰는 도중 사라지지 않게)
+  teams(it, row) {
+    row.classList.add('stack');
+    const box = elem('div', 'teamlist');
+    row.append(elem('div', 'desc', '팀은 작업 폴더의 마지막 두 단계입니다. 이름·카펫 색·순서를 정하면 휴대폰에도 같게 보입니다. 직원 자리는 직원 상세의 ◀ ▶ 로 옮깁니다.'), box);
+    let builtKey = null;
+    const inputs = new Map();
+    return () => {
+      const teams = currentTeams();
+      const key = teams.join('|') + JSON.stringify(teams.map((t) => teamPrefs[t]?.color ?? -1));
+      if (key !== builtKey) {
+        builtKey = key;
+        inputs.clear();
+        box.replaceChildren(...(teams.length ? teams.map((team, i) => {
+          const r = elem('div', 'team-row'), top = elem('div', 'tr-top');
+          const sw = elem('span', 'sw');
+          sw.style.background = teamColor(team);
+          const name = elem('input', 'field');
+          name.type = 'text';
+          name.maxLength = 30;
+          name.placeholder = team;
+          name.spellcheck = false;
+          name.addEventListener('input', () => setTeamPref(team, { name: name.value.trim() }));
+          inputs.set(team, name);
+          const up = elem('button', 'mini', '▲'), down = elem('button', 'mini', '▼');
+          up.title = '앞으로';
+          down.title = '뒤로';
+          up.disabled = i === 0;
+          down.disabled = i === teams.length - 1;
+          up.addEventListener('click', () => moveTeam(team, -1));
+          down.addEventListener('click', () => moveTeam(team, 1));
+          top.append(sw, name, up, down);
+          const colors = elem('div', 'tr-colors');
+          const cur = teamPrefs[team]?.color;
+          const auto = elem('button', 'c auto' + (Number.isInteger(cur) ? '' : ' on'), '자동');
+          auto.addEventListener('click', () => setTeamPref(team, { color: undefined }));
+          colors.append(auto, ...RUGS.map((c, ci) => {
+            const b = elem('button', 'c' + (cur === ci ? ' on' : ''));
+            b.style.background = c;
+            b.title = `색 ${ci + 1}`;
+            b.addEventListener('click', () => setTeamPref(team, { color: ci }));
+            return b;
+          }));
+          r.append(top, elem('div', 'tr-key mono', team), colors);
+          return r;
+        }) : [elem('div', 'desc', '아직 사무실에 팀이 없어요.')]));
+      }
+      for (const [team, input] of inputs) if (document.activeElement !== input) input.value = teamPrefs[team]?.name || '';
     };
   },
 
@@ -1798,7 +2042,7 @@ function syncDrawers() {
   if (!open) return;
   const s = !panelEl.hidden ? data.sessions.find((x) => x.id === selectedId) : null;
   drawerTab.querySelector('.arrow').textContent = drawerFolded ? '‹' : '›';
-  drawerTab.querySelector('.lbl').textContent = drawerFolded ? (s ? displayName(s) : '설정') : '';
+  drawerTab.querySelector('.lbl').textContent = drawerFolded ? (s ? displayName(s) : selectedId === REPORT_ID && !panelEl.hidden ? '근무 일지' : '설정') : '';
   drawerTab.title = drawerFolded ? '펼치기' : '접기 — 사무실을 넓게 보기';
 }
 
@@ -1853,6 +2097,8 @@ canvas.addEventListener('click', (e) => {
 });
 
 $('pClose').addEventListener('click', () => { selectedId = null; renderPanel(); });
+$('pSeatL').addEventListener('click', () => { if (selectedId) moveSeat(selectedId, -1); });
+$('pSeatR').addEventListener('click', () => { if (selectedId) moveSeat(selectedId, 1); });
 // 작업 폴더를 탐색기로 — 경로는 앱이 자기 스냅샷에서 찾는다(화면이 보낸 경로를 그대로 열지 않음)
 $('pOpenDir').addEventListener('click', () => { if (selectedId) send({ cmd: 'open-folder', id: selectedId }); });
 document.addEventListener('keydown', (e) => {
@@ -1887,7 +2133,72 @@ function listItem(icon, text, time) {
   return li;
 }
 
+// ───────────────────────────── 오늘의 근무 일지 ─────────────────────────────
+// 앱이 세션마다 보내는 today: {work(ms), prompts, in, out, cacheRead, cacheWrite, tools:[{n, c}]} — 인턴 몫 포함, 이 PC 날짜 기준
+
+const REPORT_ID = '@today';
+
+function fmtTok(n) {
+  if (!n) return '0';
+  if (n < 1000) return String(n);
+  if (n < 1e6) return (n / 1e3).toFixed(n < 1e4 ? 1 : 0) + 'K';
+  return (n / 1e6).toFixed(n < 1e7 ? 2 : 1) + 'M';
+}
+const tokIn = (t) => (t.in || 0) + (t.cacheRead || 0) + (t.cacheWrite || 0);   // 모델이 읽은 전체(캐시 포함)
+const fmtWork = (ms) => (ms >= 60000 ? fmtDur(ms) : ms > 0 ? '1분 미만' : '0분');
+
+function todayLines(t) {
+  if (!t) return [elem('div', 'dimline', '오늘 기록이 없어요')];
+  const tools = (t.tools || []).slice(0, 4).map((x) => `${x.n} ${x.c}`).join(' · ');
+  return [
+    elem('div', '', `⏱️ 일한 시간 ${fmtWork(t.work)} · 💬 지시 ${t.prompts}번`),
+    elem('div', '', `🪙 토큰 입력 ${fmtTok(tokIn(t))} (캐시 읽기 ${fmtTok(t.cacheRead)}) · 출력 ${fmtTok(t.out)}`),
+    ...(tools ? [elem('div', 'dimline', `🔧 ${tools}`)] : []),
+  ];
+}
+
+function renderReport() {
+  const rows = data.sessions.filter((s) => s.today).sort((a, b) => b.today.work - a.today.work);
+  const sum = (f) => rows.reduce((n, s) => n + f(s.today), 0);
+  const maxWork = Math.max(1, ...rows.map((s) => s.today.work));
+  const d = new Date();
+  const head = [elem('h2', '', '📊 오늘의 근무 일지'), elem('div', 'dim', `${d.getMonth() + 1}월 ${d.getDate()}일 · 직원 ${rows.length}명 · 인턴 몫 포함`)];
+  const tot = elem('div', 'rtot');
+  for (const [label, value] of [['일한 시간', fmtWork(sum((t) => t.work))], ['지시', `${sum((t) => t.prompts)}번`], ['토큰(입력+출력)', fmtTok(sum((t) => tokIn(t) + t.out))]]) {
+    const box = elem('div', '', label);
+    box.append(elem('b', '', value));
+    tot.append(box);
+  }
+  const list = rows.map((s) => {
+    const t = s.today;
+    const row = elem('div', 'rrow');
+    const h = elem('div', 'rh');
+    h.append(elem('span', '', `${s.icon} ${displayName(s)}`), elem('span', '', fmtWork(t.work)));
+    const bar = elem('div', 'bar'), fill = elem('i');
+    fill.style.width = `${Math.round((t.work / maxWork) * 100)}%`;
+    bar.append(fill);
+    const tools = (t.tools || []).slice(0, 3).map((x) => `${x.n} ${x.c}`).join(' · ');
+    row.append(h, bar, elem('div', 'rd', `지시 ${t.prompts}번 · 토큰 ${fmtTok(tokIn(t))}/${fmtTok(t.out)}${tools ? ' · ' + tools : ''}`));
+    row.title = '누르면 이 직원 보기';
+    row.addEventListener('click', () => selectSession(s.id));
+    return row;
+  });
+  $('pReport').replaceChildren(...head, tot, ...(list.length ? list : [elem('div', 'dim', '오늘은 아직 일한 직원이 없어요.')]),
+    elem('p', 'rnote', '일한 시간: 지시를 받은 뒤 답을 마칠 때까지(승인 기다림·명령 실행 포함, 30분 넘게 조용한 틈은 뺌). 토큰 입력은 캐시에서 읽은 것을 포함합니다.'));
+}
+
 function renderPanel() {
+  const report = selectedId === REPORT_ID;
+  btnToday.classList.toggle('on', report);
+  $('pReport').hidden = !report;
+  $('pMain').hidden = report;
+  if (report) {
+    panelEl.hidden = false;
+    noteFor = null;
+    syncDrawers();
+    renderReport();
+    return;
+  }
   const s = selectedId ? data.sessions.find((x) => x.id === selectedId) : null;
   panelEl.hidden = !s;
   syncDrawers();
@@ -1909,11 +2220,13 @@ function renderPanel() {
   st.style.color = a.tone;
   $('pCwd').textContent = s.cwd || s.team;
   $('pOpenDir').hidden = DEMO || !s.cwd;
+  $('pTeam').textContent = teamLabel(s.team);
   $('pEntry').textContent = entryName(s.entry);
   $('pModel').textContent = s.model || '-';
   $('pBranch').textContent = s.branch || '-';
   $('pLast').textContent = s.last ? `${fmtTime(s.last)} (${fmtDur(now() - s.last)} 전)` : '-';
   $('pPrompt').textContent = s.prompt || '(없음)';
+  $('pToday').replaceChildren(...todayLines(s.today));
   const interns = s.interns || [];
   $('pInternsWrap').hidden = interns.length === 0;
   $('pInterns').replaceChildren(...interns.map((it) => listItem(it.icon, `${it.name}${it.desc ? ' · ' + it.desc : ''} — ${it.text}`)));
@@ -2065,6 +2378,11 @@ function startDemo() {
             { id: p.id + '-i1', name: '일반 인턴', desc: '결제 모듈 구조 분석', act: 'reading', icon: '📄', text: 'PaymentClient.cs 읽는 중', since: t - 3000 },
             { id: p.id + '-i2', name: '탐색 인턴', desc: '호출부 찾기', act: step % 2 ? 'idle' : 'searching', icon: step % 2 ? '✅' : '🔍', text: step % 2 ? '다 했어요!' : "'ProcessOrderAsync' 찾는 중", since: t - 2000 },
           ] : [],
+          today: p.id === 'demo-c2' ? null : {   // 견본 근무 일지(직원마다 다르게)
+            work: (95 - i * 13) * 60000, prompts: 14 - i, in: 41000 + i * 3000, out: 52000 - i * 6000,
+            cacheRead: 3200000 - i * 400000, cacheWrite: 180000 - i * 20000,
+            tools: [{ n: 'Bash', c: 34 - i * 3 }, { n: 'Read', c: 22 - i }, { n: 'Edit', c: 12 - i }, { n: 'Grep', c: 9 }],
+          },
         };
       }),
     };
@@ -2089,10 +2407,12 @@ if (REMOTE) {
   nickEl.readOnly = memoEl.readOnly = true;
   nickEl.placeholder = memoEl.placeholder = '별명·메모는 PC에서 정합니다';
   startRemote();
+  if (listView) applyWidget();
   // 설치형 앱(주소창 없이 열기)에 필요. 끊겼을 때 마지막 화면 파일을 보여 주는 정도만 한다(sw.js)
   if ('serviceWorker' in navigator && window.isSecureContext && !host) navigator.serviceWorker.register('sw.js').catch(() => {});
 } else if (DEMO) {
   startDemo();
+  if (listView) applyWidget();
 } else {
   host.addEventListener('message', (e) => {
     const m = e.data;
@@ -2102,6 +2422,7 @@ if (REMOTE) {
     else if (m?.type === 'app') onApp(m);
     else if (m?.type === 'share') onSavedShare(m.data);
     else if (m?.type === 'select') selectSession(m.id);
+    else if (m?.type === 'reset') resetScreenSettings();
     else onSnapshot(m);
   });
   send({ cmd: 'ready' });   // 앱이 저장해 둔 별명·메모(share)를 돌려주면 합쳐서 다시 보낸다(onSavedShare)

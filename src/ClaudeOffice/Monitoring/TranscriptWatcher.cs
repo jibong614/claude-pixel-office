@@ -277,6 +277,13 @@ public sealed class TranscriptWatcher : IDisposable
             skipFirstLine = true;
         }
 
+        // 처음 읽을 때 앞부분을 건너뛰면 그 안의 오늘 줄은 근무 일지(토큰 등)에만 따로 센다
+        if (!s.Initialized && start > 0 && File.GetLastWriteTime(s.FilePath).Date == DateTime.Now.Date)
+        {
+            try { DayStats.ScanPrefix(s, start); }
+            catch (IOException) { }
+        }
+
         var buf = new byte[len - start];
         using (var fs = new FileStream(s.FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
         {

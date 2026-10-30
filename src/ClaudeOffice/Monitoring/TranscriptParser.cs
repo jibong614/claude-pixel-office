@@ -38,8 +38,8 @@ internal static partial class TranscriptParser
             case "ai-title": s.AiTitle = Str(r, "aiTitle") ?? s.AiTitle; return;
             case "agent-name": s.AgentName = Str(r, "agentName") ?? s.AgentName; return;
             case "last-prompt": s.LastPrompt = CleanPrompt(Str(r, "lastPrompt")) ?? s.LastPrompt; return;
-            case "user": Common(s, r, ts); OnUser(s, r, ts); return;
-            case "assistant": Common(s, r, ts); OnAssistant(s, r, ts); return;
+            case "user": Common(s, r, ts); s.Today.Add(r, type, ts); OnUser(s, r, ts); return;
+            case "assistant": Common(s, r, ts); s.Today.Add(r, type, ts); OnAssistant(s, r, ts); return;
             case "system": OnSystem(s, r, ts); return;
         }
     }
@@ -214,7 +214,7 @@ internal static partial class TranscriptParser
     private static bool Bool(JsonElement e, string name) =>
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
 
-    private static DateTime? Time(JsonElement r)
+    internal static DateTime? Time(JsonElement r)
     {
         var s = Str(r, "timestamp");
         return s != null && DateTime.TryParse(s, CultureInfo.InvariantCulture,

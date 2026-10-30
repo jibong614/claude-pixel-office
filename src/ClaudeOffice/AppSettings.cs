@@ -35,6 +35,10 @@ internal sealed class AppSettings
     /// <summary>마지막 창 위치·크기(화면 밖이면 쓰지 않는다).</summary>
     public WindowPlacement? Window { get; set; }
 
+    /// <summary>작게 보기(위젯): 창을 작게 줄이고 직원·상태 목록만. 위치·폭은 보통 창과 따로 기억한다(높이는 목록에 맞춤).</summary>
+    public bool Widget { get; set; }
+    public WindowPlacement? WidgetWindow { get; set; }
+
     public sealed class WindowPlacement
     {
         public double Left { get; set; }

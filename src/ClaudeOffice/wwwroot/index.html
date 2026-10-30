@@ -18,9 +18,13 @@
 </head>
 <body>
   <canvas id="office"></canvas>
+  <!-- 작게 보기(위젯): 그림 대신 직원·상태 목록. 앱 창도 작아진다 -->
+  <div id="wlist" hidden></div>
 
   <div id="hud">
     <div id="summary"></div>
+    <button id="btnWidget" title="작게 보기(목록) — 직원·상태만 한 줄씩">▤</button>
+    <button id="btnToday" title="오늘의 근무 일지 — 일한 시간·지시·토큰">📊</button>
     <button id="btnHook" hidden>🔕</button>
     <button id="btnAway" title="퇴근한 직원 보이기/숨기기">🚪</button>
     <button id="btnPin" title="항상 위에 표시">📌</button>
@@ -38,6 +42,9 @@
 
   <aside id="panel" class="drawer" hidden>
     <button id="pClose" class="close" title="닫기">✕</button>
+    <!-- 📊 오늘의 근무 일지(모든 직원) — 열려 있으면 아래 직원 상세 대신 -->
+    <div id="pReport" hidden></div>
+    <div id="pMain">
     <h2 id="pName"></h2>
     <div id="pTitle" class="dim"></div>
     <div id="pState" class="state"></div>
@@ -46,12 +53,15 @@
     <input id="pNick" class="field" type="text" maxlength="30" autocomplete="off" spellcheck="false">
     <textarea id="pMemo" class="field" rows="3" placeholder="이 세션에 대한 메모 (쓰는 대로 저장됩니다)"></textarea>
     <dl>
-      <dt>팀(작업 폴더)</dt><dd><span id="pCwd" class="mono"></span> <button id="pOpenDir" class="mini" title="탐색기로 작업 폴더 열기">📂 열기</button></dd>
+      <dt>팀</dt><dd><span id="pTeam"></span> <span class="seat"><button id="pSeatL" class="mini" title="같은 팀 안에서 자리를 앞으로">◀ 자리</button><button id="pSeatR" class="mini" title="같은 팀 안에서 자리를 뒤로">자리 ▶</button></span></dd>
+      <dt>작업 폴더</dt><dd><span id="pCwd" class="mono"></span> <button id="pOpenDir" class="mini" title="탐색기로 작업 폴더 열기">📂 열기</button></dd>
       <dt>실행 위치</dt><dd id="pEntry"></dd>
       <dt>모델</dt><dd id="pModel"></dd>
       <dt>브랜치</dt><dd id="pBranch"></dd>
       <dt>마지막 활동</dt><dd id="pLast"></dd>
     </dl>
+    <h3>오늘</h3>
+    <div id="pToday" class="today"></div>
     <h3>마지막 지시</h3>
     <p id="pPrompt" class="prompt"></p>
     <section id="pInternsWrap">
@@ -61,6 +71,7 @@
     <h3>최근 작업</h3>
     <ul id="pLog"></ul>
     <div id="pId" class="dim mono"></div>
+    </div>
   </aside>
 
   <!-- 서랍 손잡이: 펼쳐져 있으면 서랍 왼쪽 가장자리(› 접기), 접혀 있으면 창 오른쪽 끝(‹ 이름 · 펼치기) -->

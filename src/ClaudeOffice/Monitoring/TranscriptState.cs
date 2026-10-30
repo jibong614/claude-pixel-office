@@ -87,6 +87,9 @@ internal sealed class TranscriptState
 
     // 훅으로 알게 된 것
     public HookWait? Wait;
+
+    /// <summary>오늘의 근무 일지(일한 시간·지시·도구·토큰).</summary>
+    public readonly DayStats Today = new();
     public DateTime EndedUtc;     // SessionEnd 를 받은 시각. 그 뒤로 대화가 이어지면(resume) 무시된다
 
     /// <summary>마지막으로 일한 시각. 대화 기록의 timestamp 기준(파일 수정 시각은 메타데이터 줄 때문에 부정확).</summary>

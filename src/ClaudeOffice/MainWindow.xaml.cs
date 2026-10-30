@@ -220,19 +220,85 @@ public partial class MainWindow : Window
 
     // ───────────────────────── 창 위치·크기 ─────────────────────────
 
+    private const double NormalMinWidth = 480, NormalMinHeight = 360, WidgetMinWidth = 260, WidgetMinHeight = 110;
+
     private void RestorePlacement()
     {
-        if (App.Settings.Window is not { } w || w.Width < MinWidth || w.Height < MinHeight) return;
-        // 제목 표시줄 가운데가 화면 안에 있어야 쓴다(모니터를 뺐거나 해상도가 바뀐 경우)
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        if (App.Settings.Widget) ApplyWidgetPlacement();
+        else if (!ApplyNormalPlacement()) WindowStartupLocation = WindowStartupLocation.CenterScreen;
+    }
+
+    /// <summary>제목 표시줄 가운데가 화면 안에 있어야 그 위치를 쓴다(모니터를 뺐거나 해상도가 바뀐 경우).</summary>
+    private static bool OnScreen(AppSettings.WindowPlacement w)
+    {
         var screen = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
                               SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
-        if (!screen.IntersectsWith(new Rect(w.Left + 60, w.Top, Math.Max(1, w.Width - 120), 24))) return;
-        WindowStartupLocation = WindowStartupLocation.Manual;
-        Left = w.Left;
-        Top = w.Top;
+        return screen.IntersectsWith(new Rect(w.Left + 60, w.Top, Math.Max(1, w.Width - 120), 24));
+    }
+
+    /// <summary>보통 창: 기억해 둔 위치·크기(없거나 화면 밖이면 false — 기본 크기).</summary>
+    private bool ApplyNormalPlacement()
+    {
+        MinWidth = NormalMinWidth;
+        MinHeight = NormalMinHeight;
+        if (App.Settings.Window is not { } w || w.Width < NormalMinWidth || w.Height < NormalMinHeight || !OnScreen(w))
+        {
+            Width = 1180;
+            Height = 760;
+            return false;
+        }
+        if (!App.Offscreen) { Left = w.Left; Top = w.Top; }
         Width = w.Width;
         Height = w.Height;
         if (w.Maximized) WindowState = WindowState.Maximized;
+        return true;
+    }
+
+    /// <summary>작게 보기: 기억해 둔 위치·폭, 처음이면 화면 오른쪽 위. 늘 맨 위에. 높이는 화면이 목록 높이를 알려 주면 맞춘다.</summary>
+    private void ApplyWidgetPlacement()
+    {
+        WindowState = WindowState.Normal;
+        MinWidth = WidgetMinWidth;
+        MinHeight = WidgetMinHeight;
+        Topmost = true;
+        var w = App.Settings.WidgetWindow;
+        Width = w is { Width: >= WidgetMinWidth and <= 1000 } ? w.Width : 340;
+        Height = w is { Height: >= WidgetMinHeight } ? w.Height : 260;
+        if (App.Offscreen) return;   // 점검용 창은 화면 밖 그대로
+        var wa = SystemParameters.WorkArea;
+        if (w != null && OnScreen(w)) { Left = w.Left; Top = w.Top; }
+        else { Left = wa.Right - Width - 16; Top = wa.Top + 16; }
+    }
+
+    private void SetWidget(bool on)
+    {
+        if (on != App.Settings.Widget)
+        {
+            SavePlacement();   // 지금 모양의 위치·크기를 먼저 기억
+            App.Settings.Widget = on;
+            TrySaveSettings();
+            if (on) ApplyWidgetPlacement();
+            else
+            {
+                Topmost = false;   // 화면이 "항상 위" 설정을 다시 보낸다
+                if (!ApplyNormalPlacement() && !App.Offscreen)
+                {
+                    var wa = SystemParameters.WorkArea;
+                    Left = wa.Left + (wa.Width - Width) / 2;
+                    Top = wa.Top + (wa.Height - Height) / 2;
+                }
+            }
+        }
+        Post(AppSettingsJson());
+    }
+
+    /// <summary>작게 보기 목록 높이(CSS 픽셀 = WPF 단위)에 창 높이를 맞춘다.</summary>
+    private void FitWidgetHeight(double contentHeight)
+    {
+        if (!App.Settings.Widget || WindowState != WindowState.Normal) return;
+        double chrome = Math.Max(0, ActualHeight - Web.ActualHeight);   // 제목 표시줄·테두리
+        Height = Math.Clamp(contentHeight + chrome, WidgetMinHeight, SystemParameters.WorkArea.Height - 40);
     }
 
     private void SavePlacement()
@@ -240,11 +306,13 @@ public partial class MainWindow : Window
         if (App.Offscreen || App.DemoMode || !IsLoaded) return;
         var b = WindowState == WindowState.Normal ? new Rect(Left, Top, ActualWidth, ActualHeight) : RestoreBounds;
         if (b.IsEmpty || b.Width < MinWidth || b.Height < MinHeight) return;
-        App.Settings.Window = new AppSettings.WindowPlacement
+        var p = new AppSettings.WindowPlacement
         {
             Left = b.Left, Top = b.Top, Width = b.Width, Height = b.Height,
             Maximized = WindowState == WindowState.Maximized,
         };
+        if (App.Settings.Widget) App.Settings.WidgetWindow = p;
+        else App.Settings.Window = p;
         TrySaveSettings();
     }
 
@@ -321,6 +389,7 @@ public partial class MainWindow : Window
             quietStart = s.QuietStart,
             quietEnd = s.QuietEnd,
             updateCheck = s.UpdateCheck,
+            widget = s.Widget,
             update = new { latest = _updates.Latest, newer = _updates.IsNewer, url = _updates.Url, error = _updates.Error, checkedAt = _updates.CheckedMs },
             tray = _tray != null,
         });
@@ -409,6 +478,12 @@ public partial class MainWindow : Window
                 case "cloud-page":
                     if (!App.DemoMode && root.TryGetProperty("value", out var page)) _cloud.SetPage(page.GetString() ?? "public");
                     break;
+                case "widget":
+                    if (!App.DemoMode) SetWidget(root.TryGetProperty("value", out var wv) && wv.ValueKind == JsonValueKind.True);
+                    break;
+                case "widget-size":
+                    if (root.TryGetProperty("height", out var wh) && wh.TryGetDouble(out var wheight)) FitWidgetHeight(wheight);
+                    break;
                 case "notify-test":
                     if (_tray is null) break;
                     _tray.Notify("✋ 알림 시험", "이렇게 알려 드려요 — 누르면 창이 열립니다", silent: !App.Settings.NotifySound, onClick: ShowFromTray);
@@ -422,6 +497,18 @@ public partial class MainWindow : Window
                 case "open-folder":   // 직원의 작업 폴더 — 화면이 보낸 경로가 아니라 지금 스냅샷에 있는 그 세션의 cwd 만 연다
                     if (!App.DemoMode && root.TryGetProperty("id", out var fid) && CwdOf(fid.GetString()) is { } cwd && Directory.Exists(cwd))
                         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{cwd}\"") { UseShellExecute = true });
+                    break;
+                case "share-export":
+                    if (!App.DemoMode) ExportShare();
+                    break;
+                case "share-import":
+                    if (!App.DemoMode) ImportShare();
+                    break;
+                case "reset-settings":
+                    if (!App.DemoMode) ResetSettings();
+                    break;
+                case "report-issue":
+                    OpenUrl(IssueUrl());
                     break;
                 case "open-data-dir":
                     if (!App.DemoMode)
@@ -441,7 +528,8 @@ public partial class MainWindow : Window
                         _cloud.Rekey();
                     break;
                 case "topmost":
-                    Topmost = root.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.True;
+                    // 작게 보기 중에는 늘 맨 위(나오면 화면이 이 설정을 다시 보낸다)
+                    Topmost = App.Settings.Widget || (root.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.True);
                     break;
                 case "hooks":
                     if (!App.DemoMode) ToggleHooks();
@@ -463,6 +551,90 @@ public partial class MainWindow : Window
         var json = await _cloud.CheckAsync();
         if (json != null) await Dispatcher.InvokeAsync(() => Post(json));
     });
+
+    // ───────────────────────── 별명·메모 내보내기/가져오기 · 설정 초기화 · 문제 보고 ─────────────────────────
+
+    private void ExportShare()
+    {
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "별명·메모 내보내기",
+            FileName = $"claude-office-notes-{DateTime.Now:yyyyMMdd}.json",
+            Filter = "JSON 파일|*.json",
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        try
+        {
+            File.WriteAllText(dlg.FileName, LoadShare() ?? "{\"office\":\"\",\"notes\":{}}", new System.Text.UTF8Encoding(false));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"저장하지 못했습니다.\r\n\r\n{ex.Message}", "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>내보낸 파일을 읽어 화면에 넘긴다 — 화면이 고친 시각(t) 기준으로 합친다(이 PC에 없거나 파일 쪽이 더 나중 것만).</summary>
+    private void ImportShare()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog { Title = "별명·메모 가져오기", Filter = "JSON 파일|*.json" };
+        if (dlg.ShowDialog(this) != true) return;
+        string text;
+        int count;
+        try
+        {
+            text = File.ReadAllText(dlg.FileName);
+            using var doc = JsonDocument.Parse(text);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("notes", out var notes) || notes.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("Claude Office 에서 내보낸 별명·메모 파일이 아닙니다.");
+            count = notes.EnumerateObject().Count();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+        {
+            MessageBox.Show(this, $"가져오지 못했습니다.\r\n\r\n{ex.Message}", "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        Post("{\"type\":\"share\",\"data\":" + text + "}");
+        MessageBox.Show(this, $"별명·메모 {count}개를 읽었습니다. 이 PC에 없거나 파일 쪽이 더 나중에 고친 것만 반영합니다.", "Claude Office", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    /// <summary>화면·알림·창 설정을 처음 값으로. 별명·메모·사무실 이름·휴대폰 보기 설정·자동 실행은 그대로 둔다.</summary>
+    private void ResetSettings()
+    {
+        if (MessageBox.Show(this,
+                "설정을 처음 값으로 되돌릴까요?\r\n\r\n직원 표시·창·알림·새 버전 알림 설정이 처음 값이 됩니다.\r\n" +
+                "별명·메모, 사무실 이름, 팀 이름·순서, 휴대폰 보기 설정, 훅 연결, Windows 자동 실행은 그대로 둡니다.",
+                "Claude Office — 설정 초기화", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            return;
+        bool wasWidget = App.Settings.Widget;
+        App.Settings.StartMinimized = false;
+        App.Settings.CloseToTray = true;
+        App.Settings.NotifyWaiting = App.Settings.NotifyDone = App.Settings.NotifySound = true;
+        App.Settings.NotifyDoneMinutes = 10;
+        App.Settings.QuietEnabled = false;
+        App.Settings.QuietStart = 22;
+        App.Settings.QuietEnd = 8;
+        App.Settings.UpdateCheck = true;
+        if (wasWidget) SetWidget(false);
+        Topmost = false;
+        TrySaveSettings();
+        Post("{\"type\":\"reset\"}");   // 화면이 자기 설정(localStorage)을 지우고 다시 읽는다
+        Post(AppSettingsJson());
+    }
+
+    /// <summary>GitHub 이슈 작성 화면 — 버전·Windows·WebView2 정보만 미리 채운다(오류 기록은 사용자가 확인하고 붙이게).</summary>
+    private string IssueUrl()
+    {
+        string webview;
+        try { webview = CoreWebView2Environment.GetAvailableBrowserVersionString(); }
+        catch (WebView2RuntimeNotFoundException) { webview = "없음"; }
+        bool hasErrorLog = File.Exists(Path.Combine(App.DataDir, "error.log"));
+        var body =
+            "**무슨 일이 있었나요?**\n\n\n**어떻게 하면 다시 생기나요?**\n\n\n---\n" +
+            $"- 버전: {App.Version}\n- Windows: {Environment.OSVersion.Version}\n- WebView2: {webview}\n" +
+            $"- 훅: {(HookSetup.IsInstalled() ? "연결됨" : "안 됨")} · Git Bash: {(HookSetup.FindGitBash() != null ? "있음" : "없음")}\n" +
+            (hasErrorLog ? "- 오류 기록: 데이터 폴더(⚙️ → 정보 → 데이터 폴더)의 error.log 에서 관련 부분을 붙여 주세요 — 폴더 경로·사용자 이름이 들어 있을 수 있으니 확인 후\n" : "");
+        return $"https://github.com/{UpdateChecker.Repo}/issues/new?body={Uri.EscapeDataString(body)}";
+    }
 
     private string? CwdOf(string? id)
     {
