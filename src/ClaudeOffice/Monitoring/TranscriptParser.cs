@@ -37,7 +37,7 @@ internal static partial class TranscriptParser
             case "custom-title": s.CustomTitle = Str(r, "customTitle") ?? s.CustomTitle; return;
             case "ai-title": s.AiTitle = Str(r, "aiTitle") ?? s.AiTitle; return;
             case "agent-name": s.AgentName = Str(r, "agentName") ?? s.AgentName; return;
-            case "last-prompt": s.LastPrompt = CleanPrompt(Str(r, "lastPrompt")) ?? s.LastPrompt; return;
+            case "last-prompt": if (!s.LastPromptFromPhone) s.LastPrompt = CleanPrompt(Str(r, "lastPrompt")) ?? s.LastPrompt; return;
             case "user": Common(s, r, ts); s.Today.Add(r, type, ts); OnUser(s, r, ts); return;
             case "assistant": Common(s, r, ts); s.Today.Add(r, type, ts); OnAssistant(s, r, ts); return;
             case "system": OnSystem(s, r, ts); return;
@@ -83,9 +83,11 @@ internal static partial class TranscriptParser
                     if (Bool(b, "is_error"))
                     {
                         var body = TextOf(b, "content") ?? "";
-                        var rejected = body.Contains("doesn't want to proceed", StringComparison.OrdinalIgnoreCase)
+                        var phone = body.Contains("(Claude Office 원격)", StringComparison.Ordinal) || body.Contains("(Claude Office remote)", StringComparison.Ordinal);
+                        var rejected = phone
+                                       || body.Contains("doesn't want to proceed", StringComparison.OrdinalIgnoreCase)
                                        || body.Contains("rejected", StringComparison.OrdinalIgnoreCase);
-                        s.Log(ts, rejected ? "🚫" : "❌", $"{p.Text} — {(rejected ? L.T("거절됨", "rejected") : L.T("실패", "failed"))}");
+                        s.Log(ts, rejected ? "🚫" : "❌", $"{p.Text} — {(phone ? L.T("휴대폰에서 거절", "denied from the phone") : rejected ? L.T("거절됨", "rejected") : L.T("실패", "failed"))}");
                     }
                     break;
                 case "text":
@@ -111,10 +113,21 @@ internal static partial class TranscriptParser
             return;
         }
 
+        // 자리 비움 원격: 휴대폰 지시는 훅이 깨운 시스템 알림 안에 들어 있다(태그를 지우면 사라지므로 먼저 꺼낸다)
+        if (Remote.RemoteHub.ExtractInstruction(raw) is { } fromPhone)
+        {
+            s.LastPrompt = "📱 " + ToolCatalog.Clip(Spaces().Replace(fromPhone, " "), 300);
+            s.LastPromptFromPhone = true;
+            s.SetBase(Activity.Thinking, "💭", L.T("생각 중", "Thinking"), ts);
+            s.Log(ts, "📱", L.T("휴대폰 지시: ", "From the phone: ") + ToolCatalog.Clip(fromPhone, 60));
+            return;
+        }
+
         var clean = CleanPrompt(raw);
         if (clean is null) return;   // 슬래시 명령·시스템 알림처럼 태그만 있는 메시지
 
         s.LastPrompt = clean;
+        s.LastPromptFromPhone = false;
         s.SetBase(Activity.Thinking, "💭", L.T("생각 중", "Thinking"), ts);
         s.Log(ts, "📨", L.T("지시: ", "Prompt: ") + ToolCatalog.Clip(clean, 60));
     }

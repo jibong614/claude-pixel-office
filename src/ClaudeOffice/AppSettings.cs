@@ -32,6 +32,9 @@ internal sealed class AppSettings
     public bool UpdateCheck { get; set; } = true;
     public string? UpdateNotified { get; set; }
 
+    /// <summary>자리 비움 원격: Windows 화면을 잠그면 자리 비움을 켜고, 잠금을 풀면 끈다(잠금으로 켠 것만).</summary>
+    public bool RemoteAwayOnLock { get; set; } = true;
+
     /// <summary>화면 언어: ko(기본) | en. 말풍선·알림 문구를 만드는 감시기도 알아야 해서 화면 저장소가 아니라 여기에.</summary>
     public string Language { get; set; } = "ko";
 

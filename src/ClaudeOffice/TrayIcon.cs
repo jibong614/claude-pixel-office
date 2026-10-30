@@ -15,13 +15,20 @@ internal sealed class TrayIcon : IDisposable
 {
     private readonly Forms.NotifyIcon _icon;
     private readonly Forms.ToolStripItem _openItem, _exitItem;
+    private readonly Forms.ToolStripMenuItem _awayItem;
+    private readonly Forms.ToolStripSeparator _awaySep;
     private bool _hintShown;
 
-    public TrayIcon(Action open, Action exit)
+    /// <param name="setAway">자리 비움 원격 켜기·끄기(원격 훅이 있을 때만 메뉴에 보인다).</param>
+    public TrayIcon(Action open, Action exit, Action<bool> setAway)
     {
         var menu = new Forms.ContextMenuStrip();
         _openItem = menu.Items.Add("", null, (_, _) => open());
         _openItem.Font = new System.Drawing.Font(_openItem.Font, System.Drawing.FontStyle.Bold);   // 기본 동작
+        _awayItem = new Forms.ToolStripMenuItem("", null, (_, _) => setAway(!_awayItem!.Checked)) { Visible = false };
+        _awaySep = new Forms.ToolStripSeparator { Visible = false };
+        menu.Items.Add(_awaySep);
+        menu.Items.Add(_awayItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
         _exitItem = menu.Items.Add("", null, (_, _) => exit());
         ApplyLanguage();
@@ -42,6 +49,14 @@ internal sealed class TrayIcon : IDisposable
     {
         _openItem.Text = L.T("열기", "Open");
         _exitItem.Text = L.T("끝내기", "Exit");
+        _awayItem.Text = L.T("🏃 자리 비움 (휴대폰 원격)", "🏃 Away (remote from the phone)");
+    }
+
+    /// <summary>자리 비움 메뉴: 원격 훅이 있을 때만 보이고, 켜져 있으면 체크.</summary>
+    public void SetAway(bool away, bool available)
+    {
+        _awayItem.Visible = _awaySep.Visible = available;
+        _awayItem.Checked = away && available;
     }
 
     /// <summary>마우스를 올렸을 때 보일 글(창 제목과 같게 — "(✋2) 우리 팀 사무실 v1.0.6"). 63자 제한.</summary>

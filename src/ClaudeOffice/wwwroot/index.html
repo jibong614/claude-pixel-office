@@ -26,6 +26,7 @@
     <!-- 영어 화면이면 office.js 가 data-en(글)·data-en-title·data-en-ph 로 바꾼다 -->
     <button id="btnWidget" title="작게 보기(목록) — 직원·상태만 한 줄씩" data-en-title="Compact view (list) — one line per employee">▤</button>
     <button id="btnToday" title="오늘의 근무 일지 — 일한 시간·지시·토큰" data-en-title="Today's work log — work time, prompts, tokens">📊</button>
+    <button id="btnRemote" hidden>🏃</button>
     <button id="btnHook" hidden>🔕</button>
     <button id="btnAway" title="퇴근한 직원 보이기/숨기기">🚪</button>
     <button id="btnPin" title="항상 위에 표시">📌</button>
@@ -49,6 +50,20 @@
     <h2 id="pName"></h2>
     <div id="pTitle" class="dim"></div>
     <div id="pState" class="state"></div>
+    <!-- 자리 비움 원격: 승인 요청(휴대폰에서 승인·거절)·Claude 의 마지막 답·휴대폰에서 지시 보내기. 원격 훅을 연결했을 때만 -->
+    <section id="pRemote" hidden>
+      <h3 data-en="🏃 Remote while away">🏃 자리 비움 원격</h3>
+      <div id="rStatus" class="rstatus"></div>
+      <div id="rAsks"></div>
+      <div id="rSayWrap">
+        <textarea id="rSay" class="field" rows="3" maxlength="1000" placeholder="이 직원에게 보낼 지시 (같은 대화에서 이어서 일합니다)" data-en-ph="Instruction for this employee (continues in the same conversation)"></textarea>
+        <div class="rrow"><span id="rSaid" class="dim"></span><button id="rSend" class="mini" data-en="Send">보내기</button></div>
+      </div>
+      <div id="rReplyWrap" hidden>
+        <div id="rReplyHead" class="dim"></div>
+        <p id="rReply" class="prompt reply"></p>
+      </div>
+    </section>
     <!-- 별명·메모: 세션 ID 기준으로 이 PC에 저장(세션 이름을 바꿔도 남음) -->
     <h3 data-en="Nickname · Memo">별명 · 메모</h3>
     <input id="pNick" class="field" type="text" maxlength="30" autocomplete="off" spellcheck="false">

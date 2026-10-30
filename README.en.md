@@ -24,6 +24,7 @@ Try it in the browser without installing: **https://jibong614.github.io/claude-p
 - 📊 **Today's work log**: work time, prompts and tokens for every employee
 - ▤ **Compact widget**: shrink the window to a one-line-per-employee list that stays on top
 - 📱 **Phone view (optional)**: only a screen summary, encrypted on your PC, goes to your own Firebase. Works outside your network, no login on the phone. An in-app **setup wizard** walks you through it
+- 🏃 **Remote while away (optional)**: from the phone, **approve or deny permission requests** and **send an instruction to an employee** — the idle session wakes up and continues the same conversation. No Claude login on the phone
 - 🔒 **Changes nothing by default**: reads transcript files only. Hooks are optional and installed only after a confirmation dialog
 
 ## Quick start
@@ -45,11 +46,12 @@ Build from source (.NET 8 SDK): `dotnet build ClaudeOffice.sln -c Release`
 | Click an employee | Detail panel on the right (click again to fold/unfold). The office re-lays out so the panel never covers anyone |
 | ▤ | Compact widget (list view, small always-on-top window) |
 | 📊 | Today's work log |
+| 🏃 | Away on/off — take instructions and approvals from the phone (shown once remote is connected) |
 | 🔕 / 🔔 | Hook status — click to install/remove hooks (see below) |
 | 🚪 / 📌 / ⚙️ | Show/hide employees who went home / always on top / settings |
 | Tray icon 🏢 | Click to open, right-click → Exit. Closing the window (✕) only hides it by default |
 
-Settings (⚙️) include: office name, screen language (한국어 / English), display period (12h–7d), how many employees and how to pick them (most recent / manual checklist), wait-only filter, office size, window behavior (start hidden, close to tray, run at Windows startup; position and size are remembered), notifications, hooks, phone view, update check with one-click **Update**, and the data folder.
+Settings (⚙️) include: office name, screen language (한국어 / English), display period (12h–7d), how many employees and how to pick them (most recent / manual checklist), wait-only filter, office size, window behavior (start hidden, close to tray, run at Windows startup; position and size are remembered), notifications, hooks, phone view, remote while away, update check with one-click **Update**, and the data folder.
 
 Command line: `--demo` (sample office), `--exit` (quit the running instance), `--autostart` (start hidden in the tray), `--offscreen` (for test tools).
 
@@ -80,6 +82,33 @@ Setup takes about 10 minutes with a Google account: ⚙️ → Phone view → **
 Each of the 6 steps opens the right Firebase console page and the app checks the result automatically.
 No Node.js or command line is needed. Details (Korean): [docs/MOBILE.md](docs/MOBILE.md)
 
+## Remote while away — instruct and approve from the phone (optional)
+
+While you are away, phone view lets you **send instructions** to an employee (session) and **answer permission requests**.
+The phone needs no Claude login — the work is done by Claude Code on the PC with its own sign-in. Phone view must be on first.
+
+1. ⚙️ → Remote while away → **Connect** — adds 3 hooks to `settings.json` after a confirmation dialog
+2. When you leave, turn on **🏃** (top bar or the tray 🏢 menu) or just **lock the screen** (⊞+L — unlocking turns it off)
+3. On the phone, tap an employee to see the **🏃 Remote while away** box
+   - ✋ **Approval request**: see exactly what it wants to run, then Approve / Deny. When denying you can write what to do instead, and Claude follows it
+   - **Send an instruction**: the idle session wakes up and **continues the same conversation**. If it is busy, the instruction is delivered as soon as the current work ends
+   - 💬 **Last answer**: Claude's latest reply
+
+| Hook | What it does |
+|---|---|
+| `PermissionRequest` | Only while away: waits for the phone's answer instead of the prompt (up to 55 min, then the normal prompt). At the PC it returns immediately |
+| `Stop` · `SessionStart` | `asyncRewake` hooks — a session that finished answering (or just opened) waits in the background, and an instruction from the phone wakes it (up to a day) |
+
+- **Safety**
+  - Away can only be turned on **at the PC**. When it is off, instructions from the phone are dropped and approvals go to the PC prompt
+  - What the phone sends is encrypted with the phone-view key (AES-256-GCM), so only a device that scanned the QR can send; messages older than 10 minutes or already seen are dropped
+  - Claude's permission rules stay as they are — anything that needs approval still asks (on the phone)
+  - Every instruction, approval and denial is logged in `remote.log` in the data folder
+  - **The QR/link is the key.** If someone saw it, make a new key under ⚙️ → Phone view
+- After connecting, **new or reopened sessions** take instructions right away; sessions that were already open start **after their next answer**. A short Claude Office restart (such as an update) reconnects them after 15 seconds; sessions that finished while it was closed connect after their next answer
+- Claude's last answer is included in the encrypted summary (only when remote is connected)
+- Questions (AskUserQuestion) need a choice, so they are not sent to the phone — answer them at the PC
+
 ## How it works
 
 Claude Code appends each session to `%USERPROFILE%\.claude\projects\<project>\<session-id>.jsonl` (or under `CLAUDE_CONFIG_DIR`).
@@ -90,6 +119,7 @@ src/ClaudeOffice/
   Monitoring/   folder watcher, line parser, tool → action/bubble catalog, hook state, today's stats, snapshot JSON
   Hooks/        127.0.0.1 hook receiver, settings.json hook install/remove
   Cloud/        phone view — encrypted summary upload to Firebase, anonymous sign-in, setup checks
+  Remote/       remote while away — delivers phone instructions and approvals to sessions through hooks
   MainWindow    WebView2 host, tray icon, notifications, update check, autostart
   wwwroot/      the office screen (canvas pixel art) — same files for the PC app and the phone page
 mobile/         Firebase Hosting config and database rules
@@ -99,8 +129,8 @@ tools/          test tools (offscreen capture, in-page test steps, fake Firebase
 ### Data and network
 
 - **Reads only** Claude Code transcripts. Conversation content is never sent anywhere (except the encrypted summary when phone view is on)
-- **Stores** in `%LOCALAPPDATA%\ClaudeOffice`: screen settings, a copy of nicknames/memos (`share.json`), `app.json`, the phone-view key (`cloud.json`), the hook log
-- **Network**: the hook receiver listens on `127.0.0.1` only. The update check asks the GitHub API for the latest release twice a day (only the app version is sent; can be turned off)
+- **Stores** in `%LOCALAPPDATA%\ClaudeOffice`: screen settings, a copy of nicknames/memos (`share.json`), `app.json`, the phone-view key (`cloud.json`), the hook log, the remote log (`remote.log`)
+- **Network**: the hook receiver listens on `127.0.0.1` only and ignores requests from browsers. With remote connected, Claude's last answer is part of the encrypted summary. The update check asks the GitHub API for the latest release twice a day (only the app version is sent; can be turned off)
 
 ## FAQ
 
@@ -110,7 +140,9 @@ tools/          test tools (offscreen capture, in-page test steps, fake Firebase
 
 **Does it show Claude Code running on another PC or in WSL?** No. It reads the transcript folder of the Windows user running the app.
 
-**Does it change my Claude Code settings?** Not by default. Only when you install hooks (🔕) and confirm, and removing them takes out only what it added.
+**Does it change my Claude Code settings?** Not by default. Only when you install hooks (🔕) or connect remote and confirm, and removing them takes out only what it added.
+
+**An instruction from the phone doesn't arrive.** 🏃 Away must be on at the PC (locking the screen also turns it on). Sessions that were already open connect after their next answer — check "📡 Connected" in the employee details.
 
 ## License and credits
 

@@ -204,6 +204,24 @@ body.remote #pOpenDir, body.remote .seat { display: none; }   /* 휴대폰에서
 #panel li .x { word-break: break-word; }
 #pId { margin-top: 16px; }
 
+/* 자리 비움 원격(상세 패널) */
+#pRemote { margin-top: 12px; padding: 8px 10px 10px; border-radius: 10px; border: 1px solid rgba(124, 107, 224, 0.45); background: rgba(124, 107, 224, 0.08); }
+#pRemote h3 { margin-top: 0; }
+.rstatus { font-size: 12px; line-height: 1.5; margin-bottom: 6px; }
+.rask { margin: 6px 0; padding: 8px; border-radius: 8px; background: rgba(255, 179, 71, 0.12); border: 1px solid rgba(255, 179, 71, 0.45); font-size: 12px; }
+.rask .what { font-weight: 600; }
+.rask .cmd { margin: 4px 0; padding: 4px 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.3); font: 11px/1.45 Consolas, monospace; white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow: auto; }
+.rask .btns, .rrow { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+.rrow { justify-content: space-between; font-size: 12px; }
+#rReplyHead { font-size: 12px; }
+.rask .btns .field { margin: 0; flex: 1 1 auto; }
+#panel .rbtn { padding: 4px 12px; font-size: 12px; }
+#panel .rbtn.ok { background: rgba(80, 200, 120, 0.3); border-color: rgba(80, 200, 120, 0.7); }
+#panel .rbtn.no { background: rgba(255, 110, 110, 0.22); border-color: rgba(255, 110, 110, 0.6); }
+#rSay { margin-top: 4px; }
+#rReplyWrap { margin-top: 8px; }
+.prompt.reply { max-height: 220px; overflow: auto; margin-top: 3px; }
+
 /* 글 입력칸(별명·메모·사무실 이름) */
 .field {
   display: block;

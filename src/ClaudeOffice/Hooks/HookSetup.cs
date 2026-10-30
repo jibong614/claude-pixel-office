@@ -21,6 +21,18 @@ internal static class HookSetup
     /// <summary>우리가 넣은 훅을 알아보는 표시. 명령 끝의 주석(bash·PowerShell 모두 #)이라 실행에는 영향이 없다.</summary>
     private const string Marker = "# ClaudeOffice";
 
+    /// <summary>자리 비움 원격 훅 표시(Marker 로 시작하므로 "우리 훅" 전체를 지울 때 함께 지워진다).</summary>
+    private const string RemoteMarker = "# ClaudeOffice-remote";
+
+    // 자리 비움 원격(RemoteHub): 승인은 휴대폰 답을 기다리는 동기 훅(최대 1시간), 지시는 뒤에서 기다리다 세션을 깨우는 asyncRewake 훅(최대 하루)
+    private const int ApproveTimeout = 3600, ListenTimeout = 86400;
+    private static readonly (string Event, string Kind)[] RemoteEvents =
+    {
+        ("PermissionRequest", "approve"),   // 자리 비움이면 휴대폰에서 승인·거절
+        ("Stop", "listen"),                 // 답을 마치면 휴대폰 지시를 기다린다
+        ("SessionStart", "listen"),         // 막 연 세션도(아직 한 번도 답하지 않았어도) 지시를 받게
+    };
+
     // 승인 창·알림은 Claude가 기다릴 이유가 없으니 백그라운드(async)로 보낸다.
     // 세션 종료는 Claude Code가 곧 끝나 버리므로 보내기를 마칠 때까지 기다리게 한다(curl -m 1 이라 1초 안에 끝남).
     private static readonly (string Event, bool Async)[] Events =
@@ -38,7 +50,7 @@ internal static class HookSetup
 
     private static readonly object CacheLock = new();
     private static DateTime _cachedWriteUtc;
-    private static bool _cachedInstalled;
+    private static (bool Monitor, bool Remote) _cached;
 
     public static string SettingsPath => Path.Combine(TranscriptWatcher.ConfigDir(), "settings.json");
 
@@ -53,6 +65,40 @@ internal static class HookSetup
         "try { $m = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($m); " +
         $"Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/hook -ContentType 'application/json' -Body $m.ToArray() -TimeoutSec 2 | Out-Null " +
         $"}} catch {{}}; exit 0 {Marker}";
+
+    /// <summary>원격 승인(bash): 응답(결정 JSON 이나 빈 것)을 그대로 표준 출력으로. 꺼져 있으면 아무것도 안 나와 평소 승인 창.</summary>
+    private static string RemoteApproveBash =>
+        $"curl -s -m {ApproveTimeout - 10} -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{HookServer.Port}/remote/approve 2>/dev/null; exit 0 {RemoteMarker}";
+
+    /// <summary>
+    /// 원격 지시 대기(bash): 지시가 오면 stderr 로 내보내고 종료 코드 2(asyncRewake → 세션이 깨어 그 글을 받음). 빈 답이면 조용히 끝.
+    /// 처음부터 이 프로그램이 꺼져 있으면(연결 거부, curl 7) 바로 끝낸다 — 답할 때마다 기다리는 프로세스가 쌓이지 않게.
+    /// 기다리던 중 끊기면(업데이트로 껐다 켬 등) 15초 뒤 다시 붙는다(최대 10번) — 입력은 한 번만 오니 먼저 담아 둔다.
+    /// </summary>
+    private static string RemoteListenBash =>
+        "in=$(cat); for i in 1 2 3 4 5 6 7 8 9 10; do " +
+        $"out=$(printf '%s' \"$in\" | curl -s -m {ListenTimeout - 400} -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{HookServer.Port}/remote/listen 2>/dev/null); " +
+        "rc=$?; if [ $rc -eq 0 ]; then [ -n \"$out\" ] && { printf '%s' \"$out\" >&2; exit 2; }; exit 0; fi; " +
+        "[ $i -eq 1 ] && [ $rc -eq 7 ] && exit 0; sleep 15; done; " +
+        $"exit 0 {RemoteMarker}";
+
+    /// <summary>원격 승인(PowerShell). 결정 JSON 은 ASCII 라 콘솔 코드 페이지와 상관없다.</summary>
+    private static string RemoteApprovePowerShell =>
+        "try { $m = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($m); " +
+        $"$r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/remote/approve -ContentType 'application/json' -Body $m.ToArray() -TimeoutSec {ApproveTimeout - 10}; " +
+        $"if ($r.Content) {{ [Console]::Out.Write($r.Content) }} }} catch {{}}; exit 0 {RemoteMarker}";
+
+    /// <summary>
+    /// 원격 지시 대기(PowerShell). 지시 글은 받은 바이트(UTF-8) 그대로 stderr 에 쓴다(글자로 바꾸면 한글이 깨진다).
+    /// 다시 붙기는 bash 와 같다(처음부터 연결 거부면 바로 끝, 끊기면 15초 뒤 최대 10번).
+    /// </summary>
+    private static string RemoteListenPowerShell =>
+        "$m = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($m); $b = $m.ToArray(); " +
+        "for ($i = 0; $i -lt 10; $i++) { try { " +
+        $"$r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/remote/listen -ContentType 'application/json' -Body $b -TimeoutSec {ListenTimeout - 400}; " +
+        "$o = $r.RawContentStream.ToArray(); if ($o.Length -gt 0) { $e = [Console]::OpenStandardError(); $e.Write($o, 0, $o.Length); $e.Flush(); exit 2 }; exit 0 " +
+        "} catch { if ($_.Exception.Response -or ($i -eq 0 -and \"$($_.Exception.Status)\" -eq 'ConnectFailure')) { exit 0 }; Start-Sleep -Seconds 15 } }; " +
+        $"exit 0 {RemoteMarker}";
 
     /// <summary>
     /// Claude Code 가 훅 명령에 쓸 Git Bash(bash.exe). 없으면 null → PowerShell 명령을 넣는다.
@@ -91,67 +137,119 @@ internal static class HookSetup
         : L.T("Git Bash가 없어 PowerShell 사용", "no Git Bash, uses PowerShell");
 
     /// <summary>훅이 모두 들어 있는지. 감시 루프가 몇 초마다 부르므로 파일이 바뀌었을 때만 다시 읽는다.</summary>
-    public static bool IsInstalled()
+    public static bool IsInstalled() => Status().Monitor;
+
+    /// <summary>자리 비움 원격 훅이 모두 들어 있는지.</summary>
+    public static bool IsRemoteInstalled() => Status().Remote;
+
+    private static (bool Monitor, bool Remote) Status()
     {
         var fi = new FileInfo(SettingsPath);
         lock (CacheLock)
         {
-            if (!fi.Exists) return _cachedInstalled = false;
-            if (fi.LastWriteTimeUtc == _cachedWriteUtc) return _cachedInstalled;
+            if (!fi.Exists) return _cached = (false, false);
+            if (fi.LastWriteTimeUtc == _cachedWriteUtc) return _cached;
             try
             {
                 var (root, _) = Load();
-                _cachedInstalled = root["hooks"] is JsonObject hooks
-                                   && Events.All(e => hooks[e.Event] is JsonArray groups && groups.Any(HasOurs));
+                var hooks = root["hooks"] as JsonObject;
+                bool Has(string ev, Func<JsonNode?, bool> kind) =>
+                    hooks?[ev] is JsonArray groups && groups.Any(g => g is JsonObject o && o["hooks"] is JsonArray hs && hs.Any(kind));
+                _cached = (Events.All(e => Has(e.Event, IsMonitor)), RemoteEvents.All(e => Has(e.Event, IsRemote)));
                 _cachedWriteUtc = fi.LastWriteTimeUtc;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
             {
-                _cachedInstalled = false;   // 쓰는 중이거나 깨진 파일 — 다음에 다시
+                _cached = (false, false);   // 쓰는 중이거나 깨진 파일 — 다음에 다시
             }
-            return _cachedInstalled;
+            return _cached;
         }
     }
 
+    /// <summary>알림 훅을 넣는다(전에 넣은 것은 빼고 다시 — 중복 방지). 원격 훅은 그대로 둔다.</summary>
     public static void Install()
     {
         var (root, fmt) = Load();
-        if (root["hooks"] is not JsonObject hooks)
-        {
-            if (root["hooks"] != null) throw new InvalidDataException(L.T("settings.json 의 hooks 항목 형식을 알 수 없습니다.", "The hooks entry in settings.json has an unknown format."));
-            hooks = new JsonObject();
-            root["hooks"] = hooks;
-        }
-        Remove(hooks);   // 전에 넣은 것이 있으면 빼고 다시 넣는다(중복 방지)
-
+        var hooks = HooksOf(root);
+        Remove(hooks, IsMonitor);
         bool bash = FindGitBash() != null;
         foreach (var (ev, isAsync) in Events)
         {
-            if (hooks[ev] is not JsonArray groups)
-            {
-                if (hooks[ev] != null) throw new InvalidDataException(L.T($"settings.json 의 hooks.{ev} 형식을 알 수 없습니다.", $"hooks.{ev} in settings.json has an unknown format."));
-                groups = new JsonArray();
-                hooks[ev] = groups;
-            }
             var handler = bash
                 ? new JsonObject { ["type"] = "command", ["command"] = Command }
                 : new JsonObject { ["type"] = "command", ["command"] = PowerShellCommand, ["shell"] = "powershell" };
             if (isAsync) handler["async"] = true;
-            groups.Add(new JsonObject { ["hooks"] = new JsonArray(handler) });   // matcher 생략 = 전부
+            Add(hooks, ev, handler);
         }
         Save(root, fmt);
     }
 
-    public static void Uninstall()
+    /// <summary>자리 비움 원격 훅을 넣는다. 세션 종료로 정리하는 데 알림 훅도 쓰므로 함께 넣는다.</summary>
+    public static void InstallRemote()
+    {
+        if (!IsInstalled()) Install();
+        var (root, fmt) = Load();
+        var hooks = HooksOf(root);
+        Remove(hooks, IsRemote);
+        bool bash = FindGitBash() != null;
+        foreach (var (ev, kind) in RemoteEvents)
+        {
+            bool listen = kind == "listen";
+            var handler = new JsonObject
+            {
+                ["type"] = "command",
+                ["command"] = (bash, listen) switch
+                {
+                    (true, true) => RemoteListenBash,
+                    (true, false) => RemoteApproveBash,
+                    (false, true) => RemoteListenPowerShell,
+                    (false, false) => RemoteApprovePowerShell,
+                },
+            };
+            if (!bash) handler["shell"] = "powershell";
+            if (listen) handler["asyncRewake"] = true;
+            handler["timeout"] = listen ? ListenTimeout : ApproveTimeout;
+            Add(hooks, ev, handler);
+        }
+        Save(root, fmt);
+    }
+
+    /// <summary>우리가 넣은 훅을 모두(알림·원격) 뺀다.</summary>
+    public static void Uninstall() => RemoveWhere(IsOurs);
+
+    /// <summary>원격 훅만 뺀다(알림 훅은 그대로).</summary>
+    public static void UninstallRemote() => RemoveWhere(IsRemote);
+
+    private static void RemoveWhere(Func<JsonNode?, bool> which)
     {
         var (root, fmt) = Load();
-        if (root["hooks"] is not JsonObject hooks || !Remove(hooks)) return;
+        if (root["hooks"] is not JsonObject hooks || !Remove(hooks, which)) return;
         if (hooks.Count == 0) root.Remove("hooks");
         Save(root, fmt);
     }
 
-    /// <summary>우리 표시가 붙은 처리기만 빼고, 그 때문에 비게 된 묶음·이벤트도 지운다. 다른 훅은 건드리지 않는다.</summary>
-    private static bool Remove(JsonObject hooks)
+    private static JsonObject HooksOf(JsonObject root)
+    {
+        if (root["hooks"] is JsonObject hooks) return hooks;
+        if (root["hooks"] != null) throw new InvalidDataException(L.T("settings.json 의 hooks 항목 형식을 알 수 없습니다.", "The hooks entry in settings.json has an unknown format."));
+        hooks = new JsonObject();
+        root["hooks"] = hooks;
+        return hooks;
+    }
+
+    private static void Add(JsonObject hooks, string ev, JsonObject handler)
+    {
+        if (hooks[ev] is not JsonArray groups)
+        {
+            if (hooks[ev] != null) throw new InvalidDataException(L.T($"settings.json 의 hooks.{ev} 형식을 알 수 없습니다.", $"hooks.{ev} in settings.json has an unknown format."));
+            groups = new JsonArray();
+            hooks[ev] = groups;
+        }
+        groups.Add(new JsonObject { ["hooks"] = new JsonArray(handler) });   // matcher 생략 = 전부
+    }
+
+    /// <summary>고른 처리기만 빼고, 그 때문에 비게 된 묶음·이벤트도 지운다. 다른 훅은 건드리지 않는다.</summary>
+    private static bool Remove(JsonObject hooks, Func<JsonNode?, bool> which)
     {
         bool changed = false;
         foreach (var (ev, node) in hooks.ToList())
@@ -163,7 +261,7 @@ internal static class HookSetup
                 if (groups[i] is not JsonObject g || g["hooks"] is not JsonArray handlers) continue;
                 int before = handlers.Count;
                 for (int j = handlers.Count - 1; j >= 0; j--)
-                    if (IsOurs(handlers[j])) handlers.RemoveAt(j);
+                    if (which(handlers[j])) handlers.RemoveAt(j);
                 if (handlers.Count == before) continue;
                 removedHere = true;
                 if (handlers.Count == 0) groups.RemoveAt(i);
@@ -174,11 +272,12 @@ internal static class HookSetup
         return changed;
     }
 
-    private static bool HasOurs(JsonNode? group) =>
-        group is JsonObject g && g["hooks"] is JsonArray handlers && handlers.Any(IsOurs);
+    private static string? CommandOf(JsonNode? handler) =>
+        handler is JsonObject h && h["command"] is JsonValue v && v.TryGetValue<string>(out var cmd) ? cmd : null;
 
-    private static bool IsOurs(JsonNode? handler) =>
-        handler is JsonObject h && h["command"] is JsonValue v && v.TryGetValue<string>(out var cmd) && cmd.Contains(Marker, StringComparison.Ordinal);
+    private static bool IsOurs(JsonNode? handler) => CommandOf(handler)?.Contains(Marker, StringComparison.Ordinal) == true;
+    private static bool IsRemote(JsonNode? handler) => CommandOf(handler)?.Contains(RemoteMarker, StringComparison.Ordinal) == true;
+    private static bool IsMonitor(JsonNode? handler) => IsOurs(handler) && !IsRemote(handler);
 
     private readonly record struct TextFormat(bool Crlf, bool TrailingNewline);
 

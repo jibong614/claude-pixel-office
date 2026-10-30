@@ -5,6 +5,7 @@ using System.Windows;
 using ClaudeOffice.Cloud;
 using ClaudeOffice.Hooks;
 using ClaudeOffice.Monitoring;
+using ClaudeOffice.Remote;
 using Microsoft.Web.WebView2.Core;
 
 namespace ClaudeOffice;
@@ -26,6 +27,8 @@ public partial class MainWindow : Window
     private readonly Notifier _notifier = new();
     private readonly UpdateChecker _updates = new();
     private readonly Updater _updater = new();
+    private readonly RemoteHub _remote = new(Path.Combine(App.DataDir, "remote.log"));
+    private bool _awayByLock;         // 화면 잠금으로 켠 자리 비움(잠금을 풀면 끈다)
     private readonly TrayIcon? _tray;
     private bool _pageReady;
     private bool _exiting, _cleanedUp;
@@ -59,7 +62,7 @@ public partial class MainWindow : Window
         // 알림 영역 🏢 아이콘 — 견본·점검용(화면 밖) 실행에서는 만들지 않는다(사용자 알림 영역을 어지럽히지 않게)
         if (!App.DemoMode && !App.Offscreen)
         {
-            _tray = new TrayIcon(ShowFromTray, ExitApp);
+            _tray = new TrayIcon(ShowFromTray, ExitApp, on => SetAway(on, "tray"));
             _tray.SetText(Title);
             if (App.Updated)
                 _tray.Notify(L.T($"{App.Version} 버전으로 업데이트했어요", $"Updated to {App.Version}"),
@@ -109,6 +112,7 @@ public partial class MainWindow : Window
         if (_cleanedUp) return;
         _cleanedUp = true;
         if (IsVisible) SavePlacement();
+        Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
         _watcher.Dispose();
         _hooks.Dispose();
         _updates.Dispose();
@@ -128,6 +132,8 @@ public partial class MainWindow : Window
         if (LoadShare() is { } share) ApplyShare(share);
 
         // 훅이 설정에 없어도 수신기는 켜 둔다(가볍고, 🔔로 연결하면 바로 받기 시작한다)
+        _hooks.Remote = _remote;
+        _hooks.Received += ev => { if (ev.Event == "SessionEnd") _remote.OnSessionEnd(ev.SessionId); };
         _hooks.Start();
         _watcher.AttachHooks(_hooks);
         _watcher.SnapshotChanged += json =>
@@ -144,6 +150,10 @@ public partial class MainWindow : Window
         };
         _cloud.StatusChanged += json => Dispatcher.InvokeAsync(() => Post(json));
         _cloud.NotesFromPhone += edits => Dispatcher.InvokeAsync(() => ApplyPhoneEdits(edits));
+        _cloud.RemoteFromPhone += _remote.FromPhone;
+        _remote.Changed += OnRemoteChanged;
+        OnRemoteChanged();
+        Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
         _cloud.SetLanguage(L.Code);   // 휴대폰도 PC와 같은 언어로
         _cloud.Start();
         _watcher.Start();
@@ -221,6 +231,103 @@ public partial class MainWindow : Window
         else if (!App.Offscreen)
             MessageBox.Show(this, L.T($"업데이트하지 못했습니다. 지금 버전은 그대로입니다.\r\n\r\n{_updater.Error}", $"The update failed. Your current version is unchanged.\r\n\r\n{_updater.Error}"),
                 "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    // ───────────────────────── 자리 비움 원격 ─────────────────────────
+
+    /// <summary>원격 상태를 휴대폰 업로드·화면·알림 영역 메뉴에 알린다(아무 스레드에서나).</summary>
+    private void OnRemoteChanged()
+    {
+        var json = _remote.StateJson();
+        bool installed = RemoteHub.Installed, away = _remote.Away;
+        _cloud.OnRemote(json, installed, away);
+        Dispatcher.InvokeAsync(() =>
+        {
+            Post("{\"type\":\"remote\",\"data\":" + json + "}");
+            _tray?.SetAway(away, installed);
+        });
+    }
+
+    /// <summary>자리 비움 켜기·끄기 — PC 에서만(화면 버튼·알림 영역 메뉴·화면 잠금). 휴대폰에서는 켤 수 없다.</summary>
+    private void SetAway(bool on, string why)
+    {
+        if (on && !RemoteHub.Installed) return;
+        _awayByLock = false;
+        _remote.SetAway(on, why);
+    }
+
+    /// <summary>화면을 잠그면 자리 비움, 풀면 돌아옴(잠금으로 켠 것만 — 직접 켜 둔 것은 그대로).</summary>
+    private void OnSessionSwitch(object? sender, Microsoft.Win32.SessionSwitchEventArgs e)
+    {
+        if (!App.Settings.RemoteAwayOnLock || !RemoteHub.Installed) return;
+        if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionLock && !_remote.Away)
+        {
+            _remote.SetAway(true, "lock");
+            _awayByLock = true;
+        }
+        else if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionUnlock && _awayByLock)
+        {
+            _awayByLock = false;
+            _remote.SetAway(false, "unlock");
+        }
+    }
+
+    /// <summary>
+    /// 원격 훅 넣기·빼기 — Claude Code 전역 설정을 바꾸고, 휴대폰이 이 PC의 Claude 에게 일을 시킬 수 있게 되는 일이라 반드시 확인을 받는다.
+    /// </summary>
+    private void ToggleRemoteHooks()
+    {
+        var path = HookSetup.SettingsPath;
+        bool installed = RemoteHub.Installed;
+        var question = L.En
+            ? installed
+                ? $"Remove the remote hooks from the Claude Code settings?\r\n\r\n{path}\r\n\r\nThe phone can no longer send instructions or approve. The status hooks stay."
+                : $"Turn on remote from the phone while you're away?\r\n\r\n{path}\r\n\r\n" +
+                  "Adds 3 hooks to the Claude Code settings:\r\n" +
+                  "  · PermissionRequest — while you're away, waits up to 55 min for Approve/Deny from the phone\r\n" +
+                  "  · Stop, SessionStart — wait in the background so an instruction from the phone wakes that session\r\n\r\n" +
+                  "Anyone with the phone-view QR/link can then make Claude on this PC work while you're away.\r\n" +
+                  "It only works while 'Away' is on (set on the PC: 🏃 button, tray menu or locking the screen), and every instruction is logged in remote.log.\r\n" +
+                  "Claude still asks for permission as usual; those prompts go to the phone.\r\n" +
+                  $"New or reopened sessions connect right away; sessions already open connect after their next answer. ({HookSetup.ShellDescription})"
+            : installed
+                ? $"Claude Code 설정에서 원격 훅을 뺄까요?\r\n\r\n{path}\r\n\r\n휴대폰에서 지시·승인을 더 이상 할 수 없습니다. 상태 알림 훅은 그대로 둡니다."
+                : $"자리 비움 원격(휴대폰에서 지시·승인)을 켤까요?\r\n\r\n{path}\r\n\r\n" +
+                  "Claude Code 설정에 훅 3개를 추가합니다:\r\n" +
+                  "  · PermissionRequest — 자리 비움일 때 승인 창 대신 휴대폰의 승인·거절을 기다립니다(최대 55분)\r\n" +
+                  "  · Stop·SessionStart — 뒤에서 기다리다가 휴대폰 지시가 오면 그 세션을 깨워 전합니다\r\n\r\n" +
+                  "휴대폰 보기 QR·주소를 가진 사람은 자리 비움 동안 이 PC의 Claude 에게 일을 시킬 수 있게 됩니다.\r\n" +
+                  "'자리 비움'을 켰을 때만 동작하고(PC에서만: 🏃 버튼·알림 영역 메뉴·화면 잠금), 받은 지시는 모두 remote.log 에 남깁니다.\r\n" +
+                  "Claude 의 승인 요청은 그대로이고 휴대폰으로 갑니다.\r\n" +
+                  $"새로 열거나 다시 연 세션은 바로, 이미 열려 있던 세션은 다음 답을 마친 뒤부터 연결됩니다({HookSetup.ShellDescription}).";
+        if (MessageBox.Show(this, question, L.T("Claude Office — 자리 비움 원격", "Claude Office — Remote while away"), MessageBoxButton.OKCancel,
+                installed ? MessageBoxImage.Question : MessageBoxImage.Warning) != MessageBoxResult.OK)
+            return;
+        try
+        {
+            if (installed)
+            {
+                _remote.SetAway(false, "remote-off");
+                HookSetup.UninstallRemote();
+            }
+            else HookSetup.InstallRemote();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+        {
+            MessageBox.Show(this, L.T($"settings.json 을 고치지 못했습니다. 파일은 그대로입니다.\r\n\r\n{ex.Message}",
+                                      $"Couldn't edit settings.json. The file is unchanged.\r\n\r\n{ex.Message}"),
+                L.T("Claude Office — 자리 비움 원격", "Claude Office — Remote while away"), MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        _watcher.RefreshHookStatus();
+        OnRemoteChanged();
+        RunCloudCheckIfConfigured();
+    }
+
+    /// <summary>원격을 켜면 휴대폰이 보낼 수 있는지(inbox 규칙)를 설정 도우미 점검으로 바로 확인한다.</summary>
+    private void RunCloudCheckIfConfigured()
+    {
+        using var doc = JsonDocument.Parse(_cloud.StatusJson());
+        if (doc.RootElement.GetProperty("configured").GetBoolean()) RunCloudCheck();
     }
 
     // ───────────────────────── 사무실 이름·별명·메모 사본 ─────────────────────────
@@ -491,6 +598,7 @@ public partial class MainWindow : Window
             updateCheck = s.UpdateCheck,
             widget = s.Widget,
             language = s.Language == "en" ? "en" : "ko",
+            remoteAwayOnLock = s.RemoteAwayOnLock,
             update = new
             {
                 latest = _updates.Latest, newer = _updates.IsNewer, url = _updates.Url, error = _updates.Error, checkedAt = _updates.CheckedMs,
@@ -527,6 +635,7 @@ public partial class MainWindow : Window
                         Post(AppSettingsJson());
                         // 저장해 둔 별명·메모를 화면에 돌려준다(화면이 자기 것과 합친 뒤 다시 share 로 보낸다)
                         Post("{\"type\":\"share\",\"data\":" + (LoadShare() is { } saved && IsJsonObject(saved) ? saved : "null") + "}");
+                        Post("{\"type\":\"remote\",\"data\":" + _remote.StateJson() + "}");
                     }
                     if (_pendingSelect is { } sel) { _pendingSelect = null; SelectSession(sel); }
                     break;
@@ -550,6 +659,7 @@ public partial class MainWindow : Window
                                 case "quietEnabled": s.QuietEnabled = on; break;
                                 case "quietStart": s.QuietStart = Math.Clamp(num, 0, 23); break;
                                 case "quietEnd": s.QuietEnd = Math.Clamp(num, 0, 23); break;
+                                case "remoteAwayOnLock": s.RemoteAwayOnLock = on; break;
                                 case "updateCheck":
                                     s.UpdateCheck = on;
                                     if (on) _ = _updates.CheckAsync();
@@ -660,6 +770,15 @@ public partial class MainWindow : Window
                     break;
                 case "hooks":
                     if (!App.DemoMode) ToggleHooks();
+                    break;
+                case "remote-hooks":
+                    if (!App.DemoMode) ToggleRemoteHooks();
+                    break;
+                case "remote-away":
+                    if (!App.DemoMode) SetAway(root.TryGetProperty("value", out var av) && av.ValueKind == JsonValueKind.True, "pc");
+                    break;
+                case "remote-release":   // 휴대폰을 기다리던 승인을 PC 승인 창으로
+                    if (!App.DemoMode && root.TryGetProperty("id", out var rid) && rid.GetString() is { } releaseId) _remote.Release(releaseId);
                     break;
                 case "window":   // 설정 "표시 기간"(시간). 화면이 저장해 두고 시작할 때마다 다시 보낸다
                     if (root.TryGetProperty("hours", out var h) && h.TryGetDouble(out var hours))
@@ -826,7 +945,11 @@ public partial class MainWindow : Window
 
         try
         {
-            if (installed) HookSetup.Uninstall();
+            if (installed)
+            {
+                _remote.SetAway(false, "hooks-off");
+                HookSetup.Uninstall();   // 원격 훅도 함께
+            }
             else HookSetup.Install();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
@@ -836,6 +959,7 @@ public partial class MainWindow : Window
                 L.T("Claude Office — 훅 연결", "Claude Office — Hooks"), MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         _watcher.RefreshHookStatus();
+        OnRemoteChanged();
     }
 
     /// <summary>

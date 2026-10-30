@@ -65,6 +65,7 @@ internal sealed class TranscriptState
     public string? AiTitle;       // 자동 요약 제목
     public string? AgentName;
     public string? LastPrompt;
+    public bool LastPromptFromPhone;   // 마지막 지시가 휴대폰 원격 지시(뒤따르는 last-prompt 줄은 PC 에서 친 옛 지시라 덮어쓰지 않는다)
     public string? Cwd;
     public string? Entrypoint;    // claude-vscode, cli ...
     public string? GitBranch;

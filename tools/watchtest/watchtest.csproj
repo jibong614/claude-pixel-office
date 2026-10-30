@@ -9,5 +9,6 @@
   <ItemGroup>
     <Compile Include="..\..\src\ClaudeOffice\Monitoring\*.cs" />
     <Compile Include="..\..\src\ClaudeOffice\Hooks\*.cs" />
+    <Compile Include="..\..\src\ClaudeOffice\Remote\*.cs" />
   </ItemGroup>
 </Project>

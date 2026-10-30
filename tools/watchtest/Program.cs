@@ -1,7 +1,8 @@
 ﻿// 감시기를 2.5초 돌린 뒤 지금 사무실에 보일 직원과 최근 작업을 출력한다.
 //   --hooks 30 : 훅 수신기(127.0.0.1:47821)도 켜고 30초 동안 받은 이벤트와 상태 변화를 출력한 뒤 마지막 모습을 출력
 //                (settings.json 을 건드리지 않으므로, 훅은 claude --settings <파일> 이나 curl 로 직접 보내 시험한다)
-//   --setup install|uninstall : CLAUDE_CONFIG_DIR 아래 settings.json 에 훅 넣기/빼기 시험(실제 설정 말고 복사본 폴더를 가리킬 것)
+//   --setup install|uninstall|install-remote|uninstall-remote : CLAUDE_CONFIG_DIR 아래 settings.json 에 훅(원격 훅) 넣기/빼기 시험
+//                (실제 설정 말고 복사본 폴더를 가리킬 것. CLAUDEOFFICE_HOOK_PORT 로 훅 포트를 바꿀 수 있다)
 //   --phrases 60 : 실제 대화 기록의 최근 도구 호출 60개에 말풍선 규칙을 적용해 "말풍선 ← 원래 설명"으로 출력(한글화 점검)
 //   --en         : (어느 것과도 함께) 영어 화면 문구로 — 예) --phrases 60 --en
 using System.Text.Json;
@@ -49,9 +50,14 @@ if (args.Length >= 1 && args[0] == "--phrases")
 
 if (args.Length >= 2 && args[0] == "--setup")
 {
-    if (args[1] == "install") HookSetup.Install();
-    else HookSetup.Uninstall();
-    Console.WriteLine($"{HookSetup.SettingsPath} installed={HookSetup.IsInstalled()}");
+    switch (args[1])
+    {
+        case "install": HookSetup.Install(); break;
+        case "install-remote": HookSetup.InstallRemote(); break;
+        case "uninstall-remote": HookSetup.UninstallRemote(); break;
+        default: HookSetup.Uninstall(); break;
+    }
+    Console.WriteLine($"{HookSetup.SettingsPath} installed={HookSetup.IsInstalled()} remote={HookSetup.IsRemoteInstalled()}");
     return;
 }
 

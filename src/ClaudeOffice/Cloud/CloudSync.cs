@@ -8,6 +8,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using ClaudeOffice.Monitoring;
+using ClaudeOffice.Remote;
 
 namespace ClaudeOffice.Cloud;
 
@@ -65,6 +66,13 @@ internal sealed partial class CloudSync : IDisposable
     /// <summary>휴대폰에서 고친 별명·메모(해독한 것). 올리기 스레드에서 불린다.</summary>
     public event Action<List<NoteEdit>>? NotesFromPhone;
 
+    /// <summary>휴대폰에서 보낸 원격 지시·승인(해독한 것). 올리기 스레드에서 불린다.</summary>
+    public event Action<List<RemoteMsg>>? RemoteFromPhone;
+
+    // 자리 비움 원격 상태(RemoteHub.StateJson) — 휴대폰이 승인 요청·답·지시 처리 상태를 보도록 요약과 함께 올린다
+    private string? _remote;
+    private volatile bool _remoteInstalled, _remoteAway;
+
     /// <summary>상태가 바뀔 때마다 화면에 보낼 JSON({type:"cloud", ...}). 올리기 스레드나 화면 스레드에서 불린다.</summary>
     public event Action<string>? StatusChanged;
 
@@ -83,6 +91,19 @@ internal sealed partial class CloudSync : IDisposable
     public void OnShare(string json)
     {
         lock (_lock) _share = json;
+        Wake();
+    }
+
+    /// <summary>
+    /// 원격 상태. 원격 훅이 있으면 휴대폰이 보낸 것을 받아야 하므로 inbox 를 보고, 자리 비움 중에는 더 자주(2초) 본다.
+    /// </summary>
+    public void OnRemote(string json, bool installed, bool away)
+    {
+        lock (_lock) _remote = json;
+        bool wasAway = _remoteAway;
+        _remoteInstalled = installed;
+        _remoteAway = away;
+        if (away && !wasAway) _nextInboxUtc = default;   // 막 자리를 비웠으면 바로 보기 시작
         Wake();
     }
 
@@ -301,8 +322,8 @@ internal sealed partial class CloudSync : IDisposable
             }
             lock (_lock) c = _cfg;   // 로그인하며 Uid 가 생겼을 수 있다
 
-            // 휴대폰에서 고치기를 켰으면 inbox 규칙이 있는지: 로그인 없이 시험 변경을 하나 넣어 보고(새 규칙이면 됨) 지운다
-            if (c.PhoneEdit && c.Uid != null && rulesOk)
+            // 휴대폰에서 고치기·원격을 켰으면 inbox 규칙이 있는지: 로그인 없이 시험 변경을 하나 넣어 보고(새 규칙이면 됨) 지운다
+            if ((c.PhoneEdit || _remoteInstalled) && c.Uid != null && rulesOk)
             {
                 var inbox = $"{c.DatabaseUrl}/inbox/{Uri.EscapeDataString(c.Uid)}";
                 using var post = await _http.PostAsync(inbox + ".json", new StringContent("{\"iv\":\"check\",\"ct\":\"check\"}", Encoding.UTF8, "application/json"), ct);
@@ -316,8 +337,8 @@ internal sealed partial class CloudSync : IDisposable
                         using var _ = await _http.DeleteAsync($"{inbox}/{Uri.EscapeDataString(nm.GetString() ?? "")}.json{Auth(token)}", ct);
                     }
                 }
-                else steps["rules"] = Step("warn", L.T("휴대폰에서 고치기용 규칙이 없어요 — [규칙 복사]로 새 규칙을 붙여 넣고 게시해 주세요",
-                                                       "The rules for editing on the phone are missing — paste the new rules from [Copy rules] and publish"));
+                else steps["rules"] = Step("warn", L.T("휴대폰에서 고치기·원격용 규칙이 없어요 — [규칙 복사]로 새 규칙을 붙여 넣고 게시해 주세요",
+                                                       "The rules for editing and remote on the phone are missing — paste the new rules from [Copy rules] and publish"));
             }
 
             // 휴대폰 페이지 — 열리는지
@@ -438,9 +459,9 @@ internal sealed partial class CloudSync : IDisposable
     private async Task TickAsync(CancellationToken ct)
     {
         CloudConfig cfg;
-        string? snap;
+        string? snap, remote;
         string share;
-        lock (_lock) { cfg = _cfg; snap = _snapshot; share = _share; }
+        lock (_lock) { cfg = _cfg; snap = _snapshot; share = _share; remote = _remote; }
 
         if (!cfg.Configured) { SetState("setup", null); return; }
         var now = DateTime.UtcNow;
@@ -458,16 +479,16 @@ internal sealed partial class CloudSync : IDisposable
             return;
         }
         if (now < _nextTryUtc) return;
-        if (cfg.PhoneEdit && cfg.Uid != null && now >= _nextInboxUtc)
+        if ((cfg.PhoneEdit || _remoteInstalled) && cfg.Uid != null && now >= _nextInboxUtc)
         {
-            _nextInboxUtc = now + InboxEvery;
+            _nextInboxUtc = now + (_remoteAway ? InboxEveryAway : InboxEvery);
             await PollInboxAsync(ct);
         }
         if (snap is null) return;
         if (_state is "off" or "setup") SetState("starting", null);
 
         var lang = _lang;
-        var key = NowField().Replace(snap, "{") + "\n" + share + "\n" + cfg.Key + cfg.PhoneEdit + lang;   // 언어만 바꿔도 다시 올린다
+        var key = NowField().Replace(snap, "{") + "\n" + share + "\n" + remote + "\n" + cfg.Key + cfg.PhoneEdit + lang;   // 언어만 바꿔도 다시 올린다
         bool changed = key != _lastSentKey;
         if (!changed && now - _lastSentUtc < Heartbeat) return;
         if (changed && now - _lastSentUtc < MinInterval) return;   // 1초 뒤 다시 깨어나 보낸다
@@ -475,8 +496,10 @@ internal sealed partial class CloudSync : IDisposable
         var token = await GetTokenAsync(ct);
         lock (_lock) cfg = _cfg;   // 로그인하며 Uid 가 생겼을 수 있다
 
-        // edit: 휴대폰에서 별명·메모를 고칠 수 있는지(휴대폰이 입력칸을 열지), lang: 화면 언어(다르면 휴대폰이 그 언어로 다시 연다)
-        var body = Encrypt(cfg.Key!, $"{{\"snap\":{snap},\"share\":{share},\"edit\":{(cfg.PhoneEdit ? "true" : "false")},\"lang\":\"{lang}\"}}", now);
+        // edit: 휴대폰에서 별명·메모를 고칠 수 있는지(휴대폰이 입력칸을 열지), lang: 화면 언어(다르면 휴대폰이 그 언어로 다시 연다),
+        // remote: 자리 비움 원격 상태(승인 요청·Claude 의 마지막 답·지시 처리 상태)
+        var body = Encrypt(cfg.Key!, $"{{\"snap\":{snap},\"share\":{share},\"edit\":{(cfg.PhoneEdit ? "true" : "false")},\"lang\":\"{lang}\"" +
+                                     (remote != null ? $",\"remote\":{remote}" : "") + "}", now);
         using var resp = await _http.PutAsync(OfficeUrl(cfg, token), new StringContent(body, Encoding.UTF8, "application/json"), ct);
         if (!resp.IsSuccessStatusCode)
         {
@@ -499,9 +522,9 @@ internal sealed partial class CloudSync : IDisposable
         Publish();   // "마지막 올림" 시각을 화면에 알린다(최대 3초에 한 번)
     }
 
-    // ───────────────────────── 휴대폰 → PC: 별명·메모 고친 것 ─────────────────────────
+    // ───────────────────────── 휴대폰 → PC: 별명·메모 고친 것, 원격 지시·승인 ─────────────────────────
 
-    private static readonly TimeSpan InboxEvery = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan InboxEvery = TimeSpan.FromSeconds(4), InboxEveryAway = TimeSpan.FromSeconds(2);
     private DateTime _nextInboxUtc;
 
     private static string Auth(string? token) => token != null ? "?auth=" + Uri.EscapeDataString(token) : "";
@@ -521,16 +544,25 @@ internal sealed partial class CloudSync : IDisposable
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
         if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
         var edits = new List<NoteEdit>();
-        foreach (var m in doc.RootElement.EnumerateObject().Take(100))
+        var remote = new List<RemoteMsg>();
+        foreach (var m in doc.RootElement.EnumerateObject().OrderBy(m => m.Name, StringComparer.Ordinal).Take(100))   // 키(푸시 ID)가 보낸 순서
         {
-            if (TryDecryptEdit(cfg.Key!, m.Value) is { } e) edits.Add(e);
+            switch (TryDecrypt(cfg.Key!, m.Value))
+            {
+                case NoteEdit e when cfg.PhoneEdit: edits.Add(e); break;   // 고치기를 끈 뒤에 온 것은 버린다
+                case RemoteMsg r when _remoteInstalled: remote.Add(r); break;
+            }
             using var del = await _http.DeleteAsync($"{url}/{Uri.EscapeDataString(m.Name)}.json{Auth(token)}", ct);
         }
         if (edits.Count > 0) NotesFromPhone?.Invoke(edits);
+        if (remote.Count > 0) RemoteFromPhone?.Invoke(remote);
     }
 
-    /// <summary>휴대폰이 보낸 {v, iv, ct} → {id, nick, memo, t}. AES-256-GCM(태그는 암호문 뒤 — WebCrypto 모양).</summary>
-    private static NoteEdit? TryDecryptEdit(string keyB64Url, JsonElement v)
+    /// <summary>
+    /// 휴대폰이 보낸 {v, iv, ct} 를 해독한다. AES-256-GCM(태그는 암호문 뒤 — WebCrypto 모양) — 키가 맞아야 풀리므로 QR 을 찍은 휴대폰이 보낸 것만 남는다.
+    /// k 가 없으면 별명·메모 {id, nick, memo, t}, 있으면 원격 {k: say|ok|no, sid, req, text, t, n}.
+    /// </summary>
+    private static object? TryDecrypt(string keyB64Url, JsonElement v)
     {
         try
         {
@@ -543,11 +575,17 @@ internal sealed partial class CloudSync : IDisposable
                 aes.Decrypt(iv, all.AsSpan(0, all.Length - 16), all.AsSpan(all.Length - 16), plain);
             using var doc = JsonDocument.Parse(plain);
             var r = doc.RootElement;
-            var id = r.GetProperty("id").GetString();
-            if (string.IsNullOrEmpty(id) || id.Length > 100) return null;
             string? Text(string name, int max) =>
                 r.TryGetProperty(name, out var x) && x.ValueKind == JsonValueKind.String && x.GetString() is { } s ? (s.Length > max ? s[..max] : s) : null;
             long t = r.TryGetProperty("t", out var tt) && tt.ValueKind == JsonValueKind.Number && tt.TryGetInt64(out var tv) ? tv : 0;
+
+            if (Text("k", 10) is { } kind)
+                return kind is "say" or "ok" or "no"
+                    ? new RemoteMsg(kind, Text("sid", 100), Text("req", 40), Text("text", RemoteHub.MaxText), t, Text("n", 64))
+                    : null;
+
+            var id = Text("id", 101);
+            if (string.IsNullOrEmpty(id) || id.Length > 100) return null;
             return new NoteEdit(id, Text("nick", 30)?.Trim(), Text("memo", 2000), t);
         }
         catch (Exception ex) when (ex is FormatException or CryptographicException or JsonException or KeyNotFoundException or InvalidOperationException or ArgumentException)

@@ -133,6 +133,7 @@ const officeSign = () => officeName || 'CLAUDE OFFICE';
 const NOTES_MAX = 300;
 const notes = store.get('notes', {}) || {};
 let remoteShare = null;   // 휴대폰 보기: PC가 함께 올린 { office, notes } — 별명·메모·사무실 이름은 PC에서 정한 그대로
+let remoteState = null;   // 자리 비움 원격 상태(PC 앱은 {type:"remote"}, 휴대폰은 요약의 remote) — 아래 "자리 비움 원격"
 const noteOf = (id) => (REMOTE ? remoteShare?.notes?.[id] : notes[id]) || {};
 const displayName = (s) => noteOf(s.id).nick || s.name;
 
@@ -1165,6 +1166,7 @@ function refreshHud() {
   const parts = [T(`👥 ${data.sessions.length - away}명`, `👥 ${data.sessions.length - away}`)];
   if (REMOTE) {
     parts.unshift(remoteLabel());   // 휴대폰 보기: PC와 이어져 있는지 맨 앞에
+    if (remoteState?.away) parts.splice(1, 0, T('🏃 자리 비움', '🏃 Away'));   // 지시·승인을 보낼 수 있다
     document.body.classList.toggle('stale', remoteStale());   // PC가 꺼졌거나 소식이 없으면 사무실을 흐리게(멈춘 모습임을 알게)
   }
   if (busy) parts.push(T(`⚙️ 작업 ${busy}`, `⚙️ Working ${busy}`));
@@ -1589,7 +1591,7 @@ const SETTINGS = [
       { type: 'choice', name: T('사무실 크기', 'Office size'),
         desc: T('화면에 맞춘 크기에서 작게·크게 바꿉니다. 크게 하면 넘치는 만큼 아래로 스크롤합니다.', 'Smaller or larger than fit-to-window. When larger, scroll down for the rest.'),
         options: [[-2, T('더 작게', 'Smallest')], [-1, T('작게', 'Smaller')], [0, T('맞춤', 'Fit')], [1, T('크게', 'Larger')], [2, T('더 크게', 'Largest')]],
-        get: () => zoom, set: (v) => { zoom = v; store.set('zoom', v); layoutKey = ''; } },
+        get: () => zoom, set: (v) => { zoom = v; store.set('zoom', v); layoutKey = ''; refreshSettings(); } },
       { type: 'toggle', name: T('작게 보기(목록)', 'Compact view (list)'),
         desc: () => (REMOTE ? T('사무실 그림 대신 직원·상태를 한 줄씩 보여 줍니다.', 'Shows one line per employee instead of the office picture.')
           : T('창을 작게 줄이고 직원·상태만 한 줄씩 보여 줍니다(맨 위에 떠 있음). 상단 ▤ 버튼과 같습니다. 크기·위치는 따로 기억합니다.',
@@ -1683,6 +1685,24 @@ const SETTINGS = [
         desc: T('휴대폰의 직원 상세에서 고친 별명·메모를 PC가 몇 초 안에 받아 반영합니다(같은 키로 암호화). 1.0.9 전에 규칙을 붙여 넣었다면 [점검·설정 도우미] 4단계의 규칙을 새로 붙여 넣어야 합니다.',
           "Nicknames and memos edited in the phone's employee details reach the PC within seconds (encrypted with the same key). If you pasted the rules before 1.0.9, paste the new rules from step 4 of [Check & setup wizard]."),
         get: () => !!cloud?.phoneEdit, set: (v) => send({ cmd: 'cloud-phone-edit', value: v }), enabled: () => !DEMO && !!cloud },
+    ],
+  },
+  {
+    title: T('자리 비움 원격', 'Remote while away'),
+    items: [
+      { type: 'action', name: T('휴대폰에서 지시·승인', 'Instruct & approve from the phone'), pcOnly: true,
+        desc: T('자리를 비운 동안 휴대폰 보기에서 직원에게 지시를 보내고(같은 대화에서 이어서 일함) 승인 요청에 승인·거절로 답합니다. Claude 로그인은 이 PC에만 있으면 됩니다. 연결하면 ~/.claude/settings.json 에 훅 3개를 넣으므로 확인 창이 먼저 뜹니다. 휴대폰 보기가 켜져 있어야 합니다.',
+          'While you are away, send instructions to an employee from phone view (it continues the same conversation) and answer approval requests. Only this PC needs to be signed in to Claude. Connecting adds 3 hooks to ~/.claude/settings.json, so you confirm first. Phone view must be on.'),
+        label: () => (remoteState?.installed ? T('연결 해제', 'Disconnect') : T('연결하기', 'Connect')),
+        enabled: () => !DEMO && !!remoteState, run: () => send({ cmd: 'remote-hooks' }), status: remoteStatus },
+      { type: 'action', name: T('🏃 자리 비움', '🏃 Away'), pcOnly: true, shown: () => !!remoteState?.installed,
+        desc: T('켜져 있을 때만 휴대폰의 지시·승인을 받습니다. 상단 🏃 버튼·알림 영역(🏢) 메뉴와 같습니다. 끄면 휴대폰을 기다리던 승인 요청은 PC 승인 창으로 돌아옵니다.',
+          'Instructions and approvals from the phone are taken only while this is on. Same as the 🏃 button and the tray (🏢) menu. Turning it off sends pending approval requests back to the PC prompt.'),
+        label: () => (remoteState?.away ? T('돌아왔어요', "I'm back") : T('켜기', 'Turn on')),
+        enabled: () => !DEMO && !!remoteState?.installed, run: () => send({ cmd: 'remote-away', value: !remoteState?.away }), status: awayStatus },
+      { type: 'toggle', name: T('화면을 잠그면 자리 비움', 'Away while the screen is locked'), pcOnly: true, shown: () => !!remoteState?.installed,
+        desc: T('Windows 화면을 잠그면(⊞+L) 자리 비움을 켜고, 잠금을 풀면 끕니다.', 'Locking Windows (⊞+L) turns Away on, and unlocking turns it off.'),
+        get: () => !!appSettings?.remoteAwayOnLock, set: (v) => setAppSetting('remoteAwayOnLock', v), enabled: appReady },
     ],
   },
   {
@@ -2329,6 +2349,7 @@ function renderPanel() {
   const st = $('pState');
   st.textContent = `${s.icon} ${a.label} — ${s.text}`;
   st.style.color = a.tone;
+  renderRemote(s);
   $('pCwd').textContent = s.cwd || s.team;
   $('pOpenDir').hidden = DEMO || !s.cwd;
   $('pTeam').textContent = teamLabel(s.team);
@@ -2405,18 +2426,181 @@ function queuePhoneEdit(id) {
 
 async function sendPhoneEdit(id) {
   phoneEditTimers.delete(id);
-  const edit = { id, nick: nickEl.value.trim().slice(0, 30), memo: memoEl.value.slice(0, 2000), t: Date.now() };
+  const ok = await postInbox({ id, nick: nickEl.value.trim().slice(0, 30), memo: memoEl.value.slice(0, 2000) });
+  setSync(ok ? T('📤 PC로 보냈어요 — PC가 켜져 있으면 몇 초 뒤 반영돼요', '📤 Sent to the PC — applied in a few seconds if the PC is on') : lastPostError);
+}
+
+/**
+ * 휴대폰 → PC: 같은 키로 암호화해 inbox/<u> 에 남긴다(추가만 가능한 규칙 — PC만 읽고 지운다).
+ * 보낸 시각 t 와 한 번만 쓰는 무작위 값 n 을 붙인다(PC가 오래된 것·같은 것을 두 번 처리하지 않게). 실패하면 lastPostError 에 이유.
+ */
+let lastPostError = '';
+async function postInbox(msg) {
   try {
+    const n = Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => x.toString(16).padStart(2, '0')).join('');
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, remoteKey, new TextEncoder().encode(JSON.stringify(edit))));
+    const plain = new TextEncoder().encode(JSON.stringify({ ...msg, t: Date.now(), n }));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, remoteKey, plain));
     const res = await fetch(`${remoteLink.db.replace(/\/+$/, '')}/inbox/${encodeURIComponent(remoteLink.u)}.json`,
       { method: 'POST', body: JSON.stringify({ v: 1, iv: bytesToB64(iv), ct: bytesToB64(ct) }) });
-    setSync(res.ok ? T('📤 PC로 보냈어요 — PC가 켜져 있으면 몇 초 뒤 반영돼요', '📤 Sent to the PC — applied in a few seconds if the PC is on')
-      : T(`⚠️ 보내지 못했어요(${res.status}) — PC 설정 도우미에서 규칙을 새로 붙여 넣어 주세요`, `⚠️ Couldn't send (${res.status}) — paste the new rules in the PC setup wizard`));
+    lastPostError = res.ok ? '' : T(`⚠️ 보내지 못했어요(${res.status}) — PC 설정 도우미에서 규칙을 새로 붙여 넣어 주세요`, `⚠️ Couldn't send (${res.status}) — paste the new rules in the PC setup wizard`);
+    return res.ok;
   } catch {
-    setSync(T('⚠️ 보내지 못했어요 — 인터넷 연결을 확인해 주세요', "⚠️ Couldn't send — check your internet connection"));
+    lastPostError = T('⚠️ 보내지 못했어요 — 인터넷 연결을 확인해 주세요', "⚠️ Couldn't send — check your internet connection");
+    return false;
   }
 }
+
+// ── 자리 비움 원격: 휴대폰에서 지시·승인(PC에서 원격 훅을 연결하고 🏃 자리 비움을 켰을 때) ──
+// 상태는 PC가 요약과 함께 올린 remote(PC 앱 화면은 {type:"remote"}):
+//   {installed, away, since, s:{세션:{listen, asks:[{id,text,detail,t}], said:{text,t,state}, reply:{text,t}}}}
+// 휴대폰은 지시(say)·승인(ok)·거절(no)을 postInbox 로 보낸다. 자리 비움은 PC에서만 켤 수 있다.
+const remoteOf =(id) => (remoteState?.installed ? remoteState.s?.[id] || {} : null);
+const answered = new Map();      // 휴대폰에서 답한 승인 요청 → 누른 시각(PC에서 사라질 때까지 버튼을 잠근다)
+const askEls = new Map();        // 승인 요청 → 그 칸(다시 그려도 거절 이유 칸에 쓰던 글이 남게)
+const rAsksEl = $('rAsks'), sayEl = $('rSay'), btnRemote = $('btnRemote');
+let sayFor = null;               // 지시 칸이 어느 세션 것인지
+let remoteNote = null;           // 방금 보낸 것의 안내 {sid, at, text}
+
+/** PC 앱 화면: 앱이 원격 상태를 알려 줬다. */
+function onRemote(st) {
+  remoteState = st || null;
+  refreshRemoteButton();
+  refreshHud();
+  renderPanel();
+  refreshSettings();
+}
+
+function refreshRemoteButton() {
+  btnRemote.hidden = REMOTE || DEMO || !remoteState?.installed;
+  if (btnRemote.hidden) return;
+  btnRemote.classList.toggle('on', !!remoteState.away);
+  btnRemote.title = remoteState.away
+    ? T('🏃 자리 비움 중 — 휴대폰에서 지시·승인할 수 있어요\n클릭: 돌아왔어요(끄기)', "🏃 Away — the phone can instruct and approve\nClick: I'm back (turn off)")
+    : T('🏃 자리 비움 켜기 — 휴대폰에서 지시를 보내고 승인 요청에 답할 수 있게 합니다', '🏃 Go away — let the phone send instructions and answer approval requests');
+}
+btnRemote.addEventListener('click', () => send({ cmd: 'remote-away', value: !remoteState?.away }));
+
+function remoteStatus() {
+  const st = remoteState;
+  if (!st) return { text: T('확인 중…', 'Checking…'), tone: 'var(--dim)' };
+  if (!st.installed) return { text: T('🔕 연결 안 됨', '🔕 Not connected'), tone: 'var(--dim)' };
+  if (!cloud?.enabled) return { text: T('⚠️ 휴대폰 보기가 꺼져 있어 휴대폰에서 보낼 수 없어요', '⚠️ Phone view is off, so the phone cannot send'), tone: '#ffb347' };
+  const n = Object.values(st.s || {}).filter((x) => x.listen).length;
+  return { text: T(`🔗 연결됨 · 지시를 받을 수 있는 세션 ${n}개`, `🔗 Connected · ${n} sessions can take instructions`), tone: '#7dffa0' };
+}
+
+function awayStatus() {
+  const st = remoteState;
+  if (!st?.away) return { text: T('자리에 있음 — 승인 창은 PC에 그대로 뜹니다', 'At the PC — permission prompts show on the PC as usual'), tone: 'var(--dim)' };
+  return { text: T(`🏃 자리 비움 · ${fmtTime(st.since)}부터`, `🏃 Away since ${fmtTime(st.since)}`), tone: '#7dffa0' };
+}
+
+/** 상세 패널의 원격 칸. 원격 훅을 연결했을 때만 보인다. */
+function renderRemote(s) {
+  const r = remoteOf(s.id);
+  $('pRemote').hidden = !r;
+  if (!r) return;
+  const away = !!remoteState.away;
+  const asks = r.asks || [];
+  $('rStatus').textContent =
+    !away ? (REMOTE
+      ? T('PC가 자리 비움이 아니에요 — PC에서 🏃 자리 비움을 켜면(화면을 잠가도) 여기서 지시·승인할 수 있어요.',
+        "The PC isn't set to away — once 🏃 Away is on there (or the screen is locked), you can instruct and approve here.")
+      : T('🏃 자리 비움을 켜면 휴대폰에서 이 직원에게 지시를 보내고 승인 요청에 답할 수 있어요.',
+        'Turn on 🏃 Away to send instructions to this employee and answer approval requests from the phone.'))
+    : actOf(s).busy || asks.length ? T('⚙️ 일하는 중 — 보낸 지시는 이 대화에 이어서(지금 일 중간이나 끝나는 대로) 전합니다.',
+      '⚙️ Working — an instruction joins this conversation (during the current work or right after it).')
+    : r.listen ? T('📡 연결됨 — 보내면 바로 이 대화에서 이어서 일합니다.', '📡 Connected — an instruction continues this conversation right away.')
+    : T('⏳ 아직 연결 전 — 이 세션이 한 번 더 답을 마치거나 새로 열면 연결돼요. 보낸 지시는 그때 전합니다.',
+      "⏳ Not connected yet — it connects after this session's next answer or when it is reopened. Instructions are delivered then.");
+
+  // 승인 요청: 칸은 요청마다 한 번만 만든다
+  const keep = new Set(asks.map((a) => a.id));
+  for (const [id, el] of askEls) if (!keep.has(id) || el.dataset.sid !== s.id) { el.remove(); askEls.delete(id); }
+  for (const a of asks) {
+    let el = askEls.get(a.id);
+    if (!el) { el = makeAsk(s.id, a); askEls.set(a.id, el); }
+    rAsksEl.append(el);
+    el.querySelector('.age').textContent = ' · ' + fmtAgo(now() - a.t);
+    for (const b of el.querySelectorAll('button')) b.disabled = answered.has(a.id);
+  }
+  for (const [id, at] of answered) if (Date.now() - at > 120000) answered.delete(id);
+
+  // 지시 보내기(휴대폰에서, 자리 비움일 때)
+  $('rSayWrap').hidden = !REMOTE || !away;
+  if (sayFor !== s.id) { sayFor = s.id; sayEl.value = ''; }
+  if (remoteNote && r.said && r.said.t >= remoteNote.at - 5000 && remoteNote.sid === s.id) remoteNote = null;   // PC가 처리했다
+  $('rSaid').textContent = remoteNote && remoteNote.sid === s.id && Date.now() - remoteNote.at < 30000 ? remoteNote.text : saidText(r.said);
+
+  // Claude 의 마지막 답(Stop 훅이 알려 준 것)
+  $('rReplyWrap').hidden = !r.reply;
+  if (r.reply) {
+    $('rReplyHead').textContent = T(`💬 마지막 답 · ${fmtTime(r.reply.t)}`, `💬 Last answer · ${fmtTime(r.reply.t)}`);
+    if ($('rReply').textContent !== r.reply.text) $('rReply').textContent = r.reply.text;   // 같으면 그대로(읽던 위치가 튀지 않게)
+  }
+}
+
+function saidText(d) {
+  if (!d) return '';
+  const when = fmtTime(d.t);
+  return d.state === 'delivered' ? T(`✅ 전했어요 · ${when}`, `✅ Delivered · ${when}`)
+    : d.state === 'queued' ? T(`⏳ 기다리는 중 · ${when} — 일을 마치면 바로 전해요`, `⏳ Waiting · ${when} — delivered when the current work ends`)
+    : T(`⚠️ 전하지 못했어요 · ${when} — PC가 자리 비움이 아니었어요`, `⚠️ Not delivered · ${when} — the PC wasn't set to away`);
+}
+
+function makeAsk(sid, a) {
+  const el = elem('div', 'rask');
+  el.dataset.sid = sid;
+  const head = elem('div', '');
+  head.append(elem('span', 'what', T('✋ 승인 요청: ', '✋ Approve: ') + a.text), elem('span', 'dim age'));
+  el.append(head);
+  if (a.detail) el.append(elem('div', 'cmd', a.detail));
+  const btns = elem('div', 'btns');
+  if (REMOTE) {
+    const why = elem('input', 'field');
+    why.type = 'text';
+    why.maxLength = 1000;
+    why.placeholder = T('대신 할 일 (선택)', 'Do instead (optional)');
+    why.title = T('거절할 때 Claude 에게 대신 시킬 일 — 거절한 뒤 지시로 따로 전합니다', 'What Claude should do instead when you deny — sent as a separate instruction after the denial');
+    const no = elem('button', 'mini rbtn no', T('거절', 'Deny'));
+    const ok = elem('button', 'mini rbtn ok', T('승인', 'Approve'));
+    no.addEventListener('click', () => answerAsk(sid, a.id, false, why.value));
+    ok.addEventListener('click', () => answerAsk(sid, a.id, true, ''));
+    btns.append(why, no, ok);
+  } else {
+    btns.append(elem('span', 'dim', T('휴대폰 답을 기다리는 중', 'Waiting for the phone')));
+    const here = elem('button', 'mini rbtn', T('여기서 처리', 'Handle here'));
+    here.title = T('휴대폰을 기다리지 않고 Claude Code 에 승인 창을 띄웁니다', 'Stop waiting for the phone and show the permission prompt in Claude Code');
+    here.addEventListener('click', () => send({ cmd: 'remote-release', id: a.id }));
+    btns.append(here);
+  }
+  el.append(btns);
+  return el;
+}
+
+async function answerAsk(sid, id, allow, why) {
+  if (!remoteKey) return;
+  answered.set(id, Date.now());
+  renderPanel();
+  const ok = await postInbox({ k: allow ? 'ok' : 'no', sid, req: id, text: allow ? '' : why.trim().slice(0, 1000) });
+  remoteNote = { sid, at: Date.now(), text: ok ? (allow ? T('👍 승인을 보냈어요', '👍 Approval sent') : T('🚫 거절을 보냈어요', '🚫 Denial sent')) : lastPostError };
+  if (!ok) answered.delete(id);
+  renderPanel();
+}
+
+async function sendSay() {
+  const sid = selectedId, text = sayEl.value.trim();
+  if (!sid || !text || !remoteKey) return;
+  $('rSend').disabled = true;
+  const ok = await postInbox({ k: 'say', sid, text: text.slice(0, 1000) });
+  $('rSend').disabled = false;
+  if (ok) sayEl.value = '';
+  remoteNote = { sid, at: Date.now(), text: ok ? T('📤 보냈어요 — PC가 받는 중…', '📤 Sent — waiting for the PC…') : lastPostError };
+  renderPanel();
+}
+$('rSend').addEventListener('click', sendSay);
+sayEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendSay(); } });
 
 const RECONNECTING = T('연결이 끊겨 다시 잇는 중…', 'Disconnected, reconnecting…');
 
@@ -2471,6 +2655,7 @@ async function startRemote() {
       const obj = JSON.parse(new TextDecoder().decode(p.z ? await gunzip(plain) : plain));
       if (followPcLanguage(obj.lang)) return;
       remoteShare = obj.share || {};
+      remoteState = obj.remote || null;   // 자리 비움 원격(아래 onSnapshot 이 상세 패널을 다시 그린다)
       if (remoteEdit !== (obj.edit === true)) { remoteEdit = obj.edit === true; applyRemoteEdit(); }
       officeName = String(remoteShare.office || '').trim();
       remoteAt = p.t || Date.now();
@@ -2561,6 +2746,14 @@ function startDemo() {
     };
   }
 
+  // 자리 비움 원격 견본: 한 직원은 휴대폰 승인을 기다리고, 한 직원은 휴대폰 지시를 받아 답했다
+  remoteState = { installed: true, away: true, since: base - 600000, s: {
+    'demo-b1': { listen: false, asks: [{ id: 'demo-ask', text: T('빌드하는 중', 'Building'), detail: 'dotnet build -c Release', t: base - 40000 }] },
+    'demo-a1': { listen: true, said: { text: T('장바구니 테스트도 돌려줘', 'Run the cart tests too'), t: base - 120000, state: 'delivered' },
+      reply: { text: T('장바구니 수량 버그를 고치고 테스트 12개를 모두 통과했어요. 바뀐 파일은 CartService.cs 하나입니다.',
+        'Fixed the cart quantity bug and all 12 tests pass. Only CartService.cs changed.'), t: base - 30000 } },
+  } };
+
   onSnapshot(snapshot());
   setInterval(() => onSnapshot(snapshot()), 1000);
 }
@@ -2594,6 +2787,7 @@ if (REMOTE) {
     else if (m?.type === 'cloud-check') onCloudCheck(m);
     else if (m?.type === 'app') onApp(m);
     else if (m?.type === 'share') onSavedShare(m.data);
+    else if (m?.type === 'remote') onRemote(m.data);
     else if (m?.type === 'select') selectSession(m.id);
     else if (m?.type === 'reset') resetScreenSettings();
     else onSnapshot(m);
