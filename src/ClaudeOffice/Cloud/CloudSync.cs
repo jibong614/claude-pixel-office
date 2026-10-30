@@ -86,11 +86,17 @@ internal sealed partial class CloudSync : IDisposable
         if (error != null) return error;
         Update(c =>
         {
+            bool sameProject = c.ProjectId == project && c.ApiKey == apiKey;
+            // databaseURL 이 빠진 설정이면 같은 프로젝트에서 이미 찾아 둔 주소를 그대로 쓴다
+            db ??= sameProject ? c.DatabaseUrl : null;
             bool sameTarget = c.DatabaseUrl == db && c.ApiKey == apiKey;
             c.ApiKey = apiKey;
             c.DatabaseUrl = db;
             c.ProjectId = project;
-            c.PageUrl = c.IsLocal ? db : $"https://{project}.web.app";   // 로컬 시험 서버는 화면 파일도 같은 곳에서 낸다
+            // 휴대폰 페이지: 로컬 시험 서버는 화면 파일도 같은 곳에서, 같은 프로젝트의 내 Hosting 을 쓰던 중이면 그대로, 그 밖에는 공용 페이지
+            c.PageUrl = c.IsLocal ? db
+                : project != null && c.PageMode == "own" && c.PageUrl == CloudConfig.OwnPageUrl(project) ? c.PageUrl
+                : CloudConfig.PublicPageUrl;
             c.Key ??= CloudConfig.NewKey();
             if (!sameTarget) { c.Uid = null; c.RefreshToken = null; }   // 다른 프로젝트면 로그인부터 새로
         });
@@ -99,6 +105,17 @@ internal sealed partial class CloudSync : IDisposable
         Publish();
         Wake();
         return null;
+    }
+
+    /// <summary>휴대폰 화면 페이지를 고른다: public(공용 페이지) | own(내 Firebase Hosting). 주소가 바뀌므로 휴대폰은 QR을 다시 찍어야 한다.</summary>
+    public void SetPage(string mode)
+    {
+        Update(c =>
+        {
+            if (c.IsLocal || c.ProjectId is null) return;
+            c.PageUrl = mode == "own" ? CloudConfig.OwnPageUrl(c.ProjectId) : CloudConfig.PublicPageUrl;
+        });
+        Publish();
     }
 
     public void SetEnabled(bool on)
@@ -161,12 +178,15 @@ internal sealed partial class CloudSync : IDisposable
         {
             type = "cloud",
             configured = c.Configured,
+            hasProject = c.HasProject,
             enabled = c.Enabled,
             state = _state,
             error = _error,
             notice = _notice,
             last = Interlocked.Read(ref _lastOkMs),
             project = c.ProjectId,
+            db = c.DatabaseUrl,
+            page = c.PageMode,
             url = MobileUrl(c),
         }, StatusJsonOptions);
     }
@@ -174,8 +194,142 @@ internal sealed partial class CloudSync : IDisposable
     /// <summary>휴대폰에서 열 주소. 데이터 주소·경로·키는 모두 # 뒤에 둬서 웹 서버(Hosting)로는 전송되지 않는다.</summary>
     private static string? MobileUrl(CloudConfig c)
     {
-        if (!c.Configured || c.Key is null || c.Uid is null || c.PageUrl is null) return null;
-        return $"{c.PageUrl.TrimEnd('/')}/#db={Uri.EscapeDataString(c.DatabaseUrl!)}&u={Uri.EscapeDataString(c.Uid)}&k={c.Key}";
+        if (!c.Configured || c.Key is null || c.Uid is null) return null;
+        var page = c.PageUrl ?? CloudConfig.PublicPageUrl;
+        return $"{page.TrimEnd('/')}/#db={Uri.EscapeDataString(c.DatabaseUrl!)}&u={Uri.EscapeDataString(c.Uid)}&k={c.Key}";
+    }
+
+    // ───────────────────────── 설정 도우미 점검 ─────────────────────────
+
+    private int _checking;
+
+    /// <summary>
+    /// 설정 도우미의 단계별 점검: 데이터베이스가 있는지(없으면 프로젝트 ID 로 찾아 저장) → 규칙 → 익명 로그인 → 휴대폰 페이지.
+    /// 결과는 화면에 보낼 JSON({type:"cloud-check", ...}). 이미 점검 중이면 null.
+    /// 단계 상태(s): ok | fail | warn | skip(앞 단계가 안 돼서 못 봄)
+    /// </summary>
+    public async Task<string?> CheckAsync()
+    {
+        if (Interlocked.Exchange(ref _checking, 1) == 1) return null;
+        try
+        {
+            var ct = _cts.Token;
+            CloudConfig c;
+            lock (_lock) c = _cfg;
+            var steps = new Dictionary<string, object>();
+            static object Step(string s, string text) => new { s, text };
+
+            if (!c.HasProject)
+            {
+                steps["project"] = Step("fail", "아직 웹 앱 설정을 붙여 넣지 않았어요");
+                return CheckJson(c, steps);
+            }
+            steps["project"] = Step("ok", c.IsLocal ? "로컬 시험 서버" : $"프로젝트 {c.ProjectId}");
+
+            // 데이터베이스 — 주소를 모르면 프로젝트 ID 로 찾는다
+            if (c.DatabaseUrl is null)
+            {
+                var found = await FindDatabaseAsync(c.ProjectId!, ct);
+                if (found != null)
+                {
+                    Update(x => { if (x.ProjectId == c.ProjectId) x.DatabaseUrl ??= found; });
+                    lock (_lock) c = _cfg;
+                    _lastSentKey = null;
+                    Publish();
+                    Wake();
+                }
+            }
+            if (c.DatabaseUrl is null)
+            {
+                steps["db"] = Step("fail", "아직 Realtime Database 가 없어요");
+                return CheckJson(c, steps);
+            }
+            steps["db"] = Step("ok", c.DatabaseUrl);
+
+            // 규칙 — 로그인 없이 읽어 본다: offices/<아무 ID> 는 읽혀야 하고(휴대폰) 맨 위는 막혀야 한다(남의 칸 목록)
+            if (c.IsLocal) steps["rules"] = Step("ok", "로컬 시험 서버");
+            else
+            {
+                using var office = await _http.GetAsync($"{c.DatabaseUrl}/offices/__check__.json", ct);
+                using var top = await _http.GetAsync($"{c.DatabaseUrl}/.json?shallow=true", ct);
+                steps["rules"] = (office.StatusCode, top.StatusCode) switch
+                {
+                    (HttpStatusCode.OK, HttpStatusCode.Unauthorized) => Step("ok", "Claude Office 규칙이 적용돼 있어요"),
+                    (_, HttpStatusCode.OK) => Step("warn", "누구나 읽고 쓸 수 있는 규칙이에요(테스트 모드) — 아래 규칙으로 바꿔 주세요"),
+                    (HttpStatusCode.Unauthorized, _) => Step("fail", "아직 잠금 모드 규칙이에요 — 규칙을 붙여 넣고 게시해 주세요"),
+                    _ => Step("fail", $"확인하지 못했어요({(int)office.StatusCode})"),
+                };
+            }
+
+            // 익명 로그인 — PC가 쓰기 위해 로그인할 수 있는지(처음이면 익명 사용자를 만들어 저장한다)
+            try
+            {
+                await GetTokenAsync(ct);
+                steps["auth"] = Step("ok", c.IsLocal ? "로컬 시험 서버(로그인 없음)" : "익명 로그인 됨");
+            }
+            catch (CloudException ex)
+            {
+                steps["auth"] = Step("fail", ex.Message);
+            }
+            lock (_lock) c = _cfg;   // 로그인하며 Uid 가 생겼을 수 있다
+
+            // 휴대폰 페이지 — 열리는지
+            var page = c.PageUrl ?? CloudConfig.PublicPageUrl;
+            using (var resp = await _http.GetAsync(page.TrimEnd('/') + "/manifest.webmanifest", ct))
+            {
+                steps["page"] = resp.IsSuccessStatusCode ? Step("ok", page)
+                    : c.PageMode == "own" ? Step("fail", $"내 Hosting 에 페이지가 없어요({(int)resp.StatusCode}) — 공용 페이지로 바꾸거나 tools\\deploy-mobile.ps1 로 올려 주세요")
+                    : Step("fail", $"휴대폰 페이지가 열리지 않아요({(int)resp.StatusCode})");
+            }
+            return CheckJson(c, steps);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return JsonSerializer.Serialize(new { type = "cloud-check", at = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), error = $"인터넷 연결을 확인해 주세요: {ex.Message}", rules = RulesText }, StatusJsonOptions);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _checking, 0);
+        }
+    }
+
+    private static string CheckJson(CloudConfig c, Dictionary<string, object> steps) =>
+        JsonSerializer.Serialize(new { type = "cloud-check", at = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), steps, rules = RulesText }, StatusJsonOptions);
+
+    /// <summary>
+    /// 프로젝트의 기본 데이터베이스 주소를 찾는다. 미국 주소로 물으면 Firebase 가 다른 지역에 있는 경우 맞는 주소(correctUrl)를 알려 준다.
+    /// 2020년 전에 만든 프로젝트는 &lt;프로젝트&gt;.firebaseio.com.
+    /// </summary>
+    private async Task<string?> FindDatabaseAsync(string project, CancellationToken ct)
+    {
+        foreach (var url in new[] { $"https://{project}-default-rtdb.firebaseio.com", $"https://{project}.firebaseio.com" })
+        {
+            using var resp = await _http.GetAsync(url + "/.json?shallow=true", ct);
+            if (resp.StatusCode is HttpStatusCode.OK or HttpStatusCode.Unauthorized) return url;
+            try
+            {
+                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("correctUrl", out var cu)
+                    && Uri.TryCreate(cu.GetString(), UriKind.Absolute, out var u)
+                    && u.Scheme == Uri.UriSchemeHttps
+                    && (u.Host.EndsWith(".firebasedatabase.app", StringComparison.OrdinalIgnoreCase) || u.Host.EndsWith(".firebaseio.com", StringComparison.OrdinalIgnoreCase)))
+                    return u.GetLeftPart(UriPartial.Authority);
+            }
+            catch (JsonException) { }
+        }
+        return null;
+    }
+
+    /// <summary>데이터베이스 규칙(mobile/database.rules.json 을 실행 파일에 넣어 둔 것) — 설정 도우미의 "규칙 복사".</summary>
+    private static readonly string RulesText = LoadRules();
+
+    private static string LoadRules()
+    {
+        using var s = typeof(CloudSync).Assembly.GetManifestResourceStream("database.rules.json");
+        if (s is null) return "";
+        using var r = new StreamReader(s);
+        return r.ReadToEnd().Replace("\r\n", "\n").Trim();
     }
 
     private void Update(Action<CloudConfig> change)
@@ -274,7 +428,7 @@ internal sealed partial class CloudSync : IDisposable
             if (resp.StatusCode == HttpStatusCode.Unauthorized) _idToken = null;
             throw new CloudException(resp.StatusCode switch
             {
-                HttpStatusCode.Unauthorized => "데이터베이스가 쓰기를 거부했습니다 — 규칙을 올렸는지 확인해 주세요(tools\\deploy-mobile.ps1)",
+                HttpStatusCode.Unauthorized => "데이터베이스가 쓰기를 거부했습니다 — 규칙을 확인해 주세요(점검·설정 도우미 4단계)",
                 HttpStatusCode.NotFound => "데이터베이스를 찾지 못했습니다 — databaseURL 을 확인해 주세요",
                 _ => $"올리기 실패({(int)resp.StatusCode}): {Short(detail)}",
             });
@@ -319,8 +473,18 @@ internal sealed partial class CloudSync : IDisposable
 
     // ───────────────────────── Firebase 익명 로그인 ─────────────────────────
 
+    // 올리기 루프와 설정 도우미 점검이 동시에 처음 로그인해 익명 사용자가 둘 생기지 않게
+    private readonly SemaphoreSlim _tokenLock = new(1, 1);
+
     /// <summary>데이터베이스에 쓸 ID 토큰. 로컬 시험 서버면 로그인 없이 null.</summary>
     private async Task<string?> GetTokenAsync(CancellationToken ct)
+    {
+        await _tokenLock.WaitAsync(ct);
+        try { return await GetTokenCoreAsync(ct); }
+        finally { _tokenLock.Release(); }
+    }
+
+    private async Task<string?> GetTokenCoreAsync(CancellationToken ct)
     {
         CloudConfig cfg;
         lock (_lock) cfg = _cfg;
@@ -363,8 +527,9 @@ internal sealed partial class CloudSync : IDisposable
             if (!resp.IsSuccessStatusCode)
             {
                 var code = FirebaseError(text);
-                throw new CloudException(code.Contains("OPERATION_NOT_ALLOWED") || code.Contains("ADMIN_ONLY")
-                    ? "Firebase 콘솔 → Authentication → 로그인 방법에서 '익명'을 켜 주세요"
+                // CONFIGURATION_NOT_FOUND: Authentication 의 "시작하기"를 아직 안 누름
+                throw new CloudException(code.Contains("OPERATION_NOT_ALLOWED") || code.Contains("ADMIN_ONLY") || code.Contains("CONFIGURATION_NOT_FOUND")
+                    ? "익명 로그인이 꺼져 있어요 — Firebase 콘솔 → Authentication → 로그인 방법에서 '익명'을 켜 주세요"
                     : code.Contains("API key not valid") ? "apiKey 가 맞지 않습니다 — 설정을 다시 붙여 넣어 주세요"
                     : $"익명 로그인 실패: {code}");
             }

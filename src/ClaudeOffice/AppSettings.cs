@@ -16,6 +16,42 @@ internal sealed class AppSettings
     /// <summary>✕ 를 눌러도 끝내지 않고 알림 영역으로 숨긴다(실수로 꺼서 휴대폰 보기가 멈추지 않게). 끝내기는 알림 영역 아이콘 메뉴.</summary>
     public bool CloseToTray { get; set; } = true;
 
+    // ── 알림(창을 숨겨 둬도 알아야 해서 앱 쪽에) ──
+    /// <summary>✋ 승인·질문을 기다리기 시작하면 Windows 알림.</summary>
+    public bool NotifyWaiting { get; set; } = true;
+    /// <summary>오래(NotifyDoneMinutes 분 넘게) 일하던 직원이 일을 마치면 알림.</summary>
+    public bool NotifyDone { get; set; } = true;
+    public int NotifyDoneMinutes { get; set; } = 10;
+    public bool NotifySound { get; set; } = true;
+    /// <summary>방해 금지 시간대(시, 0~23). 시작 &gt; 끝이면 자정을 넘긴다(22 → 8).</summary>
+    public bool QuietEnabled { get; set; }
+    public int QuietStart { get; set; } = 22;
+    public int QuietEnd { get; set; } = 8;
+
+    /// <summary>GitHub 에서 새 버전이 나왔는지 하루 두 번 확인. UpdateNotified: 알림을 띄운 버전(같은 버전은 한 번만).</summary>
+    public bool UpdateCheck { get; set; } = true;
+    public string? UpdateNotified { get; set; }
+
+    /// <summary>마지막 창 위치·크기(화면 밖이면 쓰지 않는다).</summary>
+    public WindowPlacement? Window { get; set; }
+
+    public sealed class WindowPlacement
+    {
+        public double Left { get; set; }
+        public double Top { get; set; }
+        public double Width { get; set; }
+        public double Height { get; set; }
+        public bool Maximized { get; set; }
+    }
+
+    /// <summary>지금이 방해 금지 시간대인지.</summary>
+    public bool InQuietHours(DateTime local)
+    {
+        if (!QuietEnabled || QuietStart == QuietEnd) return false;
+        int h = local.Hour;
+        return QuietStart < QuietEnd ? h >= QuietStart && h < QuietEnd : h >= QuietStart || h < QuietEnd;
+    }
+
     private static string FilePath => Path.Combine(App.DataDir, "app.json");
 
     public static AppSettings Load()

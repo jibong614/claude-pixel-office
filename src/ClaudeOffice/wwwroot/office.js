@@ -21,9 +21,21 @@ const params = new URLSearchParams(location.search);
 // 설치한 앱(홈 화면)은 # 없이 시작 주소로 열리므로, QR로 처음 열 때 이 기기에 저장해 두고 다음부터는 그것을 쓴다.
 const LINK_KEY = 'co.m.link';
 
+// 데이터 주소는 Firebase Realtime Database(또는 이 PC의 시험 서버)만 — 공용 페이지라 남이 만든 링크로 엉뚱한 서버에 붙지 않게
+function okDbUrl(s) {
+  try {
+    const u = new URL(s);
+    if (u.protocol === 'http:' || u.protocol === 'https:') {
+      if (['127.0.0.1', 'localhost'].includes(u.hostname)) return true;
+      return u.protocol === 'https:' && /\.(firebaseio\.com|firebasedatabase\.app)$/.test(u.hostname);
+    }
+  } catch { /* 주소 모양이 아님 */ }
+  return false;
+}
+
 function readRemoteLink() {
   const h = new URLSearchParams(location.hash.slice(1));
-  if (h.has('db') && h.has('u') && h.has('k')) {
+  if (h.has('db') && h.has('u') && h.has('k') && okDbUrl(h.get('db'))) {
     const link = { db: h.get('db'), u: h.get('u'), k: h.get('k') };
     try { localStorage.setItem(LINK_KEY, JSON.stringify(link)); } catch { /* 저장 못 해도 이번에는 볼 수 있다 */ }
     history.replaceState(null, '', location.pathname + location.search);   // 주소창·방문 기록에서 키를 지운다
@@ -32,7 +44,7 @@ function readRemoteLink() {
   if (location.hostname === 'office.local') return null;   // PC 앱 자체 화면(WebView2 가상 주소)은 저장된 연결 정보를 쓰지 않는다
   try {
     const s = JSON.parse(localStorage.getItem(LINK_KEY));
-    return s && s.db && s.u && s.k ? s : null;
+    return s && s.db && s.u && s.k && okDbUrl(s.db) ? s : null;
   } catch {
     return null;
   }
@@ -68,6 +80,7 @@ const store = {
 };
 
 let showAway = store.get('showAway', true);
+let waitOnly = store.get('waitOnly', false);   // ✋ 기다리는 직원만 보기
 let pinned = store.get('pinned', false);
 
 // 직원 표시: 최대 인원(maxShown)과 고르는 방식(pickMode: recent=최근 사용순 / manual=직접 고르기, pickedIds=체크한 세션)
@@ -110,6 +123,35 @@ function setNote(id, patch) {
     ids.sort((a, b) => notes[a].t - notes[b].t).slice(0, ids.length - NOTES_MAX).forEach((k) => delete notes[k]);
   store.set('notes', notes);
   shareToApp();
+}
+
+/**
+ * 앱이 파일(데이터 폴더 share.json)에 남겨 둔 사본과 합친다 — 이 화면에 없거나 사본 쪽을 더 나중에 고친 별명·메모는 사본 것으로
+ * (화면 저장소가 지워져도 되살아난다). 합친 결과를 다시 앱에 보내 사본도 맞춘다.
+ */
+function onSavedShare(saved) {
+  if (saved && typeof saved === 'object') {
+    for (const [id, n] of Object.entries(saved.notes || {})) {
+      if (!n || typeof n !== 'object' || (notes[id] && (notes[id].t || 0) >= (n.t || 0))) continue;
+      const nick = typeof n.nick === 'string' ? n.nick.slice(0, 30) : '';
+      const memo = typeof n.memo === 'string' ? n.memo.slice(0, 2000) : '';
+      if (nick || memo) notes[id] = { ...(nick && { nick }), ...(memo && { memo }), t: Number(n.t) || Date.now() };
+    }
+    store.set('notes', notes);
+    if (!officeName && typeof saved.office === 'string' && saved.office.trim()) setOfficeName(saved.office.slice(0, 30));
+  }
+  shareToApp();
+  if (selectedId) { noteFor = null; renderPanel(); }
+  refreshSettings();
+}
+
+/** 알림을 눌러 창을 열었을 때: 그 직원의 상세 패널을 연다. */
+function selectSession(id) {
+  if (!data.sessions.some((s) => s.id === id)) return;
+  if (!settingsEl.hidden) setSettingsOpen(false);
+  selectedId = id;
+  drawerFolded = false;
+  renderPanel();
 }
 let selectedId = params.get('select');   // 화면 점검용: ?demo&select=demo-b1 이면 상세 패널을, select=settings 면 설정을 연 채로 시작
 let hoverId = null;
@@ -232,11 +274,14 @@ let fontName = 12, fontSmall = 11, fontBubble = 12;
 // 자르기만 하고 순서는 바꾸지 않는다 — 자리는 언제나 출근 순서(C#이 보낸 순서)라 책상이 뒤섞이지 않는다.
 function visibleSessions() {
   let list = data.sessions.filter((s) => showAway || s.act !== 'away');
+  if (waitOnly) list = list.filter(isWaiting);
   if (pickMode === 'manual') list = list.filter((s) => pickedIds.has(s.id));
   if (list.length <= maxShown) return list;
   const keep = new Set([...list].sort((a, b) => (b.last || 0) - (a.last || 0)).slice(0, maxShown).map((s) => s.id));
   return list.filter((s) => keep.has(s.id));
 }
+
+function isWaiting(s) { return s.act === 'waiting' || s.act === 'asking'; }
 
 /** 체크한 직원 중 지금 기록이 있는 사람 수(12시간이 지나 사라진 세션은 세지 않는다). */
 const pickedCount = () => data.sessions.filter((s) => pickedIds.has(s.id)).length;
@@ -1001,6 +1046,7 @@ function refreshEmpty(shown) {
   const [big, msg, dim] =
     REMOTE && remoteError && data.sessions.length === 0 ? ['📱 PC와 아직 이어지지 않았어요', remoteError, '']
     : data.sessions.length === 0 ? ['🏢 아직 출근한 직원이 없어요', 'Claude Code에서 대화를 시작하면 책상에 직원이 나타납니다.', `최근 ${windowLabel()} 안에 대화한 세션을 봅니다(⚙️ 설정 → 표시 기간).`]
+    : waitOnly ? ['🙌 기다리는 직원이 없어요', '모두 알아서 일하거나 쉬는 중입니다.', "⚙️ 설정 → 직원 표시 → '✋ 기다리는 직원만 보기'를 끄면 모두 보입니다."]
     : pickMode === 'manual' && pickedCount() === 0 ? ['🗂️ 보일 직원을 아직 고르지 않았어요', '⚙️ 설정 → 직원 표시에서 체크하면 책상에 앉습니다.', '고르는 방식: 직접 고르기']
     : ['🚪 모두 퇴근했어요', "⚙️ 설정에서 '퇴근한 직원 보이기'를 켜면 빈 책상이 보입니다.", ''];
   $('emptyBig').textContent = big;
@@ -1114,41 +1160,143 @@ function refreshHookButton() {
 // 앱(C#)이 {type:"cloud"} 로 상태를 알려 준다: configured, enabled, state(off·setup·starting·on·error), error, notice, last, url(QR 주소)
 
 let cloud = null;
-let cloudFormOpen = false;   // Firebase 설정 붙여넣기 칸
-let cloudQrShown = false;    // QR에는 해독 키가 들어 있어 누를 때만 보인다
+let cloudWizardOpen = false;   // 설정 도우미(단계별 안내 + 점검)
+let cloudQrShown = false;      // QR에는 해독 키가 들어 있어 누를 때만 보인다
 let cloudSetupError = '';
+let cloudCheck = null;         // 마지막 점검 결과 {at, steps:{project,db,rules,auth,page}, rules, error}
+let cloudCheckAskedAt = 0;
 
 function onCloud(msg) {
   cloud = msg;
   refreshSettings();
 }
 
-// 앱 쪽 설정(app.json·시작 프로그램 등록) — 앱이 {type:"app", startMinimized, closeToTray, autoStart, autoStartElsewhere} 로 알려 준다
+// 앱 쪽 설정(app.json·시작 프로그램 등록·알림·새 버전) — 앱이 {type:"app", ...} 로 알려 준다
 let appSettings = null;
 
 function onApp(msg) {
   appSettings = msg;
+  btnSettings.classList.toggle('dot', !!msg.update?.newer);   // 새 버전이 나오면 ⚙️ 에 점
   refreshSettings();
 }
 
 /** 앱이 저장한 뒤 실제 값을 {type:"app"} 로 다시 알려 준다(못 바꿨으면 스위치가 되돌아간다). */
 const setAppSetting = (key, value) => send({ cmd: 'app-setting', key, value });
+const appReady = () => !DEMO && !!appSettings;
+const openUrl = (url) => send({ cmd: 'open-url', url });   // 앱이 바깥 브라우저로 연다(정해 둔 주소만)
 
 function onCloudSetup(msg) {
   cloudSetupError = msg.error || '';
-  if (!cloudSetupError) cloudFormOpen = false;
+  refreshSettings();
+}
+
+function onCloudCheck(msg) {
+  cloudCheck = msg;
+  refreshSettings();
+}
+
+/** 설정 도우미 점검을 부탁한다(앱이 데이터베이스·규칙·로그인·페이지를 확인해 {type:"cloud-check"} 로 알려 줌). */
+function requestCloudCheck(force) {
+  if (DEMO || (!force && Date.now() - cloudCheckAskedAt < 4000)) return;
+  cloudCheckAskedAt = Date.now();
+  send({ cmd: 'cloud-check' });
+}
+
+const CHECK_KEYS = ['db', 'rules', 'auth', 'page'];
+const cloudAllOk = () => CHECK_KEYS.every((k) => cloudCheck?.steps?.[k]?.s === 'ok');
+
+// 도우미를 열어 둔 동안 5초마다 다시 확인 — 콘솔에서 한 단계를 마치고 돌아오면 저절로 ✓ 가 된다
+setInterval(() => {
+  if (cloudWizardOpen && !settingsEl.hidden && cloud?.hasProject && !cloudAllOk()) requestCloudCheck();
+}, 5000);
+
+function setCloudWizard(open) {
+  cloudWizardOpen = open;
+  cloudSetupError = '';
+  if (open && cloud?.hasProject) requestCloudCheck(true);
   refreshSettings();
 }
 
 function cloudStatus() {
   const c = cloud;
   if (!c) return { text: '확인 중…', tone: 'var(--dim)' };
-  if (!c.configured) return { text: '설정 안 됨 — Firebase 웹 앱 설정을 붙여 넣어 주세요(docs/MOBILE.md)', tone: 'var(--dim)' };
+  if (!c.configured) return {
+    text: c.hasProject ? '데이터베이스를 아직 찾지 못했어요 — 설정 도우미 3단계' : '설정 안 됨 — [설정 도우미]를 눌러 단계별로 따라 하세요(10분쯤)',
+    tone: 'var(--dim)' };
   if (!c.enabled) return { text: '꺼짐', tone: 'var(--dim)' };
   if (c.state === 'error') return { text: '⚠️ ' + (c.error || '올리지 못하는 중'), tone: '#ffb347' };
   if (c.state === 'on') return { text: `📡 올리는 중 · 마지막 ${fmtTime(c.last)}` + (c.notice ? ` · ${c.notice}` : ''), tone: '#7dffa0' };
   return { text: '연결 중…', tone: 'var(--dim)' };
 }
+
+const DONE_CHOICES = [[5, '5분'], [10, '10분'], [30, '30분'], [60, '1시간']];
+const doneLabel = () => (DONE_CHOICES.find(([m]) => m === appSettings?.notifyDoneMinutes) || [0, `${appSettings?.notifyDoneMinutes ?? 10}분`])[1];
+
+function updateStatus() {
+  const u = appSettings?.update;
+  if (!u) return { text: '확인 중…', tone: 'var(--dim)' };
+  if (u.newer) return { text: `🎉 새 버전 ${u.latest} 이 나왔어요`, tone: '#7dffa0' };
+  if (u.error) return { text: `⚠️ ${u.error}`, tone: '#ffb347' };
+  if (u.latest) return { text: `최신 버전입니다 · 확인 ${fmtTime(u.checkedAt)}`, tone: 'var(--dim)' };
+  return { text: u.checkedAt ? '아직 공개된 버전이 없어요' : '아직 확인 전(켠 뒤 30초쯤)', tone: 'var(--dim)' };
+}
+
+// ── 휴대폰 보기 설정 도우미: 단계마다 할 일·Firebase 콘솔 바로가기·앱이 자동으로 확인한 결과 ──
+const FB_CONSOLE = 'https://console.firebase.google.com';
+const fbProject = () => (cloud?.project ? `${FB_CONSOLE}/project/${encodeURIComponent(cloud.project)}` : FB_CONSOLE);
+const dbInstance = () => { try { return new URL(cloud.db).hostname.split('.')[0]; } catch { return null; } };
+
+/** 단계 상태 {s: ok|fail|warn|wait, text}. 앱의 점검 결과(cloudCheck)에서 읽는다. */
+function wizCheck(key) {
+  if (!cloud?.hasProject) return { s: 'wait', text: '' };
+  const r = cloudCheck?.steps?.[key];
+  if (r) return { s: r.s === 'skip' ? 'wait' : r.s, text: r.text };
+  return { s: 'wait', text: cloudCheck ? '' : '확인 중…' };   // 앞 단계에서 멈춰 아직 못 본 단계는 빈칸
+}
+
+async function copyRules(e) {
+  const btn = e.currentTarget;
+  if (!cloudCheck?.rules) { requestCloudCheck(true); return; }
+  try {
+    await navigator.clipboard.writeText(cloudCheck.rules);
+    btn.textContent = '복사됨 ✓';
+  } catch {
+    btn.textContent = '아래 글을 직접 복사';
+  }
+  setTimeout(() => { btn.textContent = '규칙 복사'; }, 1800);
+}
+
+const WIZ = [
+  { title: 'Firebase 프로젝트 만들기',
+    desc: '구글 계정으로 Firebase 콘솔에 들어가 [프로젝트 만들기]. 이름은 아무거나(예: my-claude-office), Google 애널리틱스는 꺼도 됩니다. 요금제는 무료(Spark) 그대로 — 결제 정보는 필요 없습니다.',
+    buttons: () => [['Firebase 콘솔 열기', () => openUrl(FB_CONSOLE + '/')]],
+    state: () => (cloud?.hasProject ? { s: 'ok', text: '만들었어요' } : { s: 'wait', text: '' }) },
+  { title: '웹 앱 등록 → 설정 붙여넣기', form: true,
+    desc: '프로젝트 첫 화면에서 웹(</>) 버튼 → 앱 닉네임(아무거나) → [앱 등록] (Hosting 체크는 안 해도 됩니다). 나오는 firebaseConfig 블록을 통째로 복사해 아래에 붙여 넣고 [저장]. 이미 등록했다면 ⚙️ 프로젝트 설정 → 일반 → 내 앱에 있습니다.',
+    buttons: () => [['프로젝트 설정 열기', () => openUrl(cloud?.project ? fbProject() + '/settings/general' : FB_CONSOLE + '/')]],
+    state: () => (cloud?.hasProject ? { s: 'ok', text: cloud.project ? `프로젝트 ${cloud.project}` : '로컬 시험 서버' } : { s: 'wait', text: '' }) },
+  { title: 'Realtime Database 만들기',
+    desc: '왼쪽 메뉴의 Realtime Database(데이터베이스 또는 빌드 아래) → [데이터베이스 만들기]. 위치는 가까운 싱가포르(asia-southeast1), 보안 규칙은 "잠금 모드로 시작". 만들면 여기서 주소를 저절로 찾습니다.',
+    buttons: () => [['Realtime Database 열기', () => openUrl(fbProject() + '/database')]],
+    state: () => wizCheck('db') },
+  { title: '보안 규칙 붙여넣기', rules: true,
+    desc: 'Realtime Database 의 [규칙] 탭 내용을 모두 지우고 [규칙 복사]로 복사한 것을 붙여 넣은 뒤 [게시]. PC는 로그인한 자기 칸에만 쓰고, 휴대폰은 암호문만 읽게 하는 규칙입니다.',
+    buttons: () => [['규칙 복사', copyRules], ['규칙 화면 열기', () => openUrl(dbInstance() ? `${fbProject()}/database/${dbInstance()}/rules` : fbProject() + '/database')]],
+    state: () => wizCheck('rules') },
+  { title: '익명 로그인 켜기',
+    desc: '왼쪽 메뉴 Authentication(보안 또는 빌드 아래) → [시작하기] → 로그인 방법 → 익명 → 사용 설정 → [저장]. PC의 Claude Office만 이것으로 로그인합니다(휴대폰은 로그인 없음). "익명 계정 자동 정리"는 켜지 마세요 — 30일마다 QR을 다시 찍어야 합니다.',
+    buttons: () => [['Authentication 열기', () => openUrl(fbProject() + '/authentication/providers')]],
+    state: () => wizCheck('auth') },
+  { title: '켜고 휴대폰으로 QR 찍기',
+    desc: '[켜기] → 아래 [QR 보기] → 휴대폰 카메라로 찍으면 열립니다. 크롬 메뉴 → [앱 설치](아이폰은 공유 → 홈 화면에 추가)를 하면 주소창 없이 앱처럼 씁니다.',
+    buttons: () => [[cloud?.enabled ? '켜져 있어요' : '켜기', () => send({ cmd: 'cloud-enable', value: true }), !cloud?.configured || !!cloud?.enabled]],
+    state: () => {
+      if (cloud?.enabled && cloud.state === 'on') return { s: 'ok', text: '올리는 중 — 아래 [QR 보기]' };
+      if (cloud?.enabled && cloud.state === 'error') return { s: 'fail', text: cloud.error || '올리지 못하는 중' };
+      const page = wizCheck('page');
+      return page.s === 'fail' ? page : { s: 'wait', text: cloud?.configured ? '[켜기]를 눌러 주세요' : '' };
+    } },
+];
 
 // ───────────────────────────── 설정 패널 ─────────────────────────────
 // 항목을 늘릴 때는 SETTINGS 에 한 줄 추가하면 화면은 저절로 그려진다.
@@ -1158,7 +1306,8 @@ function cloudStatus() {
 //   action : label() / run() / status()           — 버튼(앱이 확인 창을 띄우는 일 등)과 지금 상태 글
 //   text   : get() / set(v) / placeholder / max   — 글 입력칸(치는 대로 저장)
 //   picker :                                      — 직원 체크 목록(직접 고르기)
-//   cloudform / cloudqr :                         — 휴대폰 보기 설정 붙여넣기 칸 / QR
+//   hours  : getStart/setStart/getEnd/setEnd      — 시작~끝 시각(방해 금지 시간대)
+//   cloudwizard / cloudqr :                       — 휴대폰 보기 설정 도우미(WIZ 단계) / QR
 //   공통   : name, desc(글 또는 함수), shown()이 false 면 숨김, enabled()가 false 면 잠금(toggle·action)
 //            pcOnly: true — PC 앱에서만 바꿀 수 있는 것(휴대폰 보기에서는 빼고 그린다)
 // 화면에서만 쓰는 값은 store(localStorage)에 두고, 앱(C#)이 알아야 하는 값은 host.postMessage 로 넘긴다.
@@ -1180,6 +1329,8 @@ const SETTINGS = [
         options: WINDOW_CHOICES, get: () => windowHours, set: setWindowHours },
       { type: 'toggle', name: '퇴근한 직원 보이기', desc: '퇴근(🚪)한 직원의 빈 책상도 사무실에 남겨 둡니다.',
         get: () => showAway, set: setShowAway },
+      { type: 'toggle', name: '✋ 기다리는 직원만 보기', desc: '승인·질문을 기다리는 직원만 책상에 앉힙니다. 직원이 많을 때 휴대폰으로 볼 때 좋아요.',
+        get: () => waitOnly, set: (v) => { waitOnly = v; store.set('waitOnly', v); layoutKey = ''; refreshHud(); refreshSettings(); } },
       { type: 'number', name: '보일 인원', desc: '책상에 앉힐 최대 인원입니다.',
         min: SHOWN_MIN, max: SHOWN_MAX, unit: '명', get: () => maxShown, set: setMaxShown },
       { type: 'choice', name: '고르는 방식',
@@ -1215,6 +1366,32 @@ const SETTINGS = [
     ],
   },
   {
+    title: '알림',
+    // 창을 숨겨 둬도 알아야 하므로 앱(C#)이 판단해 Windows 알림으로 띄운다. 창을 보고 있을 때는 띄우지 않는다
+    items: [
+      { type: 'toggle', name: '✋ 기다릴 때 알림', pcOnly: true,
+        desc: '직원이 승인·질문을 기다리기 시작하면 Windows 알림을 띄웁니다. 창을 보고 있을 때는 띄우지 않고, 알림을 누르면 그 직원이 열립니다.',
+        get: () => !!appSettings?.notifyWaiting, set: (v) => setAppSetting('notifyWaiting', v), enabled: appReady },
+      { type: 'toggle', name: '오래 걸린 일이 끝나면 알림', pcOnly: true,
+        desc: () => `${doneLabel()} 넘게 일하던 직원이 일을 마치고 쉬기 시작하면 알립니다.`,
+        get: () => !!appSettings?.notifyDone, set: (v) => setAppSetting('notifyDone', v), enabled: appReady },
+      { type: 'choice', name: '오래 걸린 일 기준', pcOnly: true, shown: () => !!appSettings?.notifyDone,
+        options: DONE_CHOICES, get: () => appSettings?.notifyDoneMinutes, set: (v) => setAppSetting('notifyDoneMinutes', v) },
+      { type: 'toggle', name: '알림음', pcOnly: true, desc: '끄면 소리 없이 알림만 띄웁니다.',
+        get: () => !!appSettings?.notifySound, set: (v) => setAppSetting('notifySound', v), enabled: appReady },
+      { type: 'toggle', name: '방해 금지 시간대', pcOnly: true,
+        desc: () => (appSettings?.quietEnabled
+          ? `${appSettings.quietStart}시부터 ${appSettings.quietEnd}시까지는 알림을 띄우지 않습니다.`
+          : '정한 시간에는 알림을 띄우지 않습니다(예: 밤).'),
+        get: () => !!appSettings?.quietEnabled, set: (v) => setAppSetting('quietEnabled', v), enabled: appReady },
+      { type: 'hours', pcOnly: true, shown: () => !!appSettings?.quietEnabled,
+        getStart: () => appSettings?.quietStart ?? 22, setStart: (v) => setAppSetting('quietStart', v),
+        getEnd: () => appSettings?.quietEnd ?? 8, setEnd: (v) => setAppSetting('quietEnd', v), enabled: appReady },
+      { type: 'action', name: '알림 시험', pcOnly: true, desc: '지금 알림을 하나 띄워 봅니다(창을 보고 있어도).',
+        label: () => '띄워 보기', run: () => send({ cmd: 'notify-test' }), enabled: () => appReady() && !!appSettings.tray },
+    ],
+  },
+  {
     title: 'Claude Code 연동',
     items: [
       { type: 'action', name: '훅 연결', pcOnly: true,
@@ -1228,16 +1405,39 @@ const SETTINGS = [
     title: '휴대폰에서 보기',
     items: [
       { type: 'action', name: '휴대폰에서 보기', pcOnly: true,
-        desc: '화면용 요약만 PC에서 암호화해 구글 Firebase에 올리고, 휴대폰은 QR로 열어 봅니다(보기 전용). 대화 원본은 올리지 않습니다.',
-        label: () => (!cloud?.configured ? (cloudFormOpen ? '닫기' : '설정하기') : cloud.enabled ? '끄기' : '켜기'),
+        desc: '화면용 요약만 PC에서 암호화해 내 구글 Firebase(무료)에 올리고, 휴대폰은 QR로 열어 봅니다(보기 전용, 로그인 없음, 밖에서도). 대화 원본은 올리지 않습니다.',
+        label: () => (!cloud?.configured ? (cloudWizardOpen ? '도우미 닫기' : '설정 도우미') : cloud.enabled ? '끄기' : '켜기'),
         enabled: () => !DEMO && !!cloud,   // 견본 화면에서는 쓸 수 없다
         run: () => {
-          if (!cloud.configured) { cloudFormOpen = !cloudFormOpen; refreshSettings(); }
+          if (!cloud.configured) setCloudWizard(!cloudWizardOpen);
           else send({ cmd: 'cloud-enable', value: !cloud.enabled });
         },
         status: cloudStatus },
-      { type: 'cloudform', pcOnly: true, shown: () => !DEMO && cloudFormOpen },
-      { type: 'cloudqr', pcOnly: true, shown: () => !DEMO && !cloudFormOpen && !!cloud?.configured },
+      { type: 'cloudwizard', pcOnly: true, shown: () => !DEMO && cloudWizardOpen },
+      { type: 'cloudqr', pcOnly: true, shown: () => !DEMO && !!cloud?.configured },
+      { type: 'choice', name: '휴대폰 페이지', pcOnly: true, shown: () => !DEMO && !!cloud?.configured && cloud.page !== 'local',
+        desc: () => (cloud?.page === 'own'
+          ? `내 Firebase Hosting(https://${cloud.project}.web.app)에 tools\\deploy-mobile.ps1 로 올려 둔 페이지를 씁니다.`
+          : '모두가 같이 쓰는 페이지(GitHub)라 따로 올릴 것이 없습니다. 데이터는 내 Firebase에만, 해독 키는 휴대폰에만 있습니다.')
+          + ' 바꾸면 휴대폰에서 QR을 다시 찍어야 합니다.',
+        options: [['public', '공용 페이지'], ['own', '내 Firebase Hosting']],
+        get: () => cloud?.page, set: (v) => { if (v !== cloud.page) send({ cmd: 'cloud-page', value: v }); } },
+    ],
+  },
+  {
+    title: '정보',
+    items: [
+      { type: 'action', name: '버전', pcOnly: true,
+        desc: () => `지금 버전 ${appSettings?.version || '?'} — 새 버전은 GitHub 릴리스에서 받습니다.`,
+        label: () => (appSettings?.update?.newer ? '받으러 가기' : '지금 확인'),
+        run: () => (appSettings.update?.newer ? openUrl(appSettings.update.url) : send({ cmd: 'update-check' })),
+        enabled: appReady, status: updateStatus },
+      { type: 'toggle', name: '새 버전 알림', pcOnly: true,
+        desc: '하루 두 번 GitHub에 새 버전이 나왔는지 물어보고, 나왔으면 한 번 알려 드립니다(보내는 것은 프로그램 버전뿐).',
+        get: () => !!appSettings?.updateCheck, set: (v) => setAppSetting('updateCheck', v), enabled: appReady },
+      { type: 'action', name: '데이터 폴더', pcOnly: true,
+        desc: '설정과 별명·메모 사본(share.json), 휴대폰 보기 키(cloud.json)가 있는 곳입니다. 다른 PC로 옮길 때는 share.json 을 그 PC의 같은 폴더에 복사하세요. cloud.json 은 남에게 주지 마세요.',
+        label: () => '열기', run: () => send({ cmd: 'open-data-dir' }), enabled: appReady },
     ],
   },
 ];
@@ -1321,25 +1521,103 @@ const RENDER = {
     };
   },
 
-  // 휴대폰 보기: Firebase 콘솔의 웹 앱 설정(firebaseConfig)을 붙여 넣는 칸
-  cloudform(it, row) {
+  hours(it, row) {
+    const box = elem('div', 'hours');
+    const pick = (set) => {
+      const sel = elem('select', 'field');
+      for (let h = 0; h < 24; h++) sel.append(new Option(`${h}시`, String(h)));
+      sel.addEventListener('change', () => set(Number(sel.value)));
+      return sel;
+    };
+    const from = pick(it.setStart), to = pick(it.setEnd);
+    box.append(from, elem('span', '', '부터'), to, elem('span', '', '까지'));
+    row.append(box);
+    return (locked) => {
+      from.disabled = to.disabled = locked;
+      if (document.activeElement !== from) from.value = String(it.getStart());
+      if (document.activeElement !== to) to.value = String(it.getEnd());
+    };
+  },
+
+  // 휴대폰 보기 설정 도우미 — WIZ 단계. 지금 할 단계만 펼치고(마친 단계는 ✓, 머리를 누르면 펼침), 앱이 확인한 결과를 단계마다 보여 준다
+  cloudwizard(it, row) {
     row.classList.add('stack');
-    const guide = elem('div', 'desc',
-      'Firebase 콘솔 → 프로젝트 설정 → 내 앱(웹)의 firebaseConfig 블록을 통째로 붙여 넣으세요. 프로젝트를 만드는 순서는 docs/MOBILE.md 에 있습니다.');
-    const ta = elem('textarea', 'field');
-    ta.rows = 6;
-    ta.spellcheck = false;
-    ta.placeholder = 'const firebaseConfig = {\n  apiKey: "…",\n  databaseURL: "https://…firebasedatabase.app",\n  projectId: "…",\n  …\n};';
-    const err = elem('div', 'pick-note');
-    const bar = elem('div', 'btnbar');
-    const save = elem('button', 'act', '저장'), cancel = elem('button', 'act ghost', '취소');
-    save.addEventListener('click', () => send({ cmd: 'cloud-setup', text: ta.value }));   // 결과는 {type:"cloud-setup", error}
-    cancel.addEventListener('click', () => { cloudFormOpen = false; cloudSetupError = ''; refreshSettings(); });
-    bar.append(save, cancel);
-    row.append(guide, ta, err, bar);
+    const list = elem('ol', 'wiz');
+    const opened = new Set();   // 사용자가 펼쳐 본 단계
+    const parts = WIZ.map((st, i) => {
+      const li = elem('li', 'wstep'), head = elem('button', 'whead'), body = elem('div', 'wbody');
+      const mark = elem('span', 'wmark', String(i + 1)), htxt = elem('span', 'wht'), sum = elem('span', 'wsum');
+      htxt.append(elem('span', 'wtitle', st.title), sum);
+      head.append(mark, htxt);
+      head.addEventListener('click', () => { if (!opened.delete(i)) opened.add(i); refreshSettings(); });
+      body.append(elem('div', 'desc', st.desc));
+      const bar = elem('div', 'btnbar');   // 콘솔 바로가기 — 먼저 열고, 그다음 아래 칸에 붙여 넣는 순서
+      body.append(bar);
+
+      let err = null, rulesEl = null;
+      if (st.form) {   // Firebase 웹 앱 설정(firebaseConfig) 붙여넣기
+        const ta = elem('textarea', 'field');
+        ta.rows = 6;
+        ta.spellcheck = false;
+        ta.placeholder = 'const firebaseConfig = {\n  apiKey: "…",\n  authDomain: "….firebaseapp.com",\n  projectId: "…",\n  …\n};';
+        err = elem('div', 'pick-note');
+        const save = elem('button', 'act', '저장');
+        save.addEventListener('click', () => send({ cmd: 'cloud-setup', text: ta.value }));   // 결과는 {type:"cloud-setup", error}
+        const saveBar = elem('div', 'btnbar');
+        saveBar.append(save);
+        body.append(ta, err, saveBar);
+      }
+      if (st.rules) {   // 붙여 넣을 규칙을 그대로 보여 준다(복사가 안 되면 직접 골라 복사)
+        rulesEl = elem('pre', 'rules mono');
+        body.append(rulesEl);
+      }
+      li.append(head, body);
+      list.append(li);
+      return { st, li, mark, sum, body, bar, err, rulesEl, barKey: '' };
+    });
+
+    const foot = elem('div', 'btnbar'), note = elem('div', 'desc');
+    const recheck = elem('button', 'act', '다시 확인'), close = elem('button', 'act ghost', '도우미 닫기');
+    recheck.addEventListener('click', () => requestCloudCheck(true));
+    close.addEventListener('click', () => setCloudWizard(false));
+    foot.append(recheck, close);
+    row.append(elem('div', 'desc', '구글 Firebase(무료)에 내 칸을 만드는 과정입니다. 단계마다 [열기]로 Firebase 콘솔의 그 화면이 열리고, 마치면 여기서 저절로 ✓ 가 됩니다.'),
+      list, foot, note);
+
     return () => {
-      err.textContent = cloudSetupError;
-      err.classList.toggle('blocked', !!cloudSetupError);
+      let current = -1;
+      parts.forEach((p, i) => {
+        const r = p.st.state();
+        if (current < 0 && r.s !== 'ok') current = i;
+        p.li.dataset.s = r.s;
+        p.mark.textContent = r.s === 'ok' ? '✓' : r.s === 'fail' || r.s === 'warn' ? '!' : String(i + 1);
+        p.sum.textContent = r.text || '';
+        // 버튼은 글자·잠금이 바뀔 때만 새로 만든다(스냅샷마다 만들면 누르는 도중 사라진다)
+        const btns = p.st.buttons();
+        const key = btns.map(([label, , off]) => label + (off ? '·' : '')).join('|');
+        if (key !== p.barKey) {
+          p.barKey = key;
+          p.bar.replaceChildren(...btns.map(([label, fn, off], j) => {
+            const b = elem('button', j ? 'act ghost' : 'act', label);
+            b.disabled = !!off;
+            b.addEventListener('click', fn);
+            return b;
+          }));
+        }
+        if (p.err) {
+          p.err.textContent = cloudSetupError;
+          p.err.classList.toggle('blocked', !!cloudSetupError);
+        }
+        if (p.rulesEl) p.rulesEl.textContent = cloudCheck?.rules || '';
+      });
+      parts.forEach((p, i) => {
+        p.li.classList.toggle('current', i === current);
+        // 1·2단계(프로젝트 만들기·설정 붙여넣기)는 한 번에 이어서 하므로 함께 펼친다
+        p.body.hidden = !(i === current || (current === 0 && i === 1) || opened.has(i) || p.li.dataset.s === 'warn');
+      });
+      note.textContent = cloudCheck?.error ? `⚠️ ${cloudCheck.error}`
+        : current < 0 ? '🎉 모두 마쳤어요. 휴대폰으로 QR을 찍어 보세요.'
+        : cloudCheck?.at ? `마지막 확인 ${fmtTime(cloudCheck.at)} — 도우미를 열어 두면 5초마다 다시 확인합니다.` : '';
     };
   },
 
@@ -1348,7 +1626,7 @@ const RENDER = {
     row.classList.add('stack');
     const bar = elem('div', 'btnbar');
     const showBtn = elem('button', 'act'), copyBtn = elem('button', 'act ghost', '주소 복사');
-    const rekeyBtn = elem('button', 'act ghost', '키 새로 만들기'), editBtn = elem('button', 'act ghost', '설정 바꾸기');
+    const rekeyBtn = elem('button', 'act ghost', '키 새로 만들기'), editBtn = elem('button', 'act ghost', '점검·설정 도우미');
     bar.append(showBtn, copyBtn, rekeyBtn, editBtn);
     const box = elem('div', 'qrbox'), qrEl = elem('div', 'qr'), urlEl = elem('div', 'qrurl mono');
     box.append(qrEl, urlEl, elem('div', 'desc',
@@ -1367,7 +1645,7 @@ const RENDER = {
       }
     });
     rekeyBtn.addEventListener('click', () => send({ cmd: 'cloud-rekey' }));   // 앱이 확인 창을 띄운다
-    editBtn.addEventListener('click', () => { cloudFormOpen = true; refreshSettings(); });
+    editBtn.addEventListener('click', () => setCloudWizard(!cloudWizardOpen));
 
     let drawnUrl = null;
     return () => {
@@ -1575,6 +1853,8 @@ canvas.addEventListener('click', (e) => {
 });
 
 $('pClose').addEventListener('click', () => { selectedId = null; renderPanel(); });
+// 작업 폴더를 탐색기로 — 경로는 앱이 자기 스냅샷에서 찾는다(화면이 보낸 경로를 그대로 열지 않음)
+$('pOpenDir').addEventListener('click', () => { if (selectedId) send({ cmd: 'open-folder', id: selectedId }); });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (e.target instanceof Element && e.target.matches('input, textarea')) { e.target.blur(); return; }   // 쓰던 칸에서는 Esc가 칸만 빠져나온다
@@ -1628,6 +1908,7 @@ function renderPanel() {
   st.textContent = `${s.icon} ${a.label} — ${s.text}`;
   st.style.color = a.tone;
   $('pCwd').textContent = s.cwd || s.team;
+  $('pOpenDir').hidden = DEMO || !s.cwd;
   $('pEntry').textContent = entryName(s.entry);
   $('pModel').textContent = s.model || '-';
   $('pBranch').textContent = s.branch || '-';
@@ -1817,13 +2098,15 @@ if (REMOTE) {
     const m = e.data;
     if (m?.type === 'cloud') onCloud(m);
     else if (m?.type === 'cloud-setup') onCloudSetup(m);
+    else if (m?.type === 'cloud-check') onCloudCheck(m);
     else if (m?.type === 'app') onApp(m);
+    else if (m?.type === 'share') onSavedShare(m.data);
+    else if (m?.type === 'select') selectSession(m.id);
     else onSnapshot(m);
   });
-  send({ cmd: 'ready' });
+  send({ cmd: 'ready' });   // 앱이 저장해 둔 별명·메모(share)를 돌려주면 합쳐서 다시 보낸다(onSavedShare)
   if (pinned) send({ cmd: 'topmost', value: true });
   send({ cmd: 'window', hours: windowHours });   // 앱은 늘 12시간으로 시작하므로 저장해 둔 값을 알려 준다
-  shareToApp();                                   // 휴대폰 보기에 함께 올라갈 사무실 이름·별명·메모
 }
 
 requestAnimationFrame(frame);

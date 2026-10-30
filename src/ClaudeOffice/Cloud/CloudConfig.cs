@@ -18,13 +18,29 @@ internal sealed partial class CloudConfig
     public string? ApiKey { get; set; }
     public string? DatabaseUrl { get; set; }   // https://<프로젝트>-default-rtdb.<지역>.firebasedatabase.app
     public string? ProjectId { get; set; }
-    public string? PageUrl { get; set; }       // 휴대폰 화면 주소(Firebase Hosting) https://<프로젝트>.web.app
+    public string? PageUrl { get; set; }       // 휴대폰 화면 주소: 공용 페이지(PublicPageUrl) 또는 내 Firebase Hosting https://<프로젝트>.web.app
     public string? Key { get; set; }           // AES-256 키(base64url)
     public string? Uid { get; set; }           // 익명 로그인 사용자 ID = 데이터 경로 offices/<Uid>
     public string? RefreshToken { get; set; }
 
+    /// <summary>
+    /// 누구나 쓰는 휴대폰 화면 페이지(GitHub Pages — 이 저장소의 wwwroot 를 그대로 올린 것).
+    /// 페이지는 모두에게 같은 파일이고 각자의 데이터 주소·키는 QR 주소의 # 뒤에만 있으므로, 사용자마다 따로 올릴 필요가 없다.
+    /// </summary>
+    public const string PublicPageUrl = "https://jibong614.github.io/claude-pixel-office/";
+
+    public static string OwnPageUrl(string projectId) => $"https://{projectId}.web.app/";
+
     [JsonIgnore]
     public bool Configured => !string.IsNullOrEmpty(DatabaseUrl) && (IsLocal || !string.IsNullOrEmpty(ApiKey));
+
+    /// <summary>웹 앱 설정(apiKey·projectId)은 받았다 — 데이터베이스는 아직 없을 수 있다(설정 도우미가 찾는다).</summary>
+    [JsonIgnore]
+    public bool HasProject => IsLocal || (!string.IsNullOrEmpty(ApiKey) && !string.IsNullOrEmpty(ProjectId));
+
+    /// <summary>휴대폰 화면 페이지 종류: public(공용) | own(내 Firebase Hosting) | local(시험 서버).</summary>
+    [JsonIgnore]
+    public string PageMode => IsLocal ? "local" : PageUrl is null || PageUrl == PublicPageUrl ? "public" : "own";
 
     /// <summary>로컬 시험 서버나 Firebase 에뮬레이터(127.0.0.1·localhost) — 로그인 없이 쓴다.</summary>
     [JsonIgnore]
@@ -73,6 +89,7 @@ internal sealed partial class CloudConfig
     /// <summary>
     /// Firebase 콘솔의 웹 앱 설정(const firebaseConfig = { apiKey: ..., databaseURL: ..., projectId: ... })을
     /// 통째로 붙여 넣은 글에서 값을 뽑는다. 문제가 있으면 Error 에 사람이 읽을 이유.
+    /// databaseURL 은 없어도 된다 — 데이터베이스보다 웹 앱을 먼저 만들면 빠져 있는데, 설정 도우미가 프로젝트 ID 로 찾아낸다.
     /// </summary>
     public static (string? ApiKey, string? DatabaseUrl, string? ProjectId, string? Error) Parse(string text)
     {
@@ -84,14 +101,25 @@ internal sealed partial class CloudConfig
         map.TryGetValue("databaseURL", out var db);
         map.TryGetValue("projectId", out var project);
 
-        if (string.IsNullOrEmpty(db))
-            return (null, null, null, "databaseURL 이 없습니다. Firebase 콘솔에서 Realtime Database 를 먼저 만든 뒤 설정을 다시 복사해 주세요.");
-        if (!Uri.TryCreate(db, UriKind.Absolute, out var u) || (u.Scheme != Uri.UriSchemeHttps && !u.IsLoopback))
-            return (null, null, null, $"databaseURL 모양이 이상합니다: {db}");
-        if (!u.IsLoopback && string.IsNullOrEmpty(apiKey))
+        bool local = false;
+        if (!string.IsNullOrEmpty(db))
+        {
+            if (!Uri.TryCreate(db, UriKind.Absolute, out var u) || (u.Scheme != Uri.UriSchemeHttps && !u.IsLoopback))
+                return (null, null, null, $"databaseURL 모양이 이상합니다: {db}");
+            local = u.IsLoopback;
+            db = db.TrimEnd('/');
+        }
+        if (local) return (apiKey, db, project, null);
+        if (string.IsNullOrEmpty(apiKey) && string.IsNullOrEmpty(project))
+            return (null, null, null, "설정을 알아보지 못했습니다. 웹 앱 등록 화면의 firebaseConfig 블록({ apiKey: … } 부분)을 통째로 붙여 넣어 주세요.");
+        if (string.IsNullOrEmpty(apiKey))
             return (null, null, null, "apiKey 가 없습니다. firebaseConfig 블록을 통째로 붙여 넣어 주세요.");
-        if (!u.IsLoopback && string.IsNullOrEmpty(project))
-            return (null, null, null, "projectId 가 없습니다. firebaseConfig 블록을 통째로 붙여 넣어 주세요.");
-        return (apiKey, db.TrimEnd('/'), project, null);
+        if (string.IsNullOrEmpty(project) || !ProjectIdShape().IsMatch(project))
+            return (null, null, null, "projectId 가 없거나 모양이 이상합니다. firebaseConfig 블록을 통째로 붙여 넣어 주세요.");
+        return (apiKey, string.IsNullOrEmpty(db) ? null : db, project, null);
     }
+
+    // Firebase 프로젝트 ID: 소문자·숫자·하이픈(주소에 그대로 넣으므로 다른 글자는 받지 않는다)
+    [GeneratedRegex(@"^[a-z0-9][a-z0-9-]{3,61}[a-z0-9]$")]
+    private static partial Regex ProjectIdShape();
 }

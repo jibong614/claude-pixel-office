@@ -11,13 +11,14 @@ namespace ClaudeOffice.Hooks;
 /// Claude Code 전역 설정(~/.claude/settings.json)에 Claude Office 훅을 넣고 뺀다.
 /// 전역 설정이라 화면의 🔔 버튼 → 확인 창을 거쳐서만 부른다.
 ///
-/// 훅을 "type: http" 대신 curl 명령으로 거는 이유: http 훅은 이 프로그램이 꺼져 있으면 연결 실패를
-/// 도구를 쓸 때마다 "hook error" 알림으로 대화창에 남긴다. curl 뒤에 exit 0 을 붙이면 꺼져 있어도 조용히 지나간다.
-/// 명령은 Claude Code가 Windows에서 기본으로 쓰는 Git Bash로 실행된다.
+/// 훅을 "type: http" 대신 명령으로 거는 이유: http 훅은 이 프로그램이 꺼져 있으면 연결 실패를
+/// 도구를 쓸 때마다 "hook error" 알림으로 대화창에 남긴다. 명령 끝에 exit 0 을 붙이면 꺼져 있어도 조용히 지나간다.
+/// Claude Code는 Windows에서 훅 명령을 Git Bash로, Git Bash가 없으면 PowerShell로 돌린다 → 넣을 때 Git Bash가 있으면 curl 명령,
+/// 없으면 PowerShell 명령(+ "shell": "powershell"). PowerShell 에서 curl 은 다른 명령의 별칭이라 bash 용 명령이 동작하지 않는다.
 /// </summary>
 internal static class HookSetup
 {
-    /// <summary>우리가 넣은 훅을 알아보는 표시. 명령 끝의 bash 주석이라 실행에는 영향이 없다.</summary>
+    /// <summary>우리가 넣은 훅을 알아보는 표시. 명령 끝의 주석(bash·PowerShell 모두 #)이라 실행에는 영향이 없다.</summary>
     private const string Marker = "# ClaudeOffice";
 
     // 승인 창·알림은 Claude가 기다릴 이유가 없으니 백그라운드(async)로 보낸다.
@@ -43,6 +44,49 @@ internal static class HookSetup
 
     public static string Command =>
         $"curl -s -o /dev/null -m 1 -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{HookServer.Port}/hook 2>/dev/null; exit 0 {Marker}";
+
+    /// <summary>
+    /// Git Bash 가 없는 PC용. 표준 입력을 바이트 그대로 보낸다(Windows PowerShell 은 표준 입력을 시스템 코드 페이지로 읽어 한글이 깨지므로 글자로 읽지 않는다).
+    /// 실패해도 늘 exit 0 — 승인 요청 훅이 실패하면 Claude Code 가 도구 사용을 막을 수 있다.
+    /// </summary>
+    public static string PowerShellCommand =>
+        "try { $m = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($m); " +
+        $"Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/hook -ContentType 'application/json' -Body $m.ToArray() -TimeoutSec 2 | Out-Null " +
+        $"}} catch {{}}; exit 0 {Marker}";
+
+    /// <summary>
+    /// Claude Code 가 훅 명령에 쓸 Git Bash(bash.exe). 없으면 null → PowerShell 명령을 넣는다.
+    /// Claude Code 와 같은 순서로 찾는다: CLAUDE_CODE_GIT_BASH_PATH → PATH 의 git.exe 옆 → 흔한 설치 위치.
+    /// </summary>
+    public static string? FindGitBash()
+    {
+        if (Environment.GetEnvironmentVariable("CLAUDE_CODE_GIT_BASH_PATH") is { Length: > 0 } env && File.Exists(env)) return env;
+
+        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                if (!File.Exists(Path.Combine(dir, "git.exe"))) continue;
+                // ...\Git\cmd\git.exe 또는 ...\Git\mingw64\bin\git.exe → ...\Git\bin\bash.exe
+                for (var d = new DirectoryInfo(dir); d != null; d = d.Parent)
+                {
+                    var bash = Path.Combine(d.FullName, "bin", "bash.exe");
+                    if (File.Exists(bash)) return bash;
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+        }
+
+        foreach (var root in new[] { Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\Programs" })
+        {
+            var bash = Path.Combine(root, "Git", "bin", "bash.exe");
+            if (File.Exists(bash)) return bash;
+        }
+        return null;
+    }
+
+    /// <summary>확인 창에 보일 설명: 어떤 셸로 무엇을 써서 보내는지.</summary>
+    public static string ShellDescription => FindGitBash() != null ? "Git Bash의 curl 사용" : "Git Bash가 없어 PowerShell 사용";
 
     /// <summary>훅이 모두 들어 있는지. 감시 루프가 몇 초마다 부르므로 파일이 바뀌었을 때만 다시 읽는다.</summary>
     public static bool IsInstalled()
@@ -78,6 +122,7 @@ internal static class HookSetup
         }
         Remove(hooks);   // 전에 넣은 것이 있으면 빼고 다시 넣는다(중복 방지)
 
+        bool bash = FindGitBash() != null;
         foreach (var (ev, isAsync) in Events)
         {
             if (hooks[ev] is not JsonArray groups)
@@ -86,7 +131,9 @@ internal static class HookSetup
                 groups = new JsonArray();
                 hooks[ev] = groups;
             }
-            var handler = new JsonObject { ["type"] = "command", ["command"] = Command };
+            var handler = bash
+                ? new JsonObject { ["type"] = "command", ["command"] = Command }
+                : new JsonObject { ["type"] = "command", ["command"] = PowerShellCommand, ["shell"] = "powershell" };
             if (isAsync) handler["async"] = true;
             groups.Add(new JsonObject { ["hooks"] = new JsonArray(handler) });   // matcher 생략 = 전부
         }

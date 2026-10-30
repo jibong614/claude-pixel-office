@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Windows;
 using Forms = System.Windows.Forms;
 
@@ -29,6 +31,7 @@ internal sealed class TrayIcon : IDisposable
             Visible = true,
         };
         _icon.MouseClick += (_, e) => { if (e.Button == Forms.MouseButtons.Left) open(); };
+        _icon.BalloonTipClicked += (_, _) => (_onClick ?? open)();
     }
 
     /// <summary>마우스를 올렸을 때 보일 글(창 제목과 같게 — "(✋2) 우리 팀 사무실 v1.0.6"). 63자 제한.</summary>
@@ -39,8 +42,74 @@ internal sealed class TrayIcon : IDisposable
     {
         if (_hintShown) return;
         _hintShown = true;
+        _onClick = null;
         _icon.ShowBalloonTip(4000, "Claude Office", "알림 영역에서 계속 실행 중입니다(휴대폰 보기도 계속). 끝내려면 🏢 아이콘 오른쪽 클릭 → 끝내기", Forms.ToolTipIcon.Info);
     }
+
+    private Action? _onClick;
+
+    /// <summary>
+    /// 알림(Windows 10·11 에서는 알림 센터 알림으로 보인다). 알림을 누르면 onClick.
+    /// silent 면 소리 없이 — WinForms 가 소리 끄기(NIIF_NOSOUND)를 내주지 않아 아이콘의 창 핸들·ID 로 Shell_NotifyIcon 을 직접 부른다.
+    /// 그 둘을 찾지 못하면(WinForms 내부가 바뀐 경우) 소리 있는 보통 알림으로.
+    /// </summary>
+    public void Notify(string title, string text, bool silent, Action? onClick)
+    {
+        _onClick = onClick;
+        title = title.Length <= 63 ? title : title[..62] + "…";
+        text = text.Length <= 255 ? text : text[..254] + "…";
+        if (silent && ShowSilent(title, text)) return;
+        _icon.ShowBalloonTip(6000, title, text, Forms.ToolTipIcon.Info);
+    }
+
+    private bool ShowSilent(string title, string text)
+    {
+        const BindingFlags Fields = BindingFlags.NonPublic | BindingFlags.Instance;
+        var fields = typeof(Forms.NotifyIcon).GetFields(Fields);
+        var window = fields.FirstOrDefault(f => typeof(Forms.NativeWindow).IsAssignableFrom(f.FieldType))?.GetValue(_icon) as Forms.NativeWindow;
+        var id = fields.FirstOrDefault(f => f.Name.TrimStart('_').Equals("id", StringComparison.OrdinalIgnoreCase))?.GetValue(_icon);   // .NET 8: uint _id
+        uint? uid = id switch { uint u => u, int i => (uint)i, _ => null };
+        if (window is null || window.Handle == IntPtr.Zero || uid is null) return false;
+
+        var data = new NotifyIconData
+        {
+            cbSize = Marshal.SizeOf<NotifyIconData>(),
+            hWnd = window.Handle,
+            uID = uid.Value,
+            uFlags = NIF_INFO,
+            szTip = "",
+            szInfo = text,
+            uTimeoutOrVersion = 6000,
+            szInfoTitle = title,
+            dwInfoFlags = NIIF_INFO | NIIF_NOSOUND,
+        };
+        return Shell_NotifyIconW(NIM_MODIFY, ref data);
+    }
+
+    private const uint NIM_MODIFY = 1, NIF_INFO = 0x10, NIIF_INFO = 1, NIIF_NOSOUND = 0x10;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct NotifyIconData
+    {
+        public int cbSize;
+        public IntPtr hWnd;
+        public uint uID;
+        public uint uFlags;
+        public uint uCallbackMessage;
+        public IntPtr hIcon;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string szTip;
+        public uint dwState;
+        public uint dwStateMask;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string szInfo;
+        public uint uTimeoutOrVersion;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string szInfoTitle;
+        public uint dwInfoFlags;
+        public Guid guidItem;
+        public IntPtr hBalloonIcon;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool Shell_NotifyIconW(uint message, ref NotifyIconData data);
 
     public void Dispose()
     {

@@ -1,0 +1,36 @@
+# 공용 휴대폰 페이지: 사무실 화면(src/ClaudeOffice/wwwroot)을 그대로 GitHub Pages 에 올린다.
+# 페이지는 모두에게 같은 파일이고, 각자의 데이터 주소·해독 키는 PC가 보여 주는 QR 주소의 # 뒤에만 있다(서버로 전송되지 않음).
+# 저장소 Settings → Pages → Source 를 "GitHub Actions" 로 해 둬야 한다.
+name: 휴대폰 페이지 (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/ClaudeOffice/wwwroot/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: src/ClaudeOffice/wwwroot
+      - id: deployment
+        uses: actions/deploy-pages@v4
