@@ -1,0 +1,388 @@
+:root {
+  --bg: #1e1b2e;
+  --panel: #17142a;
+  --line: #3a3360;
+  --text: #ece8fa;
+  --dim: #9d96b8;
+  --accent: #7c6be0;
+  --font: "Malgun Gothic", "Segoe UI", "Segoe UI Emoji", sans-serif;
+  color-scheme: dark;   /* 체크박스·스크롤바 같은 기본 조작부도 어두운 모양으로 */
+  --drawer-w: 330px;    /* 오른쪽 서랍 폭 — office.js 의 DRAWER_W 와 같게 */
+}
+
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  user-select: none;
+}
+
+body { overflow-x: hidden; overflow-y: auto; }
+
+canvas#office {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* 오른쪽 위 상태 표시와 버튼 */
+#hud {
+  position: fixed;
+  top: 8px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  z-index: 5;
+}
+#summary {
+  background: rgba(20, 16, 36, 0.78);
+  border: 1px solid rgba(124, 107, 224, 0.35);
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+#hud button {
+  all: unset;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  text-align: center;
+  line-height: 28px;
+  font-size: 13px;
+  background: rgba(20, 16, 36, 0.78);
+  border: 1px solid rgba(124, 107, 224, 0.35);
+}
+body.panel-open #hud { right: calc(var(--drawer-w) + 10px); }   /* 펼친 서랍에 가리지 않게 */
+#hud button:hover { background: rgba(60, 50, 110, 0.9); }
+#hud button.on { background: var(--accent); }
+#hud button.off { opacity: 0.45; }
+#hud button.warn { border-color: #ffb347; background: rgba(120, 70, 0, 0.6); }
+
+#tooltip {
+  position: fixed;
+  pointer-events: none;
+  z-index: 6;
+  max-width: 300px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(15, 12, 28, 0.94);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#tooltip b { font-size: 13px; }
+#tooltip .dim { color: var(--dim); }
+
+#empty {
+  position: fixed;
+  left: 50%;
+  top: 58%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  background: rgba(20, 16, 36, 0.85);
+  border: 1px solid var(--line);
+  padding: 18px 26px;
+  border-radius: 12px;
+  line-height: 1.8;
+  font-size: 13px;
+}
+#empty .big { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+body.panel-open #empty { left: calc((100% - var(--drawer-w)) / 2); }   /* 서랍을 뺀 사무실 가운데 */
+
+.dim { color: var(--dim); }
+.mono { font-family: Consolas, monospace; font-size: 11px; }
+
+/* 오른쪽 서랍(직원 상세 패널·설정) — 한 번에 하나만 열린다 */
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--drawer-w);
+  z-index: 7;
+  box-sizing: border-box;
+  padding: 18px 18px 24px;
+  overflow-y: auto;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -10px 0 28px rgba(0, 0, 0, 0.4);
+  user-select: text;
+  transition: transform 0.18s ease;
+}
+/* 접힘: 오른쪽 밖으로 밀어 두고(내용은 그대로) 손잡이만 남긴다 */
+body.drawer-folded .drawer { transform: translateX(100%); box-shadow: none; }
+
+/* 서랍 손잡이 */
+#drawerTab {
+  all: unset;
+  position: fixed;
+  top: 56px;
+  right: var(--drawer-w);
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 22px;
+  padding: 10px 0;
+  box-sizing: border-box;
+  border-radius: 10px 0 0 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-right: none;
+  box-shadow: -6px 0 14px rgba(0, 0, 0, 0.3);
+  color: var(--dim);
+  font-size: 14px;
+  cursor: pointer;
+  transition: right 0.18s ease;
+}
+#drawerTab:hover { color: var(--text); background: #241f42; }
+#drawerTab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#drawerTab .lbl {
+  writing-mode: vertical-rl;   /* 접혔을 때 세로 글씨로 무엇이 접혀 있는지 */
+  font-size: 11px;
+  max-height: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#drawerTab .lbl:empty { display: none; }
+body.drawer-folded #drawerTab { right: 0; color: var(--text); }
+.drawer .close {
+  all: unset;
+  cursor: pointer;
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  font-size: 15px;
+  color: var(--dim);
+}
+.drawer .close:hover { color: var(--text); }
+.drawer h2 { margin: 0 24px 2px 0; font-size: 18px; }
+.drawer h3 { margin: 16px 0 6px; font-size: 12px; color: var(--dim); font-weight: 600; }
+#pTitle { font-size: 12px; margin-bottom: 10px; }
+.state {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(124, 107, 224, 0.2);
+}
+#panel dl {
+  display: grid;
+  grid-template-columns: 82px 1fr;
+  gap: 4px 8px;
+  margin: 14px 0 0;
+  font-size: 12px;
+}
+#panel dt { color: var(--dim); }
+#panel dd { margin: 0; word-break: break-all; }
+.prompt {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#panel ul { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+#panel li { display: flex; gap: 6px; padding: 4px 0; border-bottom: 1px dashed rgba(255, 255, 255, 0.07); }
+#panel li .t { color: var(--dim); flex: 0 0 auto; font-family: Consolas, monospace; font-size: 11px; padding-top: 1px; }
+#panel li .x { word-break: break-word; }
+#pId { margin-top: 16px; }
+
+/* 글 입력칸(별명·메모·사무실 이름) */
+.field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: 12px/1.5 var(--font);
+  outline: none;
+}
+.field:focus { border-color: var(--accent); background: rgba(124, 107, 224, 0.12); }
+.field::placeholder { color: #6f6987; }
+textarea.field { resize: vertical; min-height: 56px; }
+
+/* 설정 항목: 왼쪽 글(이름·설명·상태), 오른쪽 스위치나 버튼 */
+#sBody h3:first-child { margin-top: 18px; }
+.setting {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.07);
+}
+.setting .txt { flex: 1; min-width: 0; }
+.setting .name { font-size: 13px; font-weight: 600; }
+.setting .desc { margin-top: 3px; font-size: 11px; line-height: 1.5; color: var(--dim); }
+.setting .status { margin-top: 5px; font-size: 11px; }
+.switch {
+  all: unset;
+  flex: 0 0 auto;
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: 999px;
+  background: #4a4462;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text);
+  transition: left 0.15s;
+}
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch[aria-checked="true"]::after { left: 18px; }
+.setting .act {
+  all: unset;
+  flex: 0 0 auto;
+  cursor: pointer;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: rgba(124, 107, 224, 0.25);
+  border: 1px solid rgba(124, 107, 224, 0.5);
+}
+.setting .act:not(:disabled):hover { background: rgba(124, 107, 224, 0.45); }
+.switch:disabled, .setting .act:disabled { opacity: 0.4; cursor: default; }
+.switch:focus-visible, .setting .act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 조작부가 이름 아래 한 줄을 다 쓰는 항목(choice, picker) */
+.setting.stack { flex-direction: column; align-items: stretch; gap: 8px; }
+
+/* number: − 값 + */
+.stepper {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+}
+.stepper button {
+  all: unset;
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+  text-align: center;
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+}
+.stepper button:not(:disabled):hover { background: rgba(124, 107, 224, 0.45); }
+.stepper button:disabled { opacity: 0.3; cursor: default; }
+.stepper .val { min-width: 34px; text-align: center; font-size: 12px; font-weight: 600; }
+
+/* choice: 여러 개 중 하나 */
+.seg {
+  display: flex;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+}
+.seg button {
+  all: unset;
+  flex: 1;
+  text-align: center;
+  padding: 4px 0;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--dim);
+  cursor: pointer;
+}
+.seg button:hover { color: var(--text); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+.stepper button:focus-visible, .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* 휴대폰 보기: PC가 꺼졌거나 소식이 없을 때 — 지난 모습이라는 걸 알게 흐리게 */
+body.stale canvas#office { filter: grayscale(0.7) brightness(0.65); transition: filter 0.4s; }
+body.stale #summary { border-color: #8f88a8; color: #d8d2ea; }
+
+/* 버튼 여러 개를 한 줄에(휴대폰 보기 설정 등) */
+.btnbar { display: flex; flex-wrap: wrap; gap: 6px; }
+.setting .act.ghost { background: transparent; }
+
+/* 휴대폰 보기 QR */
+.qrbox { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+.qrbox .qr { width: 220px; max-width: 100%; line-height: 0; border-radius: 6px; overflow: hidden; }
+.qrbox .qr svg { width: 100%; height: auto; }
+.qrbox .qrurl { width: 100%; word-break: break-all; color: var(--dim); user-select: all; }
+
+/* picker: 직원 체크 목록 */
+.pick-head { font-size: 11px; color: var(--dim); }
+.pick-head.full { color: #ffb347; }
+.pick-list { display: flex; flex-direction: column; gap: 3px; max-height: 280px; overflow-y: auto; }
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+.pick:hover { background: rgba(124, 107, 224, 0.18); }
+.pick input { flex: 0 0 auto; width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.pick .ic { flex: 0 0 auto; font-size: 13px; }
+.pick .pt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pick .nm, .pick .mt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick .nm { font-size: 12px; }
+.pick .mt { font-size: 10.5px; color: var(--dim); }
+.pick.away .nm { color: var(--dim); }
+.pick-note { font-size: 11px; line-height: 1.5; color: #ffb347; }
+.pick-note:empty { display: none; }
+.pick-note.blocked { padding: 6px 9px; border-radius: 8px; background: rgba(255, 179, 71, 0.14); border: 1px solid rgba(255, 179, 71, 0.45); font-weight: 600; }
+.pick-note.flash { animation: shake 0.35s; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* ───── 휴대폰(좁은 화면) ─────
+   서랍은 화면을 다 덮고(사무실을 비켜 줄 폭이 없음), 상단 표시는 줄바꿈해서 버튼과 겹치지 않게 */
+@media (max-width: 600px) {
+  :root { --drawer-w: 100vw; }
+  /* 상단 표시는 화면 맨 위 막대로, 사무실은 그 아래부터(간판을 덮지 않게). 막대 높이는 office.js 가 --hud-h 로 알려 준다 */
+  body { padding-top: var(--hud-h, 0px); }
+  #hud {
+    top: 0; right: 0; left: 0;
+    padding: calc(6px + env(safe-area-inset-top)) 8px 6px;
+    flex-wrap: wrap; justify-content: flex-end; gap: 4px;
+    background: rgba(23, 20, 42, 0.94);
+    border-bottom: 1px solid var(--line);
+  }
+  #summary { white-space: normal; font-size: 11px; padding: 4px 9px; }
+  #hud button { width: 30px; height: 30px; line-height: 30px; }
+  body.panel-open #hud { right: 0; visibility: hidden; }     /* 서랍이 화면을 다 덮을 때는 숨긴다(서랍 ✕로 닫기) */
+  body.panel-open #drawerTab { display: none; }              /* 접어도 비켜 줄 폭이 없으니 접기 손잡이는 빼고 ✕만 */
+  .drawer { padding: 16px 14px 28px; }
+  #empty { width: calc(100vw - 40px); box-sizing: border-box; padding: 14px 16px; }
+  body.panel-open #empty { left: 50%; }
+}

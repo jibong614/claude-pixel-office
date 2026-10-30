@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- 알림 영역(트레이) 아이콘 NotifyIcon 때문. WPF 와 이름이 겹치는 것(MessageBox 등)이 많아 전역 using 은 뺀다 -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>ClaudeOffice</AssemblyName>
+    <RootNamespace>ClaudeOffice</RootNamespace>
+    <Product>Claude Office</Product>
+    <!-- 버전 규칙(요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0)은 CLAUDE.md, 기록은 docs/CHANGELOG.md -->
+    <Version>1.0.6</Version>
+    <!-- 실행 파일 아이콘(탐색기·바로가기). 창 아이콘은 MainWindow.xaml 의 Icon -->
+    <ApplicationIcon>Assets\office.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <!-- 사무실 화면(HTML/JS)은 실행 파일 옆 wwwroot 로 복사된다 -->
+  <ItemGroup>
+    <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- 아이콘: Microsoft Fluent Emoji "Office building"(MIT). 원본 PNG에서 tools\make-icon.ps1 로 만든다.
+       MIT 라 고지문을 실행 파일과 함께 내보낸다 -->
+  <ItemGroup>
+    <Resource Include="Assets\office.ico" />
+    <None Update="Assets\LICENSE-fluentui-emoji.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,13 @@
+﻿<!-- 화면 없이 감시 로직만 돌려 실제 대화 기록 해석 결과를 콘솔에 출력한다. 실행법은 docs/HANDOFF.md 6절 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\ClaudeOffice\Monitoring\*.cs" />
+    <Compile Include="..\..\src\ClaudeOffice\Hooks\*.cs" />
+  </ItemGroup>
+</Project>

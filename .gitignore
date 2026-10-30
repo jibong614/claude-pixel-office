@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+*.user
+publish/
+
+# 휴대폰 보기 배포(tools/deploy-mobile.ps1 가 만드는 것)
+mobile/public/
+mobile/.firebase/
+mobile/*.log
