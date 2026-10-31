@@ -29,7 +29,7 @@ Try it in the browser without installing: **https://jibong614.github.io/claude-p
 
 ## Quick start
 
-1. Download `ClaudePixelOffice-v*-win-x64.zip` from [Releases](https://github.com/jibong614/claude-pixel-office/releases) (from 1.0.9 on, new versions install from inside the app: it downloads the release zip, checks its SHA-256, swaps the files and restarts)
+1. Download `ClaudePixelOffice-v*-win-x64.zip` from [Releases](https://github.com/jibong614/claude-pixel-office/releases) (after that, new versions install from inside the app: it downloads the release zip, checks its SHA-256, swaps the files and restarts)
 2. Unzip and run `ClaudeOffice.exe`
 3. Start a conversation in Claude Code and an employee appears at a desk
 
@@ -82,7 +82,7 @@ After a confirmation dialog it adds a few lines (hooks) to `~/.claude/settings.j
 - When you quit the PC app, the phone shows `💤 Off on the PC` right away and the office dims
 - You can edit nicknames and memos from the phone too (turn it off under ⚙️ → 📱 Phone → Advanced)
 - It runs within the free tier — with very heavy use it may pause for a while, but there is never a bill
-- If you used **your own Firebase project** up to 1.1.6, it moves to the free server automatically — scan the QR once more (you can delete your old project)
+- If you used **your own Firebase project** with 1.1.6 or earlier, it moves to the free server automatically — scan the QR once more (you can delete your old project)
 
 Details (Korean): [docs/MOBILE.md](docs/MOBILE.md)
 
@@ -91,10 +91,9 @@ Details (Korean): [docs/MOBILE.md](docs/MOBILE.md)
 With the Claude Code connection, while you're away the phone can **send instructions** to an employee (session) and **answer permission requests**.
 The phone needs no Claude login — the work is done by Claude Code on the PC with its own sign-in.
 
-1. Just walk away — nothing to do on the PC (it can stay hidden in the tray)
-   - After **3 minutes** without mouse or keyboard input (1/5/10 min or off in Settings) Away turns on by itself, and it turns off when you're back and move the mouse
-   - Even sooner: once the PC has been idle for 30 s, **opening the phone page** (or sending an instruction) turns it on — there's no button to press
-   - To get even the approval requests right after you leave on the phone, **lock the screen** (⊞+L) as you go — Away turns on at once and off when you unlock
+1. **Just walk away and open the office on your phone.** There's no button to press on the PC or the phone
+   - While the phone page is open and the PC has had no input for 30 s, instructions and approvals come to the phone (= Away). Move the mouse or type at the PC and it goes back to the PC
+   - Even when you're not looking at the phone, **3 minutes** without input (off/1/5/10 min in Settings) or **locking the screen** (⊞+L, at once) turns Away on — approval requests that arrive meanwhile wait until you open the phone
 2. On the phone, tap an employee to see the **📱 Instruct & approve from the phone** box
    - ✋ **Approval request**: see exactly what it wants to run, then Approve / Deny. When denying you can write what to do instead, and Claude follows it
    - **Send an instruction**: the idle session wakes up and **continues the same conversation**. If it is busy, the instruction is delivered as soon as the current work ends
@@ -106,7 +105,7 @@ The phone needs no Claude login — the work is done by Claude Code on the PC wi
   - Claude's permission rules stay as they are — anything that needs approval still asks (on the phone)
   - Every instruction, approval and denial is logged in `remote.log` in the data folder
   - **The QR/link is the key.** If someone saw it, use **New key** under ⚙️ → 📱 Phone
-- After connecting, **new or reopened sessions** take instructions right away; sessions that were already open start **after their next answer**. A short Claude Office restart (such as an update) reconnects them after 15 seconds; sessions that finished while it was closed connect after their next answer
+- After connecting, **new or reopened sessions** take instructions right away; sessions that were already open start **after their next answer**. When Claude Office restarts (an update, for example), resting sessions reconnect by themselves within 15 seconds
 - Claude's last answer is included in the locked summary (only with the Claude Code connection)
 - Questions (AskUserQuestion) need a choice, so they are not sent to the phone — answer them at the PC
 
@@ -145,7 +144,7 @@ tools/          test tools (offscreen capture, in-page test steps, fake free ser
 
 **It's a free server — can others see my office?** No. Only a box locked with a key that just your PC and your phone have passes through it, and the key (after `#` in the QR link) never reaches the server. Just keep the QR to yourself (if someone saw it, use New key).
 
-**An instruction from the phone doesn't arrive.** It is refused while someone is using the PC (input in the last 30 s) — send it a little after you leave. If you updated Claude Office from 1.1.8 or earlier, sessions that were resting then may need one more answer before they connect (from 1.1.9 they reconnect after the app restarts). Sessions that were already open connect after their next answer — check "📡 Connected" in the employee details.
+**An instruction from the phone doesn't arrive.** It is refused while someone is using the PC (input in the last 30 s) — send it a little after you leave. It is delivered right away when the employee details show "📡 Connected" — sessions that were open before you connected Claude Code connect after their next answer. What was received and delivered is logged in `remote.log` in the data folder.
 
 ## License and credits
 

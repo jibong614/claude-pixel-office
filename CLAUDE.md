@@ -5,7 +5,7 @@ Claude Code 세션을 미니어처 픽셀 사무실로 보여 주는 Windows 프
 사용법·구조는 [README.md](README.md), 휴대폰 연결은 [docs/MOBILE.md](docs/MOBILE.md).
 
 ## 버전
-- 버전은 `src/ClaudeOffice/ClaudeOffice.csproj` 의 `<Version>` 하나가 원본이다(창 제목 `… v1.0.6`, exe 파일 버전).
+- 버전은 `src/ClaudeOffice/ClaudeOffice.csproj` 의 `<Version>` 하나가 원본이다(창 제목 `… v1.2.0`, exe 파일 버전, 앱 안 업데이트 비교).
 - 올릴 때 [docs/CHANGELOG.md](docs/CHANGELOG.md) 맨 위에 그 버전에서 바뀐 것을 적는다.
 - 휴대폰 화면은 앱과 따로 배포되므로 `wwwroot/office.js` 의 `PAGE_VERSION` 에도 같은 버전을 적는다(다르면 빌드가 멈춘다). 설정 맨 위에 보인다.
 
@@ -25,6 +25,12 @@ Claude Code 세션을 미니어처 픽셀 사무실로 보여 주는 Windows 프
   (`-- --phrases 200`: 말풍선 문구 점검, `-- --hooks 30`: 훅 수신 점검).
 - `~/.claude/settings.json` 같은 **Claude Code 전역 설정은 사용자 확인 없이 바꾸지 않는다**(훅 연동 포함).
   훅 시험은 `claude -p --settings <임시파일> --no-session-persistence` 나 `watchtest --setup`(복사본 폴더)으로 한다.
+  앱으로 훅·휴대폰 지시를 시험할 때는 `CLAUDE_CONFIG_DIR`(임시 설정 폴더)과 `CLAUDEOFFICE_HOOK_PORT`(예: 47899)를 함께 바꿔 실제 앱(47821)·실제 설정과 겹치지 않게 한다.
+  시험용 `claude` 의 기록이 실제 `~/.claude/projects` 에 남지 않게 한다(정션으로 잇지 말 것).
+- 훅 명령 글자(`HookSetup` 의 원격 명령)를 바꾸면 이미 연결한 사용자는 앱을 켤 때 `UpgradeRemote` 가 새 명령으로 바꿔 끼운다(같은 포트의 Claude Office 줄만).
+  명령이 조금만 달라도 모두 다시 쓰이므로 꼭 필요할 때만 바꾸고, Git Bash 판과 PowerShell 판을 함께 고쳐 둘 다 시험한다.
 - 견본 데이터·스크린샷·주석 예시에는 실제 회사·프로젝트·세션 이름을 쓰지 않는다(가상의 이름 acme 등).
 - 주석·문서는 한국어. 코드 주석은 "왜"를 적는다.
 - 화면 글꼴은 맑은 고딕이라 `\`가 `₩`로 그려진다 — 경로는 `/`로 바꾸거나 고정폭 글꼴(`.mono`)로 표시.
+- 한글이 든 `tools/*.ps1` 은 UTF-8 **BOM** 으로 저장한다(Windows PowerShell 5.1 은 BOM 없는 파일을 시스템 코드 페이지로 읽는다).
+- 화면 문구는 개발 용어 대신 쉬운 말로(예: 훅 → Claude Code 연결, 자리 비움 원격 → 휴대폰 지시·승인). 손으로 켜고 끄는 버튼보다 저절로 되는 쪽을 먼저 찾는다.

@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.2.0';
+const PAGE_VERSION = '1.2.1';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -58,7 +58,7 @@ const remoteLink = params.has('demo') ? null : readRemoteLink();
 window.addEventListener('hashchange', () => {
   if (new URLSearchParams(location.hash.slice(1)).has('k')) location.reload();
 });
-// 웹 서버(Firebase Hosting)에 올린 휴대폰 화면 — 연결 정보가 없으면 견본 대신 "QR을 찍어 주세요"를 보여 준다
+// 웹 서버(공용 페이지 GitHub Pages)에 올린 휴대폰 화면 — 연결 정보가 없으면 견본 대신 "QR을 찍어 주세요"를 보여 준다
 const HOSTED = location.protocol === 'https:' && location.hostname !== 'office.local';
 const REMOTE = !params.has('demo') && (!!remoteLink || HOSTED);
 const DEMO = !REMOTE && (!host || params.has('demo'));
@@ -2002,11 +2002,7 @@ function refreshVersionLine() {
       + (remotePcVersion ? `v${remotePcVersion}` : T('v1.1.1 이하', 'v1.1.1 or older'));
     const d = cmpVersion(PAGE_VERSION, remotePcVersion || '1.1.1');
     if (d < 0) warn = T('⚠️ 휴대폰 화면이 PC 앱보다 옛 버전이에요 — 새로고침해 보세요(앱으로 설치했다면 완전히 닫았다 열기).',
-      '⚠️ The phone page is older than the PC app — reload it (if installed as an app, close it fully and reopen).')
-      // 내 Firebase Hosting 페이지는 GitHub 에 새 버전이 나와도 저절로 바뀌지 않는다
-      + (/\.(web\.app|firebaseapp\.com)$/.test(location.hostname)
-        ? T(' 그래도 그대로면 내 Firebase Hosting 페이지를 PC에서 다시 올려야 해요(tools\\deploy-mobile.ps1).',
-          ' If it stays the same, upload your Firebase Hosting page again from the PC (tools\\deploy-mobile.ps1).') : '');
+      '⚠️ The phone page is older than the PC app — reload it (if installed as an app, close it fully and reopen).');
     else if (d > 0) warn = T('⚠️ PC 앱이 옛 버전이에요 — PC에서 ⚙️ 설정을 열면 맨 위에 [업데이트]가 나와요(안 보이면 맨 아래 정보 → [지금 확인]).',
       '⚠️ The PC app is older — open ⚙️ Settings on the PC and [Update] appears at the top (if not, About at the bottom → [Check now]).');
   } else {
@@ -2375,8 +2371,8 @@ async function postInbox(msg) {
   }
 }
 
-// ── 자리 비움 원격: 휴대폰에서 지시·승인(PC에서 원격 훅을 연결하고 🏃 자리 비움을 켰을 때) ──
-// 상태는 PC가 요약과 함께 올린 remote(PC 앱 화면은 {type:"remote"}):
+// ── 휴대폰 지시·승인: Claude Code 와 연결했고 🏃 자리 비움일 때 휴대폰에서 ──
+// 상태는 PC가 요약과 함께 올린 remote(PC 앱 화면은 {type:"remote"} — 설정의 상태 줄·상단 🏃 표시에만 쓴다):
 //   {installed, away, since, s:{세션:{listen, asks:[{id,text,detail,t}], said:{text,t,state}, reply:{text,t}}}}
 // 휴대폰은 지시(say)·승인(ok)·거절(no)·자리 비움(away)을 postInbox 로 보낸다.
 // 자리 비움은 손으로 켜지 않는다 — PC가 입력 없음·화면 잠금으로 켜고, 휴대폰은 PC를 아무도 안 쓸 때(idle)만 켤 수 있다(화면을 보고 있거나 지시를 보내면 저절로).
@@ -2407,20 +2403,20 @@ function remoteStatus() {
     + (st.away ? T(` · 🏃 자리 비움 ${fmtTime(st.since)}부터`, ` · 🏃 Away since ${fmtTime(st.since)}`) : ''), tone: '#7dffa0' };
 }
 
-/** 상세 패널의 원격 칸. 원격 훅을 연결했을 때만 보인다. */
+/**
+ * 상세 패널의 원격 칸 — 휴대폰 화면(과 견본)에서만, 원격 훅을 연결했을 때. PC 앱에는 띄우지 않는다(1.2.1):
+ * PC를 만지는 순간 자리 비움이 꺼져 휴대폰을 기다리던 승인은 저절로 PC 승인 창으로 가므로, PC에서는 할 일 없이 설명만 되풀이했다.
+ */
 function renderRemote(s) {
   const r = remoteOf(s.id);
-  $('pRemote').hidden = !r;
-  if (!r) return;
-  const away = !!remoteState.away, idle = !!remoteState.idle, auto = remoteState.auto || 0;
+  $('pRemote').hidden = !r || !(REMOTE || DEMO);
+  if ($('pRemote').hidden) return;
+  const away = !!remoteState.away, idle = !!remoteState.idle;
   const asks = r.asks || [];
   $('rStatus').textContent =
-    !away ? (REMOTE
-      ? (idle ? T('💤 PC를 안 쓰고 있어요 — 지금부터 여기서 지시·승인할 수 있어요.', '💤 Nobody is using the PC — you can instruct and approve here from now on.')
-        : T('🖥️ PC를 쓰는 중이에요 — 자리를 뜨면 30초쯤 뒤부터 여기서 지시·승인할 수 있어요.',
-          '🖥️ Someone is using the PC — about 30 s after you leave it, you can instruct and approve here.'))
-      : T(`📱 자리를 뜨면 휴대폰에서 이 직원에게 지시·승인할 수 있어요 — PC를 30초 넘게 안 쓰는 동안 휴대폰 화면을 열면${auto ? ` (또는 입력이 ${auto}분 없으면)` : ''} 휴대폰으로 넘어가요.`,
-        `📱 Once you leave, the phone can instruct and approve this employee — it moves to the phone when you open the phone page after 30 s without PC input${auto ? ` (or after ${auto} min without input)` : ''}.`))
+    !away ? (idle ? T('💤 PC를 안 쓰고 있어요 — 지금부터 여기서 지시·승인할 수 있어요.', '💤 Nobody is using the PC — you can instruct and approve here from now on.')
+      : T('🖥️ PC를 쓰는 중이에요 — 자리를 뜨면 30초쯤 뒤부터 여기서 지시·승인할 수 있어요.',
+        '🖥️ Someone is using the PC — about 30 s after you leave it, you can instruct and approve here.'))
     : actOf(s).busy || asks.length ? T('⚙️ 일하는 중 — 보낸 지시는 이 대화에 이어서(지금 일 중간이나 끝나는 대로) 전합니다.',
       '⚙️ Working — an instruction joins this conversation (during the current work or right after it).')
     : r.listen ? T('📡 연결됨 — 보내면 바로 이 대화에서 이어서 일합니다.', '📡 Connected — an instruction continues this conversation right away.')
@@ -2488,24 +2484,16 @@ function makeAsk(sid, a) {
   el.append(head);
   if (a.detail) el.append(elem('div', 'cmd', a.detail));
   const btns = elem('div', 'btns');
-  if (REMOTE) {
-    const why = elem('input', 'field');
-    why.type = 'text';
-    why.maxLength = 1000;
-    why.placeholder = T('대신 할 일 (선택)', 'Do instead (optional)');
-    why.title = T('거절할 때 Claude 에게 대신 시킬 일 — 거절한 뒤 지시로 따로 전합니다', 'What Claude should do instead when you deny — sent as a separate instruction after the denial');
-    const no = elem('button', 'mini rbtn no', T('거절', 'Deny'));
-    const ok = elem('button', 'mini rbtn ok', T('승인', 'Approve'));
-    no.addEventListener('click', () => answerAsk(sid, a.id, false, why.value));
-    ok.addEventListener('click', () => answerAsk(sid, a.id, true, ''));
-    btns.append(why, no, ok);
-  } else {
-    btns.append(elem('span', 'dim', T('휴대폰 답을 기다리는 중', 'Waiting for the phone')));
-    const here = elem('button', 'mini rbtn', T('여기서 처리', 'Handle here'));
-    here.title = T('휴대폰을 기다리지 않고 Claude Code 에 승인 창을 띄웁니다', 'Stop waiting for the phone and show the permission prompt in Claude Code');
-    here.addEventListener('click', () => send({ cmd: 'remote-release', id: a.id }));
-    btns.append(here);
-  }
+  const why = elem('input', 'field');
+  why.type = 'text';
+  why.maxLength = 1000;
+  why.placeholder = T('대신 할 일 (선택)', 'Do instead (optional)');
+  why.title = T('거절할 때 Claude 에게 대신 시킬 일 — 거절한 뒤 지시로 따로 전합니다', 'What Claude should do instead when you deny — sent as a separate instruction after the denial');
+  const no = elem('button', 'mini rbtn no', T('거절', 'Deny'));
+  const ok = elem('button', 'mini rbtn ok', T('승인', 'Approve'));
+  no.addEventListener('click', () => answerAsk(sid, a.id, false, why.value));
+  ok.addEventListener('click', () => answerAsk(sid, a.id, true, ''));
+  btns.append(why, no, ok);
   el.append(btns);
   return el;
 }
@@ -2602,7 +2590,7 @@ async function startRemote() {
 
   es.addEventListener('put', (e) => apply('put', e.data));
   es.addEventListener('patch', (e) => apply('patch', e.data));
-  es.addEventListener('cancel', () => { remoteError = T('읽을 권한이 없어요 — 데이터베이스 규칙을 확인해 주세요', 'No permission to read — check the database rules'); refreshHud(); });
+  es.addEventListener('cancel', () => { remoteError = T('무료 서버가 읽기를 거절했어요 — 잠시 뒤 다시 열거나 PC에서 QR을 다시 찍어 주세요', 'The free server refused to read — reopen in a moment or scan the QR on the PC again'); refreshHud(); });
   es.addEventListener('error', () => { if (!remoteError) { remoteError = RECONNECTING; refreshHud(); } });   // EventSource 가 알아서 다시 잇는다
   es.addEventListener('open', () => { if (remoteError === RECONNECTING) { remoteError = ''; refreshHud(); } });
   setInterval(refreshHud, 5000);   // "N분 전"·끊김 표시를 갱신

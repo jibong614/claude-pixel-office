@@ -12,10 +12,11 @@ namespace ClaudeOffice;
 
 /// <summary>
 /// 사무실 화면(wwwroot/index.html)을 WebView2로 띄우고, 감시기가 만든 스냅샷을 화면에 넘긴다.
-///   C# → 화면 : PostWebMessageAsJson(스냅샷 | {type:"cloud"} 휴대폰 보기 상태 | {type:"cloud-setup", error} | {type:"cloud-check"} 설정 도우미 점검
-///               | {type:"app"} app.json 설정·새 버전 | {type:"share"} 저장해 둔 사무실 이름·별명·메모 | {type:"select", id} 이 직원을 열기)
-///   화면 → C# : { cmd: "ready" | "topmost" | "hooks" | "window" | "share" | "cloud-setup" | "cloud-enable" | "cloud-rekey" | "cloud-check" | "cloud-page"
-///               | "app-setting" | "notify-test" | "update-check" | "open-url" | "open-data-dir", ... }
+///   C# → 화면 : PostWebMessageAsJson(스냅샷 | {type:"cloud"} 휴대폰 연결 상태 | {type:"remote"} 휴대폰 지시·승인 상태 | {type:"app"} app.json 설정·새 버전
+///               | {type:"share"} 저장해 둔 사무실 이름·별명·메모 | {type:"select", id} 이 직원을 열기 | {type:"reset"} 설정 초기화)
+///   화면 → C# : { cmd: "ready" | "topmost" | "hooks" | "window" | "share" | "cloud-enable" | "cloud-rekey" | "cloud-phone-edit" | "app-setting"
+///               | "notify-test" | "update-check" | "update-install" | "open-url" | "open-folder" | "open-data-dir" | "widget" | … , ... }
+///               "cloud-setup" 은 점검 도구 전용(가짜 무료 서버에 잇기).
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -492,11 +493,11 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
-    /// <summary>바깥 브라우저로 연다 — 정해 둔 https 주소만(화면이 아무 주소나 열게 하지 않는다).</summary>
+    /// <summary>바깥 브라우저로 연다 — GitHub(릴리스 페이지)의 https 주소만(화면이 아무 주소나 열게 하지 않는다).</summary>
     private static void OpenUrl(string? url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps) return;
-        if (u.Host is not ("console.firebase.google.com" or "github.com")) return;
+        if (u.Host != "github.com") return;
         try { Process.Start(new ProcessStartInfo(u.AbsoluteUri) { UseShellExecute = true }); }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { }
     }
@@ -763,9 +764,6 @@ public partial class MainWindow : Window
                     break;
                 case "hooks":   // Claude Code 연결·해제(상태 알림과 휴대폰 지시·승인을 한 번에)
                     if (!App.DemoMode) ToggleHooks();
-                    break;
-                case "remote-release":   // 휴대폰을 기다리던 승인을 PC 승인 창으로
-                    if (!App.DemoMode && root.TryGetProperty("id", out var rid) && rid.GetString() is { } releaseId) _remote.Release(releaseId);
                     break;
                 case "window":   // 설정 "표시 기간"(시간). 화면이 저장해 두고 시작할 때마다 다시 보낸다
                     if (root.TryGetProperty("hours", out var h) && h.TryGetDouble(out var hours))

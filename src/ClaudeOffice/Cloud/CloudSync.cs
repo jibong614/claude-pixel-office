@@ -216,7 +216,7 @@ internal sealed partial class CloudSync : IDisposable
         }, StatusJsonOptions);
     }
 
-    /// <summary>휴대폰에서 열 주소. 데이터 주소·경로·키는 모두 # 뒤에 둬서 웹 서버(Hosting)로는 전송되지 않는다.</summary>
+    /// <summary>휴대폰에서 열 주소. 데이터 주소·경로·키는 모두 # 뒤에 둬서 웹 서버(GitHub Pages)로는 전송되지 않는다.</summary>
     private static string? MobileUrl(CloudConfig c)
     {
         if (!c.Configured || c.Key is null || c.Uid is null) return null;

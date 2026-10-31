@@ -137,11 +137,6 @@ internal static class HookSetup
         return null;
     }
 
-    /// <summary>확인 창에 보일 설명: 어떤 셸로 무엇을 써서 보내는지.</summary>
-    public static string ShellDescription => FindGitBash() != null
-        ? L.T("Git Bash의 curl 사용", "uses curl in Git Bash")
-        : L.T("Git Bash가 없어 PowerShell 사용", "no Git Bash, uses PowerShell");
-
     /// <summary>훅이 모두 들어 있는지. 감시 루프가 몇 초마다 부르므로 파일이 바뀌었을 때만 다시 읽는다.</summary>
     public static bool IsInstalled() => Status().Monitor;
 

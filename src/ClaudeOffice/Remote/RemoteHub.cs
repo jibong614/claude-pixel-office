@@ -258,18 +258,6 @@ internal sealed class RemoteHub
         if (follow != null) Say(sid, follow, MaxText + 300);
     }
 
-    /// <summary>PC 화면에서 "여기서 처리": 휴대폰을 기다리던 승인을 놓아 PC 에 승인 창이 뜨게 한다.</summary>
-    public void Release(string id)
-    {
-        lock (_lock)
-        {
-            if (!_approvals.Remove(id, out var a)) return;
-            a.Tcs.TrySetResult(null);
-            Log("release", a.Sid, a.Detail ?? a.Text);
-        }
-        Notify();
-    }
-
     /// <summary>
     /// 자리 비움 켜기·끄기(PC 쪽: 화면 잠금·입력 없음·돌아옴, 원격 해제). 휴대폰은 AwayFromPhone·Say 로 PC 가 비어 있을 때만 켠다.
     /// 끄면 휴대폰을 기다리던 승인은 모두 PC 승인 창으로, 못 건넨 지시는 버린다.
