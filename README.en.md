@@ -65,10 +65,10 @@ After a confirmation dialog it adds a few lines (hooks) to `~/.claude/settings.j
 | `PermissionRequest` | ✋ raises a hand until that tool call finishes (approved and done, rejected or interrupted). While you're away it waits for Approve/Deny from the phone instead (up to 55 min, then the normal prompt) |
 | `Notification` | permission and input prompts |
 | `SessionEnd` | the employee goes home immediately |
-| `Stop` · `SessionStart` | a session that finished answering (or just opened) waits in the background, and an instruction from the phone wakes it (`asyncRewake`, up to a day) |
+| `Stop` · `SessionStart` | a session that finished answering (or just opened) waits in the background, and an instruction from the phone wakes it (`asyncRewake`, up to a day). It reconnects within 15 s when the app restarts (updates etc.) — one per session |
 
 - The lines look like `curl … http://127.0.0.1:47821/…; exit 0` (run by Git Bash; on PCs without it, an equivalent PowerShell command). They only talk to this app on this PC,
-  and **always exit successfully** when the app is closed, so no errors show up in Claude Code
+  and **always exit successfully** when the app is closed, so no errors show up in Claude Code (only the hook waiting for phone instructions keeps quietly waiting in the background until the app is back)
 - Disconnecting removes only the lines this app added. A backup is kept as `settings.json.claudeoffice.bak`
 - There is no hook for "approved". While a Bash/PowerShell approval is pending, the app lowers the hand as soon as **a new process running that command appears** (so an approved long build shows as running). If it can't tell (e.g. an encoded command), the hand comes down when the command finishes
 
@@ -93,7 +93,7 @@ The phone needs no Claude login — the work is done by Claude Code on the PC wi
 
 1. Just walk away — nothing to do on the PC (it can stay hidden in the tray)
    - After **3 minutes** without mouse or keyboard input (1/5/10 min or off in Settings) Away turns on by itself, and it turns off when you're back and move the mouse
-   - Even sooner: once the PC has been idle for 30 s, sending an instruction from the phone turns it on
+   - Even sooner: once the PC has been idle for 30 s, **opening the phone page** (or sending an instruction) turns it on — there's no button to press
    - To get even the approval requests right after you leave on the phone, **lock the screen** (⊞+L) as you go — Away turns on at once and off when you unlock
 2. On the phone, tap an employee to see the **📱 Instruct & approve from the phone** box
    - ✋ **Approval request**: see exactly what it wants to run, then Approve / Deny. When denying you can write what to do instead, and Claude follows it
@@ -141,11 +141,11 @@ tools/          test tools (offscreen capture, in-page test steps, fake free ser
 
 **Does it show Claude Code running on another PC or in WSL?** No. It reads the transcript folder of the Windows user running the app.
 
-**Does it change my Claude Code settings?** Not without asking. Only when you say yes to the first-start question or the **Claude Code connection** button, and disconnecting takes out only what it added.
+**Does it change my Claude Code settings?** Not without asking. Only when you say yes to the first-start question or the **Claude Code connection** button, and disconnecting takes out only what it added. Once connected, a new version may update just those lines to its new commands without asking (the file from right before is kept as `settings.json.claudeoffice.bak`).
 
 **It's a free server — can others see my office?** No. Only a box locked with a key that just your PC and your phone have passes through it, and the key (after `#` in the QR link) never reaches the server. Just keep the QR to yourself (if someone saw it, use New key).
 
-**An instruction from the phone doesn't arrive.** It is refused while someone is using the PC (input in the last 30 s) — send it a little after you leave. Sessions that were already open connect after their next answer — check "📡 Connected" in the employee details.
+**An instruction from the phone doesn't arrive.** It is refused while someone is using the PC (input in the last 30 s) — send it a little after you leave. If you updated Claude Office from 1.1.8 or earlier, sessions that were resting then may need one more answer before they connect (from 1.1.9 they reconnect after the app restarts). Sessions that were already open connect after their next answer — check "📡 Connected" in the employee details.
 
 ## License and credits
 

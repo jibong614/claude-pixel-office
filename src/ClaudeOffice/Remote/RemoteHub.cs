@@ -17,7 +17,8 @@ namespace ClaudeOffice.Remote;
 ///             세션마다 하나만 붙잡아 둔다(새로 오면 옛것은 빈 답으로 놓아준다).
 ///   approve : PermissionRequest 의 동기 훅. 자리 비움일 때만 휴대폰의 승인·거절을 기다렸다가 결정(JSON)을 돌려준다.
 ///             자리 비움이 아니거나, 돌아왔거나, 오래 답이 없으면 빈 답 → 평소처럼 PC 에 승인 창이 뜬다.
-/// 이 프로그램이 꺼져 있거나 원격 훅을 빼면 두 훅 모두 바로 아무 일 없이 끝난다.
+/// 원격 훅을 빼면 두 훅 모두 바로 아무 일 없이 끝난다. 이 프로그램이 꺼져 있으면 approve 는 바로 끝나고(평소 승인 창),
+/// listen 은 켜질 때까지 15초마다 다시 붙어 본다(세션마다 가장 새 것 하나만 — HookSetup.RemoteListenBash).
 /// </summary>
 internal sealed class RemoteHub
 {
@@ -169,7 +170,7 @@ internal sealed class RemoteHub
         Notify();
     }
 
-    /// <summary>휴대폰의 [지금 자리 비움으로] — PC 를 아무도 안 쓰고 있을 때만.</summary>
+    /// <summary>휴대폰이 화면을 보고 있다며 자리 비움을 부탁함(휴대폰 화면이 열려 있고 PC 가 비어 있을 때 저절로 보냄) — PC 를 아무도 안 쓰고 있을 때만.</summary>
     private void AwayFromPhone()
     {
         lock (_lock)
@@ -289,6 +290,17 @@ internal sealed class RemoteHub
                 _queued.Clear();
                 Log("away-off", "-", why);
             }
+        }
+        Notify();
+    }
+
+    /// <summary>Claude Code 연결을 끊음 — 붙잡아 둔 지시 대기 훅을 모두 빈 답으로 놓아준다(다시 붙지 않고 끝난다).</summary>
+    public void ReleaseListeners()
+    {
+        lock (_lock)
+        {
+            foreach (var l in _listeners.Values) l.Tcs.TrySetResult(null);
+            _listeners.Clear();
         }
         Notify();
     }

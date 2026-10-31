@@ -9,7 +9,7 @@ namespace ClaudeOffice.Hooks;
 
 /// <summary>
 /// Claude Code 전역 설정(~/.claude/settings.json)에 Claude Office 훅을 넣고 뺀다.
-/// 전역 설정이라 화면의 🔔 버튼 → 확인 창을 거쳐서만 부른다.
+/// 전역 설정이라 화면의 🔔 버튼 → 확인 창을 거쳐서만 부른다(이미 연결한 원격 훅을 새 버전 명령으로 바꾸는 UpgradeRemote 만 묻지 않는다).
 ///
 /// 훅을 "type: http" 대신 명령으로 거는 이유: http 훅은 이 프로그램이 꺼져 있으면 연결 실패를
 /// 도구를 쓸 때마다 "hook error" 알림으로 대화창에 남긴다. 명령 끝에 exit 0 을 붙이면 꺼져 있어도 조용히 지나간다.
@@ -72,14 +72,17 @@ internal static class HookSetup
 
     /// <summary>
     /// 원격 지시 대기(bash): 지시가 오면 stderr 로 내보내고 종료 코드 2(asyncRewake → 세션이 깨어 그 글을 받음). 빈 답이면 조용히 끝.
-    /// 처음부터 이 프로그램이 꺼져 있으면(연결 거부, curl 7) 바로 끝낸다 — 답할 때마다 기다리는 프로세스가 쌓이지 않게.
-    /// 기다리던 중 끊기면(업데이트로 껐다 켬 등) 15초 뒤 다시 붙는다(최대 10번) — 입력은 한 번만 오니 먼저 담아 둔다.
+    /// 이 프로그램이 꺼져 있거나 기다리던 중 끊기면(업데이트로 껐다 켬 등) 15초마다 다시 붙는다 — 쉬는 세션은 다음 답까지 새 훅이 없으니
+    /// 여기서 포기하면 휴대폰 지시를 영영 못 받는다. 입력은 한 번만 오니 먼저 담아 둔다.
+    /// 꺼진 동안 답할 때마다 기다리는 프로세스가 쌓이지 않게, 세션마다 임시 폴더에 가장 새 훅의 표시를 두고 밀려난 훅은 끝낸다.
     /// </summary>
     private static string RemoteListenBash =>
-        "in=$(cat); for i in 1 2 3 4 5 6 7 8 9 10; do " +
+        "in=$(cat); sid=$(printf '%s' \"$in\" | grep -o '\"session_id\" *: *\"[0-9A-Za-z_-]*\"' | head -n 1 | tr -d '\" ' | cut -d: -f2); [ -n \"$sid\" ] || sid=x$$; " +
+        "f=\"${TMPDIR:-/tmp}/claudeoffice-listen-$sid\"; me=\"$$.$RANDOM\"; printf '%s' \"$me\" > \"$f\" 2>/dev/null; " +
+        "trap '[ \"$(cat \"$f\" 2>/dev/null)\" = \"$me\" ] && rm -f \"$f\"' EXIT; while :; do " +
         $"out=$(printf '%s' \"$in\" | curl -s -m {ListenTimeout - 400} -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{HookServer.Port}/remote/listen 2>/dev/null); " +
-        "rc=$?; if [ $rc -eq 0 ]; then [ -n \"$out\" ] && { printf '%s' \"$out\" >&2; exit 2; }; exit 0; fi; " +
-        "[ $i -eq 1 ] && [ $rc -eq 7 ] && exit 0; sleep 15; done; " +
+        "if [ $? -eq 0 ]; then [ -n \"$out\" ] && { printf '%s' \"$out\" >&2; exit 2; }; exit 0; fi; " +
+        "sleep 15; [ \"$(cat \"$f\" 2>/dev/null)\" = \"$me\" ] || exit 0; done; " +
         $"exit 0 {RemoteMarker}";
 
     /// <summary>원격 승인(PowerShell). 결정 JSON 은 ASCII 라 콘솔 코드 페이지와 상관없다.</summary>
@@ -90,14 +93,17 @@ internal static class HookSetup
 
     /// <summary>
     /// 원격 지시 대기(PowerShell). 지시 글은 받은 바이트(UTF-8) 그대로 stderr 에 쓴다(글자로 바꾸면 한글이 깨진다).
-    /// 다시 붙기는 bash 와 같다(처음부터 연결 거부면 바로 끝, 끊기면 15초 뒤 최대 10번).
+    /// 다시 붙기·밀려나면 끝내기는 bash 와 같다. HTTP 오류 답(예전 버전 등)이면 끝.
     /// </summary>
     private static string RemoteListenPowerShell =>
         "$m = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($m); $b = $m.ToArray(); " +
-        "for ($i = 0; $i -lt 10; $i++) { try { " +
+        "$sid = if ([Text.Encoding]::UTF8.GetString($b) -match '\"session_id\"\\s*:\\s*\"([0-9A-Za-z_-]+)\"') { $Matches[1] } else { \"x$PID\" }; " +
+        "$f = Join-Path $env:TEMP \"claudeoffice-listen-$sid\"; $me = \"$PID.$(Get-Random)\"; try { [IO.File]::WriteAllText($f, $me) } catch {}; " +
+        "$mine = { try { [IO.File]::ReadAllText($f) -eq $me } catch { $false } }; try { while ($true) { try { " +
         $"$r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/remote/listen -ContentType 'application/json' -Body $b -TimeoutSec {ListenTimeout - 400}; " +
         "$o = $r.RawContentStream.ToArray(); if ($o.Length -gt 0) { $e = [Console]::OpenStandardError(); $e.Write($o, 0, $o.Length); $e.Flush(); exit 2 }; exit 0 " +
-        "} catch { if ($_.Exception.Response -or ($i -eq 0 -and \"$($_.Exception.Status)\" -eq 'ConnectFailure')) { exit 0 }; Start-Sleep -Seconds 15 } }; " +
+        "} catch { if ($_.Exception.Response) { exit 0 }; Start-Sleep -Seconds 15; if (-not (& $mine)) { exit 0 } } } } " +
+        "finally { if (& $mine) { Remove-Item -LiteralPath $f -ErrorAction SilentlyContinue } }; " +
         $"exit 0 {RemoteMarker}";
 
     /// <summary>
@@ -212,6 +218,25 @@ internal static class HookSetup
             Add(hooks, ev, handler);
         }
         Save(root, fmt);
+    }
+
+    /// <summary>
+    /// 예전 버전이 넣은 원격 훅 명령을 지금 것으로 바꾼다(앱을 켤 때). 사용자가 이미 연결해 둔 우리 줄만 고치므로 따로 묻지 않는다.
+    /// 이 포트를 쓰는 훅일 때만 — 점검용 포트(CLAUDEOFFICE_HOOK_PORT)로 켠 시험 앱이 실제 연결을 바꾸지 않게. 바꿨으면 true.
+    /// </summary>
+    public static bool UpgradeRemote()
+    {
+        if (!IsRemoteInstalled()) return false;
+        var (root, _) = Load();
+        if (root["hooks"] is not JsonObject hooks) return false;
+        var commands = hooks.Select(kv => kv.Value).OfType<JsonArray>()
+            .SelectMany(groups => groups.OfType<JsonObject>()).Select(g => g["hooks"]).OfType<JsonArray>()
+            .SelectMany(handlers => handlers).Where(IsRemote).Select(CommandOf).ToList();
+        var current = new[] { RemoteListenBash, RemoteApproveBash, RemoteListenPowerShell, RemoteApprovePowerShell };
+        var port = $"127.0.0.1:{HookServer.Port}/";
+        if (commands.All(c => current.Contains(c)) || !commands.All(c => c?.Contains(port, StringComparison.Ordinal) == true)) return false;
+        InstallRemote();
+        return true;
     }
 
     /// <summary>우리가 넣은 훅을 모두(알림·원격) 뺀다.</summary>

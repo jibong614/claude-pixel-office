@@ -220,7 +220,6 @@ body.remote #pOpenDir, body.remote .seat { display: none; }   /* 휴대폰에서
 #panel .rbtn { padding: 4px 12px; font-size: 12px; }
 #panel .rbtn.ok { background: rgba(80, 200, 120, 0.3); border-color: rgba(80, 200, 120, 0.7); }
 #panel .rbtn.no { background: rgba(255, 110, 110, 0.22); border-color: rgba(255, 110, 110, 0.6); }
-#rAwayNow { margin: 0 0 8px; }
 #rSay { margin-top: 4px; }
 #rReplyWrap { margin-top: 8px; }
 .prompt.reply { max-height: 220px; overflow: auto; margin-top: 3px; }

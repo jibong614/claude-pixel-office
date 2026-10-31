@@ -135,6 +135,13 @@ public partial class MainWindow : Window
         // 저장해 둔 사무실 이름·별명·메모(창을 띄우기 전부터 휴대폰·알림에 쓴다)
         if (LoadShare() is { } share) ApplyShare(share);
 
+        // 예전 버전이 넣은 휴대폰 지시 훅은 새 명령으로(1.1.9: 앱이 꺼져 있던 동안에도 포기하지 않고 다시 붙음)
+        if (!App.DemoMode)
+        {
+            try { HookSetup.UpgradeRemote(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException) { }
+        }
+
         // 훅이 설정에 없어도 수신기는 켜 둔다(가볍고, 🔔로 연결하면 바로 받기 시작한다)
         _hooks.Remote = _remote;
         _hooks.Received += ev => { if (ev.Event == "SessionEnd") _remote.OnSessionEnd(ev.SessionId); };
@@ -926,6 +933,7 @@ public partial class MainWindow : Window
             {
                 _remote.SetAway(false, "hooks-off");
                 HookSetup.Uninstall();   // 상태 알림·휴대폰 지시 모두
+                _remote.ReleaseListeners();   // 기다리던 지시 대기 훅도 끝나게(안 그러면 이 프로그램을 끌 때까지 붙어 있다)
             }
             else HookSetup.InstallRemote();   // 상태 알림이 없으면 그것부터 넣고 휴대폰 지시·승인까지
         }

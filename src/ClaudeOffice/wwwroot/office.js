@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.1.8';
+const PAGE_VERSION = '1.2.0';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1592,8 +1592,8 @@ const SETTINGS = [
         desc: T('휴대폰에서 지시·승인을 하려면 Claude Code와 연결해야 해요(⚙️ → 🖥️ 일반과 같은 버튼).', 'To instruct and approve from the phone, connect to Claude Code (same button as ⚙️ → 🖥️ General).'),
         label: () => T('연결하기', 'Connect'), enabled: () => !DEMO && !!data.hooks, run: toggleHooks },
       { type: 'choice', name: T('입력이 없으면 자리 비움', 'Away when idle'), pcOnly: true, shown: () => !!remoteState?.installed,
-        desc: T('자리 비움일 때 휴대폰의 지시·승인을 받습니다. 마우스·키보드를 이만큼 안 쓰면 켜지고, 돌아와 움직이면 꺼집니다(작업표시줄에 숨겨 둬도). 이 시간 전이라도 PC를 30초 넘게 안 쓰면 휴대폰에서 지시를 보내는 순간 켜져요.',
-          "While Away, the phone's instructions and approvals are taken. It turns on after this long without mouse or keyboard input and off when you're back (even while hidden in the tray). Even sooner, once the PC has been idle for 30 s, sending from the phone turns it on."),
+        desc: T('자리 비움일 때 휴대폰의 지시·승인을 받습니다. 마우스·키보드를 이만큼 안 쓰면 켜지고, 돌아와 움직이면 꺼집니다(작업표시줄에 숨겨 둬도). 이 시간 전이라도 PC를 30초 넘게 안 쓰는 동안 휴대폰 화면을 열거나 지시를 보내면 켜져요.',
+          "While Away, the phone's instructions and approvals are taken. It turns on after this long without mouse or keyboard input and off when you're back (even while hidden in the tray). Even sooner, once the PC has been idle for 30 s, opening the phone page or sending from the phone turns it on."),
         options: [[0, T('끔', 'Off')], [1, T('1분', '1 min')], [3, T('3분', '3 min')], [5, T('5분', '5 min')], [10, T('10분', '10 min')]],
         get: () => appSettings?.remoteAwayIdleMinutes ?? 3, set: (v) => setAppSetting('remoteAwayIdleMinutes', v), status: remoteStatus },
       { type: 'toggle', name: T('화면을 잠그면 자리 비움', 'Away while the screen is locked'), pcOnly: true, shown: () => !!remoteState?.installed,
@@ -2379,7 +2379,7 @@ async function postInbox(msg) {
 // 상태는 PC가 요약과 함께 올린 remote(PC 앱 화면은 {type:"remote"}):
 //   {installed, away, since, s:{세션:{listen, asks:[{id,text,detail,t}], said:{text,t,state}, reply:{text,t}}}}
 // 휴대폰은 지시(say)·승인(ok)·거절(no)·자리 비움(away)을 postInbox 로 보낸다.
-// 자리 비움은 손으로 켜지 않는다 — PC가 입력 없음·화면 잠금으로 켜고, 휴대폰은 PC를 아무도 안 쓸 때(idle)만 켤 수 있다(지시를 보내면 저절로).
+// 자리 비움은 손으로 켜지 않는다 — PC가 입력 없음·화면 잠금으로 켜고, 휴대폰은 PC를 아무도 안 쓸 때(idle)만 켤 수 있다(화면을 보고 있거나 지시를 보내면 저절로).
 // 돌아와 입력하거나 잠금을 풀면 꺼진다.
 const remoteOf =(id) => (remoteState?.installed ? remoteState.s?.[id] || {} : null);
 const answered = new Map();      // 휴대폰에서 답한 승인 요청 → 누른 시각(PC에서 사라질 때까지 버튼을 잠근다)
@@ -2416,11 +2416,11 @@ function renderRemote(s) {
   const asks = r.asks || [];
   $('rStatus').textContent =
     !away ? (REMOTE
-      ? (idle ? T('💤 PC를 안 쓰고 있어요 — 지시를 보내면 자리 비움이 켜지고 바로 전해요.', "💤 Nobody is using the PC — send an instruction and Away turns on as it's delivered.")
-        : T('🖥️ PC를 쓰는 중이에요 — 자리를 뜨고 30초쯤 지나면 여기서 지시를 보낼 수 있어요.',
-          '🖥️ Someone is using the PC — about 30 s after you leave it, you can send instructions here.'))
-      : T(`🏃 자리 비움이면 휴대폰에서 이 직원에게 지시하고 승인할 수 있어요 — ${auto ? `입력이 ${auto}분 없으면 저절로 켜지고, ` : ''}PC를 안 쓸 때 휴대폰에서 지시를 보내도 켜져요.`,
-        `With 🏃 Away on, the phone can instruct and approve — ${auto ? `it turns on after ${auto} min without input, and ` : ''}sending from the phone while the PC is idle turns it on too.`))
+      ? (idle ? T('💤 PC를 안 쓰고 있어요 — 지금부터 여기서 지시·승인할 수 있어요.', '💤 Nobody is using the PC — you can instruct and approve here from now on.')
+        : T('🖥️ PC를 쓰는 중이에요 — 자리를 뜨면 30초쯤 뒤부터 여기서 지시·승인할 수 있어요.',
+          '🖥️ Someone is using the PC — about 30 s after you leave it, you can instruct and approve here.'))
+      : T(`📱 자리를 뜨면 휴대폰에서 이 직원에게 지시·승인할 수 있어요 — PC를 30초 넘게 안 쓰는 동안 휴대폰 화면을 열면${auto ? ` (또는 입력이 ${auto}분 없으면)` : ''} 휴대폰으로 넘어가요.`,
+        `📱 Once you leave, the phone can instruct and approve this employee — it moves to the phone when you open the phone page after 30 s without PC input${auto ? ` (or after ${auto} min without input)` : ''}.`))
     : actOf(s).busy || asks.length ? T('⚙️ 일하는 중 — 보낸 지시는 이 대화에 이어서(지금 일 중간이나 끝나는 대로) 전합니다.',
       '⚙️ Working — an instruction joins this conversation (during the current work or right after it).')
     : r.listen ? T('📡 연결됨 — 보내면 바로 이 대화에서 이어서 일합니다.', '📡 Connected — an instruction continues this conversation right away.')
@@ -2439,14 +2439,12 @@ function renderRemote(s) {
   }
   for (const [id, at] of answered) if (Date.now() - at > 120000) answered.delete(id);
 
-  // 승인까지 휴대폰으로 받고 싶을 때(지시를 보내기 전에) — PC를 아무도 안 쓸 때만
-  $('rAwayNow').hidden = !REMOTE || away || !idle;
-
   // 지시 보내기(휴대폰에서, 자리 비움이거나 PC를 아무도 안 쓸 때 — 보내면 PC가 자리 비움을 켠다)
   $('rSayWrap').hidden = !REMOTE || !(away || idle);
   if (sayFor !== s.id) { sayFor = s.id; sayEl.value = ''; }
   if (remoteNote && r.said && r.said.t >= remoteNote.at - 5000 && remoteNote.sid === s.id) remoteNote = null;   // PC가 처리했다
-  $('rSaid').textContent = remoteNote && remoteNote.sid === s.id && Date.now() - remoteNote.at < 30000 ? remoteNote.text : saidText(r.said);
+  $('rSaid').textContent = remoteNote && remoteNote.sid === s.id && Date.now() - remoteNote.at < 30000 ? remoteNote.text
+    : saidText(r.said, actOf(s).busy || asks.length > 0);
 
   // Claude 의 마지막 답(Stop 훅이 알려 준 것)
   $('rReplyWrap').hidden = !r.reply;
@@ -2456,22 +2454,31 @@ function renderRemote(s) {
   }
 }
 
-function saidText(d) {
+/** 마지막 지시의 처리 상태. working: 그 세션이 일하는 중(아니면 못 건넨 까닭은 세션이 아직 연결 전이라서). */
+function saidText(d, working) {
   if (!d) return '';
   const when = fmtTime(d.t);
   return d.state === 'delivered' ? T(`✅ 전했어요 · ${when}`, `✅ Delivered · ${when}`)
-    : d.state === 'queued' ? T(`⏳ 기다리는 중 · ${when} — 일을 마치면 바로 전해요`, `⏳ Waiting · ${when} — delivered when the current work ends`)
+    : d.state === 'queued' ? (working
+      ? T(`⏳ 기다리는 중 · ${when} — 일을 마치면 바로 전해요`, `⏳ Waiting · ${when} — delivered when the current work ends`)
+      : T(`⏳ 아직 못 전했어요 · ${when} — 이 세션이 연결되는 대로 전해요(위 안내)`, `⏳ Not delivered yet · ${when} — sent as soon as this session connects (see above)`))
     : T(`⚠️ 전하지 못했어요 · ${when} — PC를 쓰는 중이었어요`, `⚠️ Not delivered · ${when} — someone was using the PC`);
 }
 
-$('rAwayNow').addEventListener('click', async () => {
-  if (!remoteKey) return;
-  $('rAwayNow').disabled = true;
-  const ok = await postInbox({ k: 'away' });
-  remoteNote = { sid: selectedId, at: Date.now(), text: ok ? T('🏃 자리 비움을 켜 달라고 보냈어요', '🏃 Asked the PC to go away') : lastPostError };
-  setTimeout(() => { $('rAwayNow').disabled = false; }, 5000);
-  renderPanel();
-});
+/**
+ * 휴대폰 화면을 보고 있는 동안 PC를 아무도 안 쓰면(30초) PC에 자리 비움을 켜 달라고 한다 — 그때부터 승인도 휴대폰으로.
+ * 예전 [지금 자리 비움으로] 버튼 대신(1.2.0). PC에 돌아와 움직이면 PC가 끈다. PC가 받아 켤 때까지 20초마다 다시.
+ * PC도 그 순간 정말 비어 있는지 다시 본다(RemoteHub.AwayFromPhone) — 요약이 늦게 와도 PC를 쓰는 사람에게 끼어들지 않는다.
+ */
+let awayAskedAt = 0;
+function askAwayWhileWatching() {
+  if (!REMOTE || !remoteKey || document.visibilityState !== 'visible') return;
+  const st = remoteState;
+  if (!st?.installed || st.away || !st.idle || Date.now() - awayAskedAt < 20000) return;
+  awayAskedAt = Date.now();
+  postInbox({ k: 'away' });
+}
+if (REMOTE) document.addEventListener('visibilitychange', askAwayWhileWatching);
 
 function makeAsk(sid, a) {
   const el = elem('div', 'rask');
@@ -2586,6 +2593,7 @@ async function startRemote() {
       remoteAt = p.t || Date.now();
       remoteError = '';
       onSnapshot(obj.snap);
+      askAwayWhileWatching();
     } catch {
       remoteError = T('해독하지 못했어요 — PC에서 키를 새로 만들었다면 QR을 다시 찍어 주세요', "Couldn't decrypt — if you made a new key on the PC, scan the QR again");
       refreshHud();
