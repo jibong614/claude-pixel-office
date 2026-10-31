@@ -130,7 +130,7 @@ tools/          test tools (offscreen capture, in-page test steps, fake Firebase
 
 - **Reads only** Claude Code transcripts. Conversation content is never sent anywhere (except the encrypted summary when phone view is on)
 - **Stores** in `%LOCALAPPDATA%\ClaudeOffice`: screen settings, a copy of nicknames/memos (`share.json`), `app.json`, the phone-view key (`cloud.json`), the hook log, the remote log (`remote.log`)
-- **Network**: the hook receiver listens on `127.0.0.1` only and ignores requests from browsers. With remote connected, Claude's last answer is part of the encrypted summary. The update check asks the GitHub API for the latest release twice a day (only the app version is sent; can be turned off)
+- **Network**: the hook receiver listens on `127.0.0.1` only and ignores requests from browsers. With remote connected, Claude's last answer is part of the encrypted summary. The update check asks the GitHub API for the latest release twice a day and when you open Settings (at most every 10 minutes; only the app version is sent; can be turned off)
 
 ## FAQ
 

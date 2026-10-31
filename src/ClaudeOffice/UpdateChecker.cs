@@ -6,6 +6,7 @@ namespace ClaudeOffice;
 
 /// <summary>
 /// 새 버전 알림: GitHub 릴리스의 최신 버전을 켠 뒤 30초, 그 뒤로 12시간마다 확인한다(설정에서 끌 수 있음).
+/// 화면이 설정을 열 때 마지막 확인이 10분 넘었으면 "update-check" 로 한 번 더 부른다.
 /// 보내는 것은 익명 GET 하나(GitHub API 가 요구하는 User-Agent 에 버전만). 받아서 바꾸는 일은 Updater(사용자가 [업데이트]를 누를 때).
 /// </summary>
 internal sealed class UpdateChecker : IDisposable

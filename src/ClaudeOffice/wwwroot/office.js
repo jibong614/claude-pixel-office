@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.1.2';
+const PAGE_VERSION = '1.1.3';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1721,8 +1721,8 @@ const SETTINGS = [
           : openUrl(appSettings.update.url)),
         enabled: () => appReady() && !['downloading', 'installing'].includes(appSettings.update?.install?.state), status: updateStatus },
       { type: 'toggle', name: T('새 버전 알림', 'New version alerts'), pcOnly: true,
-        desc: T('하루 두 번 GitHub에 새 버전이 나왔는지 물어보고, 나왔으면 한 번 알려 드립니다(보내는 것은 프로그램 버전뿐).',
-          'Asks GitHub twice a day whether a new version is out and tells you once (only the app version is sent).'),
+        desc: T('하루 두 번(그리고 설정을 열 때) GitHub에 새 버전이 나왔는지 물어보고, 나왔으면 한 번 알려 드립니다(보내는 것은 프로그램 버전뿐).',
+          'Asks GitHub twice a day (and when you open Settings) whether a new version is out and tells you once (only the app version is sent).'),
         get: () => !!appSettings?.updateCheck, set: (v) => setAppSetting('updateCheck', v), enabled: appReady },
       { type: 'action', name: T('별명·메모 내보내기', 'Export nicknames & memos'), pcOnly: true,
         desc: T('별명·메모·사무실 이름을 파일 하나로 저장합니다(다른 PC로 옮기거나 백업할 때).', 'Saves nicknames, memos and the office name to one file (to move to another PC or back up).'),
@@ -2118,10 +2118,18 @@ function cmpVersion(a, b) {
   return 0;
 }
 
-// 설정 맨 위 버전 줄: PC 는 앱 버전(새 버전이 있으면 함께), 휴대폰은 화면·PC 앱 버전을 나란히(어느 쪽이 옛것인지)
+// 설정 맨 위 버전 줄: PC 는 앱 버전(새 버전이 있으면 [업데이트] 버튼까지), 휴대폰은 화면·PC 앱 버전을 나란히(어느 쪽이 옛것인지).
+// 버튼은 한 번만 만든다(스냅샷마다 다시 만들면 누르는 도중에 바뀌어 클릭이 사라진다)
+const verText = elem('span'), verWarn = elem('div', 'vwarn'), verBtn = elem('button', 'act');
+verBtn.addEventListener('click', () => {
+  const u = appSettings?.update;
+  if (u?.canInstall) send({ cmd: 'update-install' });   // 앱이 "업데이트할까요?" 확인 창을 띄운다
+  else if (u?.url) openUrl(u.url);
+});
+$('sVer').append(verText, verWarn, verBtn);
+
 function refreshVersionLine() {
-  const el = $('sVer');
-  let text, warn = '';
+  let text, warn = '', btn = '';
   if (REMOTE) {
     text = T(`휴대폰 화면 v${PAGE_VERSION} · PC 앱 `, `Phone page v${PAGE_VERSION} · PC app `)
       + (remotePcVersion ? `v${remotePcVersion}` : T('v1.1.1 이하', 'v1.1.1 or older'));
@@ -2132,15 +2140,22 @@ function refreshVersionLine() {
       + (/\.(web\.app|firebaseapp\.com)$/.test(location.hostname)
         ? T(' 그래도 그대로면 내 Firebase Hosting 페이지를 PC에서 다시 올려야 해요(tools\\deploy-mobile.ps1).',
           ' If it stays the same, upload your Firebase Hosting page again from the PC (tools\\deploy-mobile.ps1).') : '');
-    else if (d > 0) warn = T('⚠️ PC 앱이 옛 버전이에요 — PC에서 ⚙️ → 정보 → [업데이트].', '⚠️ The PC app is older — on the PC, ⚙️ → About → [Update].');
+    else if (d > 0) warn = T('⚠️ PC 앱이 옛 버전이에요 — PC에서 ⚙️ 설정을 열면 맨 위에 [업데이트]가 나와요(안 보이면 맨 아래 정보 → [지금 확인]).',
+      '⚠️ The PC app is older — open ⚙️ Settings on the PC and [Update] appears at the top (if not, About at the bottom → [Check now]).');
   } else {
     text = `Claude Office v${appSettings?.version || PAGE_VERSION}`;
-    const up = appSettings?.update;
-    if (up?.newer) warn = T(`새 버전 v${up.latest} 이 나왔어요 — 맨 아래 정보 → [업데이트]`, `v${up.latest} is out — About (at the bottom) → [Update]`);
+    const up = appSettings?.update, ins = up?.install || {};
+    if (['downloading', 'installing', 'error'].includes(ins.state)) warn = updateStatus().text;
+    else if (up?.newer) {
+      warn = T(`🎉 새 버전 v${up.latest} 이 나왔어요`, `🎉 Version ${up.latest} is out`);
+      btn = up.canInstall ? T('업데이트', 'Update') : T('받으러 가기', 'Download');
+    }
   }
-  el.textContent = text;
-  el.classList.toggle('warn', !!warn);
-  if (warn) el.append(elem('div', '', warn));
+  verText.textContent = text;
+  verWarn.textContent = warn;
+  verWarn.hidden = !warn;
+  verBtn.textContent = btn;
+  verBtn.hidden = !btn || DEMO;
 }
 
 function refreshSettings() {
@@ -2166,6 +2181,10 @@ function setSettingsOpen(open) {
   if (open && selectedId) { selectedId = null; renderPanel(); }   // 서랍은 한 번에 하나만
   syncDrawers();
   refreshSettings();
+  // 새 버전 확인은 12시간마다라, 설정을 열 때 10분 넘게 지났으면 한 번 더 물어본다(새 버전 알림을 켜 둔 경우만)
+  const u = appSettings?.update;
+  if (open && !DEMO && !REMOTE && appSettings?.updateCheck && !['downloading', 'installing'].includes(u?.install?.state)
+      && Date.now() - (u?.checkedAt || 0) > 10 * 60 * 1000) send({ cmd: 'update-check' });
 }
 
 // ───────────────────────────── 오른쪽 서랍(상세 패널·설정) ─────────────────────────────
