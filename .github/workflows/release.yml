@@ -42,7 +42,7 @@ jobs:
           New-Item -ItemType Directory $name | Out-Null
           Copy-Item publish/ClaudeOffice.exe $name
           Copy-Item -Recurse publish/wwwroot $name
-          Copy-Item -Recurse publish/Assets $name
+          if (Test-Path publish/Assets) { Copy-Item -Recurse publish/Assets $name }   # 1.1.8 부터 아이콘은 exe 안에만 있어 없을 수 있다
           Copy-Item LICENSE $name
           Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
           # 앱 안 업데이트가 받은 zip 이 깨지거나 바뀌지 않았는지 대조하는 SHA-256(16진수 소문자 한 줄)
