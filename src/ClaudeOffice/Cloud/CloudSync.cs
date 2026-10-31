@@ -580,7 +580,7 @@ internal sealed partial class CloudSync : IDisposable
             long t = r.TryGetProperty("t", out var tt) && tt.ValueKind == JsonValueKind.Number && tt.TryGetInt64(out var tv) ? tv : 0;
 
             if (Text("k", 10) is { } kind)
-                return kind is "say" or "ok" or "no"
+                return kind is "say" or "ok" or "no" or "away"
                     ? new RemoteMsg(kind, Text("sid", 100), Text("req", 40), Text("text", RemoteHub.MaxText), t, Text("n", 64))
                     : null;
 

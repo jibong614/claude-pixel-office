@@ -44,6 +44,8 @@ internal sealed class RemoteHub
     private readonly Dictionary<string, DateTime> _nonces = new(StringComparer.Ordinal);       // 이미 처리한 휴대폰 메시지(같은 것을 두 번 받지 않게)
     private bool _away;
     private DateTime _awaySinceUtc;
+    private bool _pcIdle;      // PC 를 아무도 안 쓰는 중(입력 없음·화면 잠금) — 이때만 휴대폰이 자리 비움을 켤 수 있다
+    private int _autoMinutes;  // 입력이 없으면 몇 분 뒤 저절로 자리 비움(0 = 끔) — 휴대폰 안내 글용
 
     public RemoteHub(string? logPath) => _logPath = logPath;
 
@@ -147,8 +149,43 @@ internal sealed class RemoteHub
                 case "say" when m.Sid != null && !string.IsNullOrWhiteSpace(m.Text): Say(m.Sid, m.Text); break;
                 case "ok" when m.Req != null: Decide(m.Req, allow: true, null); break;
                 case "no" when m.Req != null: Decide(m.Req, allow: false, m.Text); break;
+                case "away": AwayFromPhone(); break;
             }
         }
+    }
+
+    /// <summary>
+    /// PC 가 알려 주는 자리 상태(MainWindow 가 몇 초마다): idle = 아무도 안 쓰는 중(입력 없음·화면 잠금), autoMinutes = 저절로 자리 비움까지.
+    /// 휴대폰은 PC 가 idle 일 때만 자리 비움을 켤 수 있다 — 누가 PC 를 쓰는 동안에는 휴대폰 지시가 끼어들지 않게.
+    /// </summary>
+    public void SetPresence(bool idle, int autoMinutes)
+    {
+        lock (_lock)
+        {
+            if (_pcIdle == idle && _autoMinutes == autoMinutes) return;
+            _pcIdle = idle;
+            _autoMinutes = autoMinutes;
+        }
+        Notify();
+    }
+
+    /// <summary>휴대폰의 [지금 자리 비움으로] — PC 를 아무도 안 쓰고 있을 때만.</summary>
+    private void AwayFromPhone()
+    {
+        lock (_lock)
+        {
+            if (_away) return;
+            if (!_pcIdle) { Log("away-refused", "-", "phone (PC in use)"); return; }
+            TurnAwayOn("phone");
+        }
+        Notify();
+    }
+
+    private void TurnAwayOn(string why)   // _lock 안에서
+    {
+        _away = true;
+        _awaySinceUtc = DateTime.UtcNow;
+        Log("away-on", "-", why);
     }
 
     /// <summary>오래됐거나 이미 받은 메시지는 버린다(휴대폰 시계가 조금 틀려도 되게 앞뒤 10분).</summary>
@@ -170,6 +207,8 @@ internal sealed class RemoteHub
         if (text.Length > max) text = text[..max];
         lock (_lock)
         {
+            // 자리 비움이 아니어도 PC 를 아무도 안 쓰고 있으면 보내는 순간 켠다(PC 에서 따로 켜지 않아도 되게)
+            if (!_away && _pcIdle) TurnAwayOn("phone-say");
             if (!_away)
             {
                 _said[sid] = new Said(text, DateTime.UtcNow, "dropped");
@@ -230,22 +269,26 @@ internal sealed class RemoteHub
         Notify();
     }
 
-    /// <summary>자리 비움 켜기·끄기(PC 에서만). 끄면 휴대폰을 기다리던 승인은 모두 PC 승인 창으로, 못 건넨 지시는 버린다.</summary>
+    /// <summary>
+    /// 자리 비움 켜기·끄기(PC 쪽: 버튼·알림 영역 메뉴·화면 잠금·입력 없음·돌아옴). 휴대폰은 AwayFromPhone·Say 로 PC 가 비어 있을 때만 켠다.
+    /// 끄면 휴대폰을 기다리던 승인은 모두 PC 승인 창으로, 못 건넨 지시는 버린다.
+    /// </summary>
     public void SetAway(bool on, string why)
     {
         lock (_lock)
         {
             if (_away == on) return;
-            _away = on;
-            _awaySinceUtc = on ? DateTime.UtcNow : default;
-            if (!on)
+            if (on) TurnAwayOn(why);
+            else
             {
+                _away = false;
+                _awaySinceUtc = default;
                 foreach (var a in _approvals.Values) a.Tcs.TrySetResult(null);
                 _approvals.Clear();
                 foreach (var (sid, list) in _queued) _said[sid] = new Said(string.Join("\n\n", list), DateTime.UtcNow, "dropped");
                 _queued.Clear();
+                Log("away-off", "-", why);
             }
-            Log(on ? "away-on" : "away-off", "-", why);
         }
         Notify();
     }
@@ -264,7 +307,8 @@ internal sealed class RemoteHub
     }
 
     /// <summary>
-    /// 화면·휴대폰에 보낼 상태: {installed, away, since, s:{세션:{listen, asks:[{id,text,detail,t}], said:{text,t,state}, reply:{text,t}}}}.
+    /// 화면·휴대폰에 보낼 상태: {installed, away, since, idle, auto, s:{세션:{listen, asks:[{id,text,detail,t}], said:{text,t,state}, reply:{text,t}}}}.
+    /// idle: PC 를 아무도 안 쓰는 중(휴대폰이 자리 비움을 켤 수 있음), auto: 입력이 없으면 몇 분 뒤 저절로 자리 비움(0 = 끔).
     /// 세션 상태는 원격이 켜져 있을 때만 싣는다(Claude 의 답 글이 들어 있어서).
     /// </summary>
     public string StateJson()
@@ -289,7 +333,8 @@ internal sealed class RemoteHub
                     };
                 }
             }
-            return JsonSerializer.Serialize(new { installed, away = _away && installed, since = SnapshotBuilder.Ms(_awaySinceUtc), s }, JsonOptions);
+            return JsonSerializer.Serialize(new { installed, away = _away && installed, since = SnapshotBuilder.Ms(_awaySinceUtc),
+                                                  idle = _pcIdle && installed, auto = _autoMinutes, s }, JsonOptions);
         }
     }
 

@@ -29,6 +29,9 @@ public partial class MainWindow : Window
     private readonly Updater _updater = new();
     private readonly RemoteHub _remote = new(Path.Combine(App.DataDir, "remote.log"));
     private bool _awayByLock;         // 화면 잠금으로 켠 자리 비움(잠금을 풀면 끈다)
+    private bool _locked;             // Windows 화면이 잠겨 있음
+    private bool _leftWhileAway;      // 자리 비움 중에 PC 가 한동안 비어 있었음 → 그 뒤 입력이 오면 "돌아옴"
+    private readonly System.Windows.Threading.DispatcherTimer _presence = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly TrayIcon? _tray;
     private bool _pageReady;
     private bool _exiting, _cleanedUp;
@@ -113,6 +116,7 @@ public partial class MainWindow : Window
         _cleanedUp = true;
         if (IsVisible) SavePlacement();
         Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
+        _presence.Stop();
         _watcher.Dispose();
         _hooks.Dispose();
         _updates.Dispose();
@@ -154,6 +158,11 @@ public partial class MainWindow : Window
         _remote.Changed += OnRemoteChanged;
         OnRemoteChanged();
         Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
+        if (!App.DemoMode)
+        {
+            _presence.Tick += (_, _) => CheckPresence();
+            _presence.Start();
+        }
         _cloud.SetLanguage(L.Code);   // 휴대폰도 PC와 같은 언어로
         _cloud.Start();
         _watcher.Start();
@@ -248,7 +257,7 @@ public partial class MainWindow : Window
         });
     }
 
-    /// <summary>자리 비움 켜기·끄기 — PC 에서만(화면 버튼·알림 영역 메뉴·화면 잠금). 휴대폰에서는 켤 수 없다.</summary>
+    /// <summary>자리 비움 켜기·끄기 — 화면 버튼·알림 영역 메뉴. 그 밖에 화면 잠금·입력 없음(CheckPresence), 휴대폰(PC 가 비어 있을 때만, RemoteHub).</summary>
     private void SetAway(bool on, string why)
     {
         if (on && !RemoteHub.Installed) return;
@@ -256,9 +265,52 @@ public partial class MainWindow : Window
         _remote.SetAway(on, why);
     }
 
+    private static readonly TimeSpan LeftAfter = TimeSpan.FromSeconds(30);   // 이만큼 입력이 없으면 "자리에 없음" — 휴대폰이 자리 비움을 켤 수 있다
+
+    /// <summary>
+    /// 2초마다: 마우스·키보드 입력이 설정한 분만큼 없으면 자리 비움을 켜고, 자리 비움 중에 한동안 비어 있던 PC 에 다시 입력이 오면 끈다(돌아옴).
+    /// 버튼으로 막 켠 경우처럼 아직 자리를 뜨지 않았으면 입력이 와도 끄지 않는다. 잠겨 있는 동안의 입력은 보지 않는다(풀면 OnSessionSwitch).
+    /// </summary>
+    private void CheckPresence()
+    {
+        int auto = Math.Clamp(App.Settings.RemoteAwayIdleMinutes, 0, 60);
+        if (!RemoteHub.Installed) { _remote.SetPresence(false, auto); return; }
+        var idle = IdleTime();
+        bool left = _locked || idle >= LeftAfter;
+        _remote.SetPresence(left, auto);
+        if (!_remote.Away)
+        {
+            _leftWhileAway = false;
+            if (auto > 0 && idle >= TimeSpan.FromMinutes(auto)) _remote.SetAway(true, "idle");
+            return;
+        }
+        if (_locked) return;
+        if (left) _leftWhileAway = true;
+        else if (_leftWhileAway && idle < TimeSpan.FromSeconds(5))
+        {
+            _leftWhileAway = _awayByLock = false;
+            _remote.SetAway(false, "back");
+        }
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct LastInputInfo { public uint Size; public uint Time; }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetLastInputInfo(ref LastInputInfo info);
+
+    /// <summary>이 Windows 세션에서 마지막 마우스·키보드 입력 뒤 지난 시간.</summary>
+    private static TimeSpan IdleTime()
+    {
+        var info = new LastInputInfo { Size = (uint)System.Runtime.InteropServices.Marshal.SizeOf<LastInputInfo>() };
+        return GetLastInputInfo(ref info) ? TimeSpan.FromMilliseconds(unchecked((uint)Environment.TickCount - info.Time)) : TimeSpan.Zero;
+    }
+
     /// <summary>화면을 잠그면 자리 비움, 풀면 돌아옴(잠금으로 켠 것만 — 직접 켜 둔 것은 그대로).</summary>
     private void OnSessionSwitch(object? sender, Microsoft.Win32.SessionSwitchEventArgs e)
     {
+        if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionLock) _locked = true;
+        else if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionUnlock) _locked = false;
         if (!App.Settings.RemoteAwayOnLock || !RemoteHub.Installed) return;
         if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionLock && !_remote.Away)
         {
@@ -599,6 +651,7 @@ public partial class MainWindow : Window
             widget = s.Widget,
             language = s.Language == "en" ? "en" : "ko",
             remoteAwayOnLock = s.RemoteAwayOnLock,
+            remoteAwayIdleMinutes = s.RemoteAwayIdleMinutes,
             update = new
             {
                 latest = _updates.Latest, newer = _updates.IsNewer, url = _updates.Url, error = _updates.Error, checkedAt = _updates.CheckedMs,
@@ -660,6 +713,7 @@ public partial class MainWindow : Window
                                 case "quietStart": s.QuietStart = Math.Clamp(num, 0, 23); break;
                                 case "quietEnd": s.QuietEnd = Math.Clamp(num, 0, 23); break;
                                 case "remoteAwayOnLock": s.RemoteAwayOnLock = on; break;
+                                case "remoteAwayIdleMinutes": s.RemoteAwayIdleMinutes = Math.Clamp(num, 0, 60); break;
                                 case "updateCheck":
                                     s.UpdateCheck = on;
                                     if (on) _ = _updates.CheckAsync();

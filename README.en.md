@@ -51,7 +51,7 @@ Build from source (.NET 8 SDK): `dotnet build ClaudeOffice.sln -c Release`
 | 🚪 / 📌 / ⚙️ | Show/hide employees who went home / always on top / settings |
 | Tray icon 🏢 | Click to open, right-click → Exit. Closing the window (✕) only hides it by default |
 
-Settings (⚙️) include: office name, screen language (한국어 / English), display period (12h–7d), how many employees and how to pick them (most recent / manual checklist), wait-only filter, office size, window behavior (start hidden, close to tray, run at Windows startup; position and size are remembered), notifications, hooks, phone view, remote while away, update check with one-click **Update**, and the data folder.
+Settings (⚙️) open as a centered pop-up with tabs — 🏢 Office · 👥 Employees · 🔔 Notifications · 📱 Phone · 🖥️ General · ℹ️ About (the last tab is remembered; Esc or a click outside closes it). They include: office name, screen language (한국어 / English), display period (12h–7d), how many employees and how to pick them (most recent / manual checklist), wait-only filter, office size, window behavior (start hidden, close to tray, run at Windows startup; position and size are remembered), notifications, hooks, phone view, remote while away, update check with one-click **Update**, and the data folder.
 
 Command line: `--demo` (sample office), `--exit` (quit the running instance), `--autostart` (start hidden in the tray), `--offscreen` (for test tools).
 
@@ -78,7 +78,7 @@ Your phone opens a shared web page from a QR code, receives updates in real time
 The decryption key lives only after the `#` in the QR link, which browsers never send to any server. The page can be installed as an app.
 Optionally you can **edit nicknames and memos from the phone** too (encrypted with the same key and picked up by the PC).
 
-Setup takes about 10 minutes with a Google account: ⚙️ → Phone view → **Setup wizard** (in the Korean UI: 휴대폰에서 보기 → 설정 도우미).
+Setup takes about 10 minutes with a Google account: ⚙️ → 📱 Phone → Phone view → **Setup wizard** (in the Korean UI: 휴대폰에서 보기 → 설정 도우미).
 Each of the 6 steps opens the right Firebase console page and the app checks the result automatically.
 No Node.js or command line is needed. Details (Korean): [docs/MOBILE.md](docs/MOBILE.md)
 
@@ -87,8 +87,11 @@ No Node.js or command line is needed. Details (Korean): [docs/MOBILE.md](docs/MO
 While you are away, phone view lets you **send instructions** to an employee (session) and **answer permission requests**.
 The phone needs no Claude login — the work is done by Claude Code on the PC with its own sign-in. Phone view must be on first.
 
-1. ⚙️ → Remote while away → **Connect** — adds 3 hooks to `settings.json` after a confirmation dialog
-2. When you leave, turn on **🏃** (top bar or the tray 🏢 menu) or just **lock the screen** (⊞+L — unlocking turns it off)
+1. ⚙️ → 📱 Phone → Remote while away → **Connect** — adds 3 hooks to `settings.json` after a confirmation dialog
+2. Just walk away — nothing to do on the PC (it can stay hidden in the tray)
+   - After **3 minutes** without mouse or keyboard input (1/5/10 min or off in Settings) Away turns on by itself, and it turns off when you're back and move the mouse
+   - Even sooner: once the PC has been idle for 30 s, sending an instruction from the phone turns it on
+   - You can still turn it on yourself: **🏃** in the top bar, the tray 🏢 menu, or **locking the screen** (⊞+L)
 3. On the phone, tap an employee to see the **🏃 Remote while away** box
    - ✋ **Approval request**: see exactly what it wants to run, then Approve / Deny. When denying you can write what to do instead, and Claude follows it
    - **Send an instruction**: the idle session wakes up and **continues the same conversation**. If it is busy, the instruction is delivered as soon as the current work ends
@@ -100,11 +103,11 @@ The phone needs no Claude login — the work is done by Claude Code on the PC wi
 | `Stop` · `SessionStart` | `asyncRewake` hooks — a session that finished answering (or just opened) waits in the background, and an instruction from the phone wakes it (up to a day) |
 
 - **Safety**
-  - Away can only be turned on **at the PC**. When it is off, instructions from the phone are dropped and approvals go to the PC prompt
+  - **While someone is using the PC** (input in the last 30 s) the phone cannot turn Away on — instructions sent then are dropped and approvals go to the PC prompt
   - What the phone sends is encrypted with the phone-view key (AES-256-GCM), so only a device that scanned the QR can send; messages older than 10 minutes or already seen are dropped
   - Claude's permission rules stay as they are — anything that needs approval still asks (on the phone)
   - Every instruction, approval and denial is logged in `remote.log` in the data folder
-  - **The QR/link is the key.** If someone saw it, make a new key under ⚙️ → Phone view
+  - **The QR/link is the key.** If someone saw it, make a new key under ⚙️ → 📱 Phone → Phone view
 - After connecting, **new or reopened sessions** take instructions right away; sessions that were already open start **after their next answer**. A short Claude Office restart (such as an update) reconnects them after 15 seconds; sessions that finished while it was closed connect after their next answer
 - Claude's last answer is included in the encrypted summary (only when remote is connected)
 - Questions (AskUserQuestion) need a choice, so they are not sent to the phone — answer them at the PC
@@ -142,7 +145,7 @@ tools/          test tools (offscreen capture, in-page test steps, fake Firebase
 
 **Does it change my Claude Code settings?** Not by default. Only when you install hooks (🔕) or connect remote and confirm, and removing them takes out only what it added.
 
-**An instruction from the phone doesn't arrive.** 🏃 Away must be on at the PC (locking the screen also turns it on). Sessions that were already open connect after their next answer — check "📡 Connected" in the employee details.
+**An instruction from the phone doesn't arrive.** It is refused while someone is using the PC (input in the last 30 s) — send it a little after you leave. Sessions that were already open connect after their next answer — check "📡 Connected" in the employee details.
 
 ## License and credits
 

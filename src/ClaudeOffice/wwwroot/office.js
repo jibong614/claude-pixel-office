@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.1.3';
+const PAGE_VERSION = '1.1.5';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1533,6 +1533,7 @@ const WIZ = [
 
 // ───────────────────────────── 설정 패널 ─────────────────────────────
 // 항목을 늘릴 때는 SETTINGS 에 한 줄 추가하면 화면은 저절로 그려진다.
+// 설정은 가운데 팝업 — 묶음(section)마다 tab(SETTINGS_TABS 의 id)과 소제목(title, 없으면 소제목 없이)을 정한다. 같은 탭의 묶음은 SETTINGS 순서대로.
 //   toggle : get() / set(v)                       — 켜고 끄는 스위치
 //   number : get() / set(v) / min / max / unit    — − 값 + 조절
 //   choice : get() / set(v) / options[[값, 글]]   — 여러 개 중 하나(이름 아래 한 줄로)
@@ -1547,7 +1548,7 @@ const WIZ = [
 
 const SETTINGS = [
   {
-    title: T('사무실', 'Office'),
+    tab: 'office',
     items: [
       { type: 'text', name: T('사무실 이름', 'Office name'), desc: T('벽 간판과 창 제목(작업표시줄)에 씁니다. 비우면 기본 이름입니다.', 'Shown on the wall sign and the window title (taskbar). Leave empty for the default.'), pcOnly: true,
         placeholder: DEFAULT_OFFICE, max: 30, get: () => officeName, set: setOfficeName },
@@ -1558,7 +1559,7 @@ const SETTINGS = [
     ],
   },
   {
-    title: T('직원 표시', 'Employees'),
+    tab: 'staff',
     // 위에서 아래로 거르는 순서: 표시 기간 → 퇴근 숨김 → 고르는 방식 → 보일 인원
     items: [
       { type: 'choice', name: T('표시 기간', 'Display period'), pcOnly: true,
@@ -1582,16 +1583,8 @@ const SETTINGS = [
     ],
   },
   {
-    title: T('팀', 'Teams'),
+    tab: 'office', title: T('보기', 'View'),
     items: [
-      { type: 'teams', pcOnly: true },
-    ],
-  },
-  {
-    title: T('창', 'Window'),
-    items: [
-      { type: 'toggle', name: T('항상 위에 표시', 'Always on top'), desc: T('다른 창에 가려지지 않게 맨 위에 띄웁니다.', 'Keeps the window above other windows.'), pcOnly: true,
-        get: () => pinned, set: setPinned },
       { type: 'choice', name: T('사무실 크기', 'Office size'),
         desc: T('화면에 맞춘 크기에서 작게·크게 바꿉니다. 크게 하면 넘치는 만큼 아래로 스크롤합니다.', 'Smaller or larger than fit-to-window. When larger, scroll down for the rest.'),
         options: [[-2, T('더 작게', 'Smallest')], [-1, T('작게', 'Smaller')], [0, T('맞춤', 'Fit')], [1, T('크게', 'Larger')], [2, T('더 크게', 'Largest')]],
@@ -1601,6 +1594,19 @@ const SETTINGS = [
           : T('창을 작게 줄이고 직원·상태만 한 줄씩 보여 줍니다(맨 위에 떠 있음). 상단 ▤ 버튼과 같습니다. 크기·위치는 따로 기억합니다.',
             'Shrinks the window to one line per employee (stays on top). Same as the ▤ button. Its size and position are remembered separately.')),
         get: widgetOn, set: setWidget, enabled: () => LOCAL_WIDGET || appReady() },
+    ],
+  },
+  {
+    tab: 'office', title: T('팀', 'Teams'),
+    items: [
+      { type: 'teams', pcOnly: true },
+    ],
+  },
+  {
+    tab: 'general', title: T('창', 'Window'),
+    items: [
+      { type: 'toggle', name: T('항상 위에 표시', 'Always on top'), desc: T('다른 창에 가려지지 않게 맨 위에 띄웁니다.', 'Keeps the window above other windows.'), pcOnly: true,
+        get: () => pinned, set: setPinned },
       { type: 'toggle', name: T('프로그램 시작 시 작업표시줄로 이동', 'Start hidden in the tray'), pcOnly: true,
         desc: T('켜 두면 다음 실행부터 창을 띄우지 않고 작업표시줄 오른쪽 알림 영역(🏢)에 숨긴 채로 켜집니다. 아이콘을 누르면 창이 열립니다. 감시와 휴대폰 보기는 그대로 돌아갑니다.',
           'From the next launch, starts hidden in the notification area (🏢) without opening the window. Click the icon to open it. Monitoring and phone view keep running.'),
@@ -1624,7 +1630,7 @@ const SETTINGS = [
     ],
   },
   {
-    title: T('알림', 'Notifications'),
+    tab: 'notify',
     // 창을 숨겨 둬도 알아야 하므로 앱(C#)이 판단해 Windows 알림으로 띄운다. 창을 보고 있을 때는 띄우지 않는다
     items: [
       { type: 'toggle', name: T('✋ 기다릴 때 알림', '✋ Notify when waiting'), pcOnly: true,
@@ -1651,7 +1657,7 @@ const SETTINGS = [
     ],
   },
   {
-    title: T('Claude Code 연동', 'Claude Code integration'),
+    tab: 'general', title: T('Claude Code 연동', 'Claude Code integration'),
     items: [
       { type: 'action', name: T('훅 연결', 'Hooks'), pcOnly: true,
         desc: T('승인 창·입력 요청·세션 종료를 Claude Code 훅으로 받아 정확히 표시합니다. 연결·해제할 때 ~/.claude/settings.json 을 고치므로 확인 창이 먼저 뜹니다.',
@@ -1662,7 +1668,7 @@ const SETTINGS = [
     ],
   },
   {
-    title: T('휴대폰에서 보기', 'Phone view'),
+    tab: 'phone', title: T('휴대폰에서 보기', 'Phone view'),
     items: [
       { type: 'action', name: T('휴대폰에서 보기', 'Phone view'), pcOnly: true,
         desc: T('화면용 요약만 PC에서 암호화해 내 구글 Firebase(무료)에 올리고, 휴대폰은 QR로 열어 봅니다(보기 전용, 로그인 없음, 밖에서도). 대화 원본은 올리지 않습니다.',
@@ -1692,7 +1698,7 @@ const SETTINGS = [
     ],
   },
   {
-    title: T('자리 비움 원격', 'Remote while away'),
+    tab: 'phone', title: T('자리 비움 원격', 'Remote while away'),
     items: [
       { type: 'action', name: T('휴대폰에서 지시·승인', 'Instruct & approve from the phone'), pcOnly: true,
         desc: T('자리를 비운 동안 휴대폰 보기에서 직원에게 지시를 보내고(같은 대화에서 이어서 일함) 승인 요청에 승인·거절로 답합니다. Claude 로그인은 이 PC에만 있으면 됩니다. 연결하면 ~/.claude/settings.json 에 훅 3개를 넣으므로 확인 창이 먼저 뜹니다. 휴대폰 보기가 켜져 있어야 합니다.',
@@ -1700,17 +1706,22 @@ const SETTINGS = [
         label: () => (remoteState?.installed ? T('연결 해제', 'Disconnect') : T('연결하기', 'Connect')),
         enabled: () => !DEMO && !!remoteState, run: () => send({ cmd: 'remote-hooks' }), status: remoteStatus },
       { type: 'action', name: T('🏃 자리 비움', '🏃 Away'), pcOnly: true, shown: () => !!remoteState?.installed,
-        desc: T('켜져 있을 때만 휴대폰의 지시·승인을 받습니다. 상단 🏃 버튼·알림 영역(🏢) 메뉴와 같습니다. 끄면 휴대폰을 기다리던 승인 요청은 PC 승인 창으로 돌아옵니다.',
-          'Instructions and approvals from the phone are taken only while this is on. Same as the 🏃 button and the tray (🏢) menu. Turning it off sends pending approval requests back to the PC prompt.'),
+        desc: T('켜져 있을 때 휴대폰의 지시·승인을 받습니다. 보통은 직접 켤 필요가 없어요 — 입력이 없으면 저절로 켜지고, PC를 안 쓸 때 휴대폰에서 지시를 보내도 켜지며, 돌아와 마우스·키보드를 쓰면 저절로 꺼집니다. 끄면 휴대폰을 기다리던 승인 요청은 PC 승인 창으로 돌아옵니다.',
+          "While on, the phone's instructions and approvals are taken. Usually you don't need to touch it — it turns on after a while without input or when the phone sends while the PC is idle, and turns off when you use the mouse or keyboard again. Turning it off sends pending approval requests back to the PC prompt."),
         label: () => (remoteState?.away ? T('돌아왔어요', "I'm back") : T('켜기', 'Turn on')),
         enabled: () => !DEMO && !!remoteState?.installed, run: () => send({ cmd: 'remote-away', value: !remoteState?.away }), status: awayStatus },
+      { type: 'choice', name: T('입력이 없으면 자리 비움', 'Away when idle'), pcOnly: true, shown: () => !!remoteState?.installed,
+        desc: T('마우스·키보드를 이만큼 안 쓰면 자리 비움을 켜고, 돌아와 움직이면 끕니다(작업표시줄에 숨겨 둬도). 이 시간 전이라도 PC를 30초 넘게 안 쓰면 휴대폰에서 지시를 보낼 수 있어요.',
+          "Turns Away on after this long without mouse or keyboard input and off when you're back (even while hidden in the tray). Even before that, the phone can send instructions once the PC has been idle for 30 s."),
+        options: [[0, T('끔', 'Off')], [1, T('1분', '1 min')], [3, T('3분', '3 min')], [5, T('5분', '5 min')], [10, T('10분', '10 min')]],
+        get: () => appSettings?.remoteAwayIdleMinutes ?? 3, set: (v) => setAppSetting('remoteAwayIdleMinutes', v) },
       { type: 'toggle', name: T('화면을 잠그면 자리 비움', 'Away while the screen is locked'), pcOnly: true, shown: () => !!remoteState?.installed,
         desc: T('Windows 화면을 잠그면(⊞+L) 자리 비움을 켜고, 잠금을 풀면 끕니다.', 'Locking Windows (⊞+L) turns Away on, and unlocking turns it off.'),
         get: () => !!appSettings?.remoteAwayOnLock, set: (v) => setAppSetting('remoteAwayOnLock', v), enabled: appReady },
     ],
   },
   {
-    title: T('정보', 'About'),
+    tab: 'about',
     items: [
       { type: 'action', name: T('버전', 'Version'), pcOnly: true,
         desc: () => T(`지금 버전 ${appSettings?.version || '?'} — 새 버전이 나오면 [업데이트]로 받아 바로 바꿉니다(GitHub 릴리스, SHA-256 확인).`,
@@ -1724,6 +1735,11 @@ const SETTINGS = [
         desc: T('하루 두 번(그리고 설정을 열 때) GitHub에 새 버전이 나왔는지 물어보고, 나왔으면 한 번 알려 드립니다(보내는 것은 프로그램 버전뿐).',
           'Asks GitHub twice a day (and when you open Settings) whether a new version is out and tells you once (only the app version is sent).'),
         get: () => !!appSettings?.updateCheck, set: (v) => setAppSetting('updateCheck', v), enabled: appReady },
+    ],
+  },
+  {
+    tab: 'about', title: T('백업·초기화', 'Backup & reset'),
+    items: [
       { type: 'action', name: T('별명·메모 내보내기', 'Export nicknames & memos'), pcOnly: true,
         desc: T('별명·메모·사무실 이름을 파일 하나로 저장합니다(다른 PC로 옮기거나 백업할 때).', 'Saves nicknames, memos and the office name to one file (to move to another PC or back up).'),
         label: () => T('내보내기', 'Export'), run: () => send({ cmd: 'share-export' }), enabled: appReady },
@@ -1734,6 +1750,11 @@ const SETTINGS = [
         desc: T('직원 표시·창·알림 설정을 처음 값으로 되돌립니다. 별명·메모·사무실 이름·팀 이름·화면 언어·휴대폰 보기·훅·자동 실행은 그대로입니다.',
           'Restores employee display, window and notification settings to defaults. Nicknames, memos, office and team names, language, phone view, hooks and startup stay.'),
         label: () => T('초기화', 'Reset'), run: () => send({ cmd: 'reset-settings' }), enabled: appReady },
+    ],
+  },
+  {
+    tab: 'about', title: T('문제 해결', 'Troubleshooting'),
+    items: [
       { type: 'action', name: T('문제 보고', 'Report a problem'), pcOnly: true,
         desc: T('GitHub 이슈 작성 화면을 엽니다. 버전·Windows·WebView2 정보만 미리 채웁니다(대화 내용은 보내지 않음).',
           'Opens a new GitHub issue with only version, Windows and WebView2 info filled in (no conversation content).'),
@@ -2087,28 +2108,68 @@ const RENDER = {
   },
 };
 
+// 설정 팝업의 탭. dot(): 이 탭에 볼 것이 있으면 점을 찍는다
+const SETTINGS_TABS = [
+  { id: 'office', icon: '🏢', name: T('사무실', 'Office') },
+  { id: 'staff', icon: '👥', name: T('직원', 'Employees') },
+  { id: 'notify', icon: '🔔', name: T('알림', 'Notifications') },
+  { id: 'phone', icon: '📱', name: T('휴대폰', 'Phone'), dot: () => !!cloud?.enabled && cloud.state === 'error' },
+  { id: 'general', icon: '🖥️', name: T('일반', 'General') },
+  { id: 'about', icon: 'ℹ️', name: T('정보', 'About'), dot: () => !!appSettings?.update?.newer },
+];
+
 const settingRows = [];
+const settingTabs = new Map();   // 탭 id → { tab, btn, pane }
+let settingsTab = store.get('settingsTab', 'office');   // 마지막에 본 탭
 
 function buildSettings() {
-  for (const sec of SETTINGS) {
-    const items = sec.items.filter((it) => !(REMOTE && it.pcOnly));   // 휴대폰 보기에서는 PC 전용 항목을 뺀다
-    if (!items.length) continue;
-    settingsBody.append(elem('h3', '', sec.title));
-    for (const it of items) {
-      const row = elem('div', 'setting');
-      let desc = null, status = null;
-      if (it.name) {
-        const txt = elem('div', 'txt');
-        desc = elem('div', 'desc');
-        txt.append(elem('div', 'name', it.name), desc);
-        if (it.status) status = txt.appendChild(elem('div', 'status'));
-        row.append(txt);
+  for (const tab of SETTINGS_TABS) {
+    const secs = SETTINGS.filter((sec) => sec.tab === tab.id)
+      .map((sec) => ({ ...sec, items: sec.items.filter((it) => !(REMOTE && it.pcOnly)) }))   // 휴대폰 보기에서는 PC 전용 항목을 뺀다
+      .filter((sec) => sec.items.length);
+    if (!secs.length) continue;   // 휴대폰 보기에서 PC 전용만 있던 탭은 탭째 뺀다
+    const pane = elem('div', 'spane');
+    pane.setAttribute('role', 'tabpanel');
+    for (const sec of secs) {
+      if (sec.title) pane.append(elem('h3', '', sec.title));
+      for (const it of sec.items) {
+        const row = elem('div', 'setting');
+        let desc = null, status = null;
+        if (it.name) {
+          const txt = elem('div', 'txt');
+          desc = elem('div', 'desc');
+          txt.append(elem('div', 'name', it.name), desc);
+          if (it.status) status = txt.appendChild(elem('div', 'status'));
+          row.append(txt);
+        }
+        const refresh = RENDER[it.type](it, row);
+        pane.append(row);
+        settingRows.push({ it, row, desc, status, refresh });
       }
-      const refresh = RENDER[it.type](it, row);
-      settingsBody.append(row);
-      settingRows.push({ it, row, desc, status, refresh });
     }
+    const btn = elem('button', 'stab');
+    btn.setAttribute('role', 'tab');
+    btn.append(elem('span', 'ic', tab.icon), elem('span', 'nm', tab.name), elem('span', 'dot'));
+    btn.addEventListener('click', () => showSettingsTab(tab.id));
+    $('sTabs').append(btn);
+    settingsBody.append(pane);
+    settingTabs.set(tab.id, { tab, btn, pane });
   }
+  if (!settingTabs.has(settingsTab)) settingsTab = settingTabs.keys().next().value;
+  showSettingsTab(settingsTab, false);
+}
+
+function showSettingsTab(id, remember = true) {
+  if (!settingTabs.has(id)) return;
+  settingsTab = id;
+  if (remember) store.set('settingsTab', id);
+  for (const [key, { btn, pane }] of settingTabs) {
+    btn.classList.toggle('on', key === id);
+    btn.setAttribute('aria-selected', String(key === id));
+    pane.hidden = key !== id;
+  }
+  settingsBody.scrollTop = 0;
+  refreshSettings();
 }
 
 /** 버전 "1.1.2" 비교: a 가 더 새것이면 양수 */
@@ -2161,6 +2222,7 @@ function refreshVersionLine() {
 function refreshSettings() {
   if (settingsEl.hidden) return;
   refreshVersionLine();
+  for (const { tab, btn } of settingTabs.values()) btn.querySelector('.dot').hidden = !tab.dot?.();
   for (const { it, row, desc, status, refresh } of settingRows) {
     row.hidden = it.shown ? !it.shown() : false;
     if (row.hidden) continue;
@@ -2174,12 +2236,14 @@ function refreshSettings() {
   }
 }
 
-function setSettingsOpen(open) {
+/** 설정 팝업 열기·닫기. 가운데에 뜨고 뒤(사무실·직원 상세 패널)는 그대로 둔다. tab: 그 탭으로 열기 */
+function setSettingsOpen(open, tab) {
   settingsEl.hidden = !open;
   btnSettings.classList.toggle('on', open);
-  if (open) drawerFolded = false;
-  if (open && selectedId) { selectedId = null; renderPanel(); }   // 서랍은 한 번에 하나만
-  syncDrawers();
+  if (open) {
+    tooltipEl.hidden = true;
+    if (tab) showSettingsTab(tab);
+  }
   refreshSettings();
   // 새 버전 확인은 12시간마다라, 설정을 열 때 10분 넘게 지났으면 한 번 더 물어본다(새 버전 알림을 켜 둔 경우만)
   const u = appSettings?.update;
@@ -2187,15 +2251,15 @@ function setSettingsOpen(open) {
       && Date.now() - (u?.checkedAt || 0) > 10 * 60 * 1000) send({ cmd: 'update-check' });
 }
 
-// ───────────────────────────── 오른쪽 서랍(상세 패널·설정) ─────────────────────────────
-// 한 번에 하나만 열린다. 펼치면 사무실을 서랍 자리를 뺀 폭에 맞춰 다시 배치해 직원을 가리지 않고,
+// ───────────────────────────── 오른쪽 서랍(직원 상세 패널·근무 일지) ─────────────────────────────
+// 한 번에 하나만 열린다(설정은 가운데 팝업이라 서랍이 아니다). 펼치면 사무실을 서랍 자리를 뺀 폭에 맞춰 다시 배치해 직원을 가리지 않고,
 // 접으면 오른쪽 끝에 손잡이만 남기고 사무실이 창 전체를 쓴다. ✕ 는 완전히 닫기.
 
 const DRAWER_W = 330;        // office.css 의 --drawer-w 와 같게
 const DRAWER_MIN_VIEW = 360; // 창이 너무 좁아 이만큼도 안 남으면 비켜 주지 않고 예전처럼 서랍이 위에 덮는다
 let drawerFolded = false;
 
-const drawerOpen = () => !panelEl.hidden || !settingsEl.hidden;
+const drawerOpen = () => !panelEl.hidden;
 
 /** 사무실을 그릴 수 있는 폭(CSS 픽셀). 펼친 서랍 자리는 뺀다. */
 function viewW() {
@@ -2217,19 +2281,17 @@ function syncDrawers() {
   document.body.classList.toggle('drawer-folded', open && drawerFolded);
   drawerTab.hidden = !open;
   if (!open) return;
-  const s = !panelEl.hidden ? data.sessions.find((x) => x.id === selectedId) : null;
+  const s = data.sessions.find((x) => x.id === selectedId);
   drawerTab.querySelector('.arrow').textContent = drawerFolded ? '‹' : '›';
-  drawerTab.querySelector('.lbl').textContent = drawerFolded ? (s ? displayName(s) : selectedId === REPORT_ID && !panelEl.hidden ? T('근무 일지', 'Work log') : T('설정', 'Settings')) : '';
+  drawerTab.querySelector('.lbl').textContent = drawerFolded ? (s ? displayName(s) : selectedId === REPORT_ID ? T('근무 일지', 'Work log') : '') : '';
   drawerTab.title = drawerFolded ? T('펼치기', 'Expand') : T('접기 — 사무실을 넓게 보기', 'Fold — see more of the office');
 }
 
 drawerTab.addEventListener('click', () => setDrawerFolded(!drawerFolded));
 
-btnSettings.addEventListener('click', () => {
-  if (!settingsEl.hidden && drawerFolded) setDrawerFolded(false);   // 접혀 있으면 펼치기
-  else setSettingsOpen(settingsEl.hidden);
-});
+btnSettings.addEventListener('click', () => setSettingsOpen(settingsEl.hidden));
 $('sClose').addEventListener('click', () => setSettingsOpen(false));
+settingsEl.addEventListener('click', (e) => { if (e.target === settingsEl) setSettingsOpen(false); });   // 팝업 바깥(어두운 곳)을 누르면 닫기
 
 function hitTest(px, py) {
   const lx = px / U, ly = py / U;
@@ -2281,9 +2343,9 @@ $('pOpenDir').addEventListener('click', () => { if (selectedId) send({ cmd: 'ope
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (e.target instanceof Element && e.target.matches('input, textarea')) { e.target.blur(); return; }   // 쓰던 칸에서는 Esc가 칸만 빠져나온다
+  if (!settingsEl.hidden) { setSettingsOpen(false); return; }   // 설정 팝업이 떠 있으면 그것만 닫는다
   selectedId = null;
   renderPanel();
-  setSettingsOpen(false);
 });
 
 // 상세 패널의 별명·메모 칸. 글자를 칠 때마다 바로 저장한다(따로 저장 버튼 없음)
@@ -2510,7 +2572,8 @@ async function postInbox(msg) {
 // ── 자리 비움 원격: 휴대폰에서 지시·승인(PC에서 원격 훅을 연결하고 🏃 자리 비움을 켰을 때) ──
 // 상태는 PC가 요약과 함께 올린 remote(PC 앱 화면은 {type:"remote"}):
 //   {installed, away, since, s:{세션:{listen, asks:[{id,text,detail,t}], said:{text,t,state}, reply:{text,t}}}}
-// 휴대폰은 지시(say)·승인(ok)·거절(no)을 postInbox 로 보낸다. 자리 비움은 PC에서만 켤 수 있다.
+// 휴대폰은 지시(say)·승인(ok)·거절(no)·자리 비움(away)을 postInbox 로 보낸다.
+// 자리 비움은 PC가 켠다(버튼·메뉴·화면 잠금·입력 없음). 휴대폰은 PC를 아무도 안 쓸 때(idle)만 켤 수 있다 — 지시를 보내면 저절로.
 const remoteOf =(id) => (remoteState?.installed ? remoteState.s?.[id] || {} : null);
 const answered = new Map();      // 휴대폰에서 답한 승인 요청 → 누른 시각(PC에서 사라질 때까지 버튼을 잠근다)
 const askEls = new Map();        // 승인 요청 → 그 칸(다시 그려도 거절 이유 칸에 쓰던 글이 남게)
@@ -2548,7 +2611,8 @@ function remoteStatus() {
 
 function awayStatus() {
   const st = remoteState;
-  if (!st?.away) return { text: T('자리에 있음 — 승인 창은 PC에 그대로 뜹니다', 'At the PC — permission prompts show on the PC as usual'), tone: 'var(--dim)' };
+  if (!st?.away) return { text: T('자리에 있음 — 승인 창은 PC에 그대로 뜹니다', 'At the PC — permission prompts show on the PC as usual')
+    + (st?.auto ? T(` · 입력이 ${st.auto}분 없으면 저절로 켜져요`, ` · turns on after ${st.auto} min without input`) : ''), tone: 'var(--dim)' };
   return { text: T(`🏃 자리 비움 · ${fmtTime(st.since)}부터`, `🏃 Away since ${fmtTime(st.since)}`), tone: '#7dffa0' };
 }
 
@@ -2557,14 +2621,15 @@ function renderRemote(s) {
   const r = remoteOf(s.id);
   $('pRemote').hidden = !r;
   if (!r) return;
-  const away = !!remoteState.away;
+  const away = !!remoteState.away, idle = !!remoteState.idle, auto = remoteState.auto || 0;
   const asks = r.asks || [];
   $('rStatus').textContent =
     !away ? (REMOTE
-      ? T('PC가 자리 비움이 아니에요 — PC에서 🏃 자리 비움을 켜면(화면을 잠가도) 여기서 지시·승인할 수 있어요.',
-        "The PC isn't set to away — once 🏃 Away is on there (or the screen is locked), you can instruct and approve here.")
-      : T('🏃 자리 비움을 켜면 휴대폰에서 이 직원에게 지시를 보내고 승인 요청에 답할 수 있어요.',
-        'Turn on 🏃 Away to send instructions to this employee and answer approval requests from the phone.'))
+      ? (idle ? T('💤 PC를 안 쓰고 있어요 — 지시를 보내면 자리 비움이 켜지고 바로 전해요.', "💤 Nobody is using the PC — send an instruction and Away turns on as it's delivered.")
+        : T('🖥️ PC를 쓰는 중이에요 — 자리를 뜨고 30초쯤 지나면 여기서 지시를 보낼 수 있어요.',
+          '🖥️ Someone is using the PC — about 30 s after you leave it, you can send instructions here.'))
+      : T(`🏃 자리 비움이면 휴대폰에서 이 직원에게 지시하고 승인할 수 있어요 — ${auto ? `입력이 ${auto}분 없으면 저절로 켜지고, ` : ''}PC를 안 쓸 때 휴대폰에서 지시를 보내도 켜져요.`,
+        `With 🏃 Away on, the phone can instruct and approve — ${auto ? `it turns on after ${auto} min without input, and ` : ''}sending from the phone while the PC is idle turns it on too.`))
     : actOf(s).busy || asks.length ? T('⚙️ 일하는 중 — 보낸 지시는 이 대화에 이어서(지금 일 중간이나 끝나는 대로) 전합니다.',
       '⚙️ Working — an instruction joins this conversation (during the current work or right after it).')
     : r.listen ? T('📡 연결됨 — 보내면 바로 이 대화에서 이어서 일합니다.', '📡 Connected — an instruction continues this conversation right away.')
@@ -2583,8 +2648,11 @@ function renderRemote(s) {
   }
   for (const [id, at] of answered) if (Date.now() - at > 120000) answered.delete(id);
 
-  // 지시 보내기(휴대폰에서, 자리 비움일 때)
-  $('rSayWrap').hidden = !REMOTE || !away;
+  // 승인까지 휴대폰으로 받고 싶을 때(지시를 보내기 전에) — PC를 아무도 안 쓸 때만
+  $('rAwayNow').hidden = !REMOTE || away || !idle;
+
+  // 지시 보내기(휴대폰에서, 자리 비움이거나 PC를 아무도 안 쓸 때 — 보내면 PC가 자리 비움을 켠다)
+  $('rSayWrap').hidden = !REMOTE || !(away || idle);
   if (sayFor !== s.id) { sayFor = s.id; sayEl.value = ''; }
   if (remoteNote && r.said && r.said.t >= remoteNote.at - 5000 && remoteNote.sid === s.id) remoteNote = null;   // PC가 처리했다
   $('rSaid').textContent = remoteNote && remoteNote.sid === s.id && Date.now() - remoteNote.at < 30000 ? remoteNote.text : saidText(r.said);
@@ -2602,8 +2670,17 @@ function saidText(d) {
   const when = fmtTime(d.t);
   return d.state === 'delivered' ? T(`✅ 전했어요 · ${when}`, `✅ Delivered · ${when}`)
     : d.state === 'queued' ? T(`⏳ 기다리는 중 · ${when} — 일을 마치면 바로 전해요`, `⏳ Waiting · ${when} — delivered when the current work ends`)
-    : T(`⚠️ 전하지 못했어요 · ${when} — PC가 자리 비움이 아니었어요`, `⚠️ Not delivered · ${when} — the PC wasn't set to away`);
+    : T(`⚠️ 전하지 못했어요 · ${when} — PC를 쓰는 중이었어요`, `⚠️ Not delivered · ${when} — someone was using the PC`);
 }
+
+$('rAwayNow').addEventListener('click', async () => {
+  if (!remoteKey) return;
+  $('rAwayNow').disabled = true;
+  const ok = await postInbox({ k: 'away' });
+  remoteNote = { sid: selectedId, at: Date.now(), text: ok ? T('🏃 자리 비움을 켜 달라고 보냈어요', '🏃 Asked the PC to go away') : lastPostError };
+  setTimeout(() => { $('rAwayNow').disabled = false; }, 5000);
+  renderPanel();
+});
 
 function makeAsk(sid, a) {
   const el = elem('div', 'rask');
@@ -2678,8 +2755,8 @@ function followPcLanguage(lang) {
 
 async function startRemote() {
   if (!remoteLink) {
-    remoteError = T('이 기기에 연결 정보가 없어요 — PC의 Claude Office ⚙️ → 휴대폰에서 보기 → QR 보기를 찍어 주세요',
-      'No connection info on this device — scan the QR from Claude Office on your PC (⚙️ → Phone view → Show QR)');
+    remoteError = T('이 기기에 연결 정보가 없어요 — PC의 Claude Office ⚙️ → 📱 휴대폰 → QR 보기를 찍어 주세요',
+      'No connection info on this device — scan the QR from Claude Office on your PC (⚙️ → 📱 Phone → Show QR)');
     refreshHud();
     return;
   }
@@ -2820,7 +2897,7 @@ function startDemo() {
 buildSettings();
 refreshButtons();
 refreshHud();
-if (selectedId === 'settings') setSettingsOpen(true);
+if (selectedId === 'settings') setSettingsOpen(true, params.get('tab'));   // 화면 점검용: ?select=settings&tab=phone
 window.addEventListener('resize', () => { layoutKey = ''; });
 
 if (REMOTE) {
