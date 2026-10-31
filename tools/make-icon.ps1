@@ -1,8 +1,9 @@
-﻿# PNG 한 장(정사각형, 256px 권장)으로 여러 크기가 든 Windows 아이콘(.ico)을 만든다.
+﻿# PNG 한 장으로 여러 크기가 든 Windows 아이콘(.ico)을 만든다. 정사각형이 아니면 비율을 지켜 가운데에 넣는다.
 # 크기마다 PNG로 담는다(Windows Vista 이후 지원) — 작업표시줄·탐색기·제목 표시줄이 알맞은 크기를 골라 쓴다.
-# 예) powershell -File tools\make-icon.ps1 -Png src\ClaudeOffice\Assets\office_building_3d.png -Out src\ClaudeOffice\Assets\office.ico
+# -Pixel: 픽셀아트 — 정수 배로 키울 수 있는 크기는 점을 그대로 키우고(흐려지지 않게), 원본보다 작은 크기만 부드럽게 줄인다.
+# 예) powershell -File tools\make-icon.ps1 -Png src\ClaudeOffice\Assets\office_pixel.png -Out src\ClaudeOffice\Assets\office.ico -Pixel
 #Requires -Version 5.1
-param([string]$Png, [string]$Out, [int[]]$Sizes = @(16, 20, 24, 32, 40, 48, 64, 96, 128, 256))
+param([string]$Png, [string]$Out, [int[]]$Sizes = @(16, 20, 24, 32, 40, 48, 64, 96, 128, 256), [switch]$Pixel)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
@@ -14,11 +15,21 @@ $frames = @()
 foreach ($s in $Sizes) {
   $bmp = New-Object System.Drawing.Bitmap $s, $s, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
   $g = [System.Drawing.Graphics]::FromImage($bmp)
-  $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-  $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
   $g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
   $g.Clear([System.Drawing.Color]::Transparent)
-  $g.DrawImage($src, (New-Object System.Drawing.Rectangle 0, 0, $s, $s), 0, 0, $src.Width, $src.Height, [System.Drawing.GraphicsUnit]::Pixel, $attr)
+  $fit = [math]::Min($s / $src.Width, $s / $src.Height)
+  if ($Pixel -and $fit -ge 1) {
+    $k = [math]::Floor($fit)   # 정수 배: 점 하나가 k×k 로 고르게
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
+    $dw = $src.Width * $k; $dh = $src.Height * $k
+  } else {
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $dw = [int][math]::Round($src.Width * $fit); $dh = [int][math]::Round($src.Height * $fit)
+  }
+  $g.DrawImage($src, (New-Object System.Drawing.Rectangle ([int][math]::Floor(($s - $dw) / 2)), ([int][math]::Floor(($s - $dh) / 2)), $dw, $dh),
+               0, 0, $src.Width, $src.Height, [System.Drawing.GraphicsUnit]::Pixel, $attr)
   $g.Dispose()
   $ms = New-Object System.IO.MemoryStream
   $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)

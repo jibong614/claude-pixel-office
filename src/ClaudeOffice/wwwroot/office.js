@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.1.5';
+const PAGE_VERSION = '1.1.8';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1358,33 +1358,35 @@ btnToday.addEventListener('click', () => {   // 📊 오늘의 근무 일지 —
 btnPin.addEventListener('click', () => setPinned(!pinned));
 btnHook.addEventListener('click', toggleHooks);
 
+// Claude Code 연결 = 상태 알림(data.hooks)과 휴대폰 지시·승인(remoteState.installed)을 한 번에 넣고 뺀다(앱이 확인 창을 띄운다)
+const claudeConnected = () => !!data.hooks && data.hooks.state !== 'off' && !!remoteState?.installed;
+
 function hookStatus() {
   const h = data.hooks;
   if (!h) return { text: T('확인 중…', 'Checking…'), tone: 'var(--dim)' };
-  if (h.state === 'on') return { text: T('🔔 연결됨', '🔔 Connected') + (h.last ? T(` · 마지막 수신 ${fmtTime(h.last)}`, ` · last received ${fmtTime(h.last)}`) : T(' · 아직 받은 알림 없음', ' · nothing received yet')), tone: '#7dffa0' };
   if (h.state === 'error') return { text: '⚠️ ' + (h.error || T('알림을 받지 못하는 중', 'Not receiving')), tone: '#ffb347' };
-  return { text: T('🔕 연결 안 됨 — 승인 대기를 추정만 합니다', '🔕 Not connected — approval waits are only guessed'), tone: 'var(--dim)' };
+  if (h.state === 'off') return { text: T('🔕 연결 안 됨 — Claude가 승인을 기다리는지 짐작만 해요', '🔕 Not connected — whether Claude is waiting is only guessed'), tone: 'var(--dim)' };
+  if (!remoteState?.installed) return { text: T('⚠️ 휴대폰 지시·승인까지 받으려면 [다시 연결]', '⚠️ Click [Reconnect] to also take phone instructions and approvals'), tone: '#ffb347' };
+  return { text: T('🔔 연결됨', '🔔 Connected') + (h.last ? T(` · 마지막 알림 ${fmtTime(h.last)}`, ` · last notice ${fmtTime(h.last)}`) : T(' · 아직 받은 알림 없음', ' · nothing received yet')), tone: '#7dffa0' };
 }
 
+/** 상단 🔕 버튼: 연결이 안 됐거나 덜 됐을 때만 보인다(누르면 연결). 다 연결되면 숨긴다. */
 function refreshHookButton() {
   const h = data.hooks;
-  btnHook.hidden = !h || REMOTE;   // 훅 연결은 PC에서만
+  btnHook.hidden = !h || REMOTE || (h.state === 'on' && !!remoteState?.installed);   // 연결은 PC에서만
   if (btnHook.hidden) return;
   btnHook.classList.toggle('off', h.state === 'off');
   btnHook.classList.toggle('warn', h.state === 'error');
-  btnHook.textContent = h.state === 'on' ? '🔔' : h.state === 'error' ? '⚠️' : '🔕';
-  btnHook.title = hookStatus().text + (h.state === 'off' ? T('\n클릭: Claude Code 설정에 훅 연결', '\nClick: add hooks to the Claude Code settings') : T('\n클릭: 연결 해제', '\nClick: disconnect'));
+  btnHook.textContent = h.state === 'error' ? '⚠️' : '🔕';
+  btnHook.title = hookStatus().text + T('\n클릭: Claude Code와 연결', '\nClick: connect to Claude Code');
 }
 
-// ───────────────────────────── 휴대폰 보기(앱 쪽 설정) ─────────────────────────────
-// 앱(C#)이 {type:"cloud"} 로 상태를 알려 준다: configured, enabled, state(off·setup·starting·on·error), error, notice, last, url(QR 주소)
+// ───────────────────────────── 휴대폰 연결(앱 쪽 설정) ─────────────────────────────
+// 앱(C#)이 {type:"cloud"} 로 상태를 알려 준다: configured, enabled, state(off·starting·on·error), error, notice, last, local, phoneEdit, url(QR 주소)
+// 휴대폰 연결은 무료 서버(모두가 함께 쓰는 Firebase — 내 PC·휴대폰만 아는 키로 잠가서 보내므로 서버도 남도 못 읽음)를 거친다. 따로 설정할 것은 없다.
 
 let cloud = null;
-let cloudWizardOpen = false;   // 설정 도우미(단계별 안내 + 점검)
 let cloudQrShown = false;      // QR에는 해독 키가 들어 있어 누를 때만 보인다
-let cloudSetupError = '';
-let cloudCheck = null;         // 마지막 점검 결과 {at, steps:{project,db,rules,auth,page}, rules, error}
-let cloudCheckAskedAt = 0;
 
 function onCloud(msg) {
   cloud = msg;
@@ -1406,49 +1408,14 @@ const setAppSetting = (key, value) => send({ cmd: 'app-setting', key, value });
 const appReady = () => !DEMO && !!appSettings;
 const openUrl = (url) => send({ cmd: 'open-url', url });   // 앱이 바깥 브라우저로 연다(정해 둔 주소만)
 
-function onCloudSetup(msg) {
-  cloudSetupError = msg.error || '';
-  refreshSettings();
-}
-
-function onCloudCheck(msg) {
-  cloudCheck = msg;
-  refreshSettings();
-}
-
-/** 설정 도우미 점검을 부탁한다(앱이 데이터베이스·규칙·로그인·페이지를 확인해 {type:"cloud-check"} 로 알려 줌). */
-function requestCloudCheck(force) {
-  if (DEMO || (!force && Date.now() - cloudCheckAskedAt < 4000)) return;
-  cloudCheckAskedAt = Date.now();
-  send({ cmd: 'cloud-check' });
-}
-
-const CHECK_KEYS = ['db', 'rules', 'auth', 'page'];
-const cloudAllOk = () => CHECK_KEYS.every((k) => cloudCheck?.steps?.[k]?.s === 'ok');
-
-// 도우미를 열어 둔 동안 5초마다 다시 확인 — 콘솔에서 한 단계를 마치고 돌아오면 저절로 ✓ 가 된다
-setInterval(() => {
-  if (cloudWizardOpen && !settingsEl.hidden && cloud?.hasProject && !cloudAllOk()) requestCloudCheck();
-}, 5000);
-
-function setCloudWizard(open) {
-  cloudWizardOpen = open;
-  cloudSetupError = '';
-  if (open && cloud?.hasProject) requestCloudCheck(true);
-  refreshSettings();
-}
-
 function cloudStatus() {
   const c = cloud;
   if (!c) return { text: T('확인 중…', 'Checking…'), tone: 'var(--dim)' };
-  if (!c.configured) return {
-    text: c.hasProject ? T('데이터베이스를 아직 찾지 못했어요 — 설정 도우미 3단계', 'Database not found yet — step 3 of the setup wizard')
-      : T('설정 안 됨 — [설정 도우미]를 눌러 단계별로 따라 하세요(10분쯤)', 'Not set up — click [Setup wizard] and follow the steps (about 10 min)'),
-    tone: 'var(--dim)' };
-  if (!c.enabled) return { text: T('꺼짐', 'Off'), tone: 'var(--dim)' };
-  if (c.state === 'error') return { text: '⚠️ ' + (c.error || T('올리지 못하는 중', 'Not uploading')), tone: '#ffb347' };
-  if (c.state === 'on') return { text: T(`📡 올리는 중 · 마지막 ${fmtTime(c.last)}`, `📡 Uploading · last ${fmtTime(c.last)}`) + (c.notice ? ` · ${c.notice}` : ''), tone: '#7dffa0' };
-  return { text: T('연결 중…', 'Connecting…'), tone: 'var(--dim)' };
+  if (!c.enabled) return c.notice ? { text: c.notice, tone: '#ffb347' } : { text: T('꺼짐', 'Off'), tone: 'var(--dim)' };
+  const note = c.notice ? ` · ${c.notice}` : '';   // 예: 무료 서버로 옮겼으니 QR을 다시 찍으라는 안내
+  if (c.state === 'error') return { text: '⚠️ ' + (c.error || T('보내지 못하는 중', 'Not sending')) + note, tone: '#ffb347' };
+  if (c.state === 'on') return { text: T(`✅ 연결됨 · 마지막 ${fmtTime(c.last)}`, `✅ Connected · last ${fmtTime(c.last)}`) + note, tone: '#7dffa0' };
+  return { text: T('연결 중…', 'Connecting…') + note, tone: 'var(--dim)' };
 }
 
 const DONE_CHOICES = [[5, T('5분', '5 min')], [10, T('10분', '10 min')], [30, T('30분', '30 min')], [60, T('1시간', '1 hour')]];
@@ -1468,69 +1435,6 @@ function updateStatus() {
   return { text: u.checkedAt ? T('아직 공개된 버전이 없어요', 'No release yet') : T('아직 확인 전(켠 뒤 30초쯤)', 'Not checked yet (about 30 s after start)'), tone: 'var(--dim)' };
 }
 
-// ── 휴대폰 보기 설정 도우미: 단계마다 할 일·Firebase 콘솔 바로가기·앱이 자동으로 확인한 결과 ──
-const FB_CONSOLE = 'https://console.firebase.google.com';
-const fbProject = () => (cloud?.project ? `${FB_CONSOLE}/project/${encodeURIComponent(cloud.project)}` : FB_CONSOLE);
-const dbInstance = () => { try { return new URL(cloud.db).hostname.split('.')[0]; } catch { return null; } };
-
-/** 단계 상태 {s: ok|fail|warn|wait, text}. 앱의 점검 결과(cloudCheck)에서 읽는다. */
-function wizCheck(key) {
-  if (!cloud?.hasProject) return { s: 'wait', text: '' };
-  const r = cloudCheck?.steps?.[key];
-  if (r) return { s: r.s === 'skip' ? 'wait' : r.s, text: r.text };
-  return { s: 'wait', text: cloudCheck ? '' : T('확인 중…', 'Checking…') };   // 앞 단계에서 멈춰 아직 못 본 단계는 빈칸
-}
-
-async function copyRules(e) {
-  const btn = e.currentTarget;
-  if (!cloudCheck?.rules) { requestCloudCheck(true); return; }
-  try {
-    await navigator.clipboard.writeText(cloudCheck.rules);
-    btn.textContent = T('복사됨 ✓', 'Copied ✓');
-  } catch {
-    btn.textContent = T('아래 글을 직접 복사', 'Copy the text below');
-  }
-  setTimeout(() => { btn.textContent = T('규칙 복사', 'Copy rules'); }, 1800);
-}
-
-const WIZ = [
-  { title: T('Firebase 프로젝트 만들기', 'Create a Firebase project'),
-    desc: T('구글 계정으로 Firebase 콘솔에 들어가 [프로젝트 만들기]. 이름은 아무거나(예: my-claude-office), Google 애널리틱스는 꺼도 됩니다. 요금제는 무료(Spark) 그대로 — 결제 정보는 필요 없습니다.',
-      'Open the Firebase console with your Google account and click [Create a project]. Any name works (e.g. my-claude-office) and Google Analytics can be off. Keep the free (Spark) plan — no billing info needed.'),
-    buttons: () => [[T('Firebase 콘솔 열기', 'Open Firebase console'), () => openUrl(FB_CONSOLE + '/')]],
-    state: () => (cloud?.hasProject ? { s: 'ok', text: T('만들었어요', 'Created') } : { s: 'wait', text: '' }) },
-  { title: T('웹 앱 등록 → 설정 붙여넣기', 'Register a web app → paste the config'), form: true,
-    desc: T('프로젝트 첫 화면에서 웹(</>) 버튼 → 앱 닉네임(아무거나) → [앱 등록] (Hosting 체크는 안 해도 됩니다). 나오는 firebaseConfig 블록을 통째로 복사해 아래에 붙여 넣고 [저장]. 이미 등록했다면 ⚙️ 프로젝트 설정 → 일반 → 내 앱에 있습니다.',
-      'On the project home, click the web (</>) button → any app nickname → [Register app] (no need to check Hosting). Copy the whole firebaseConfig block it shows, paste it below and click [Save]. If you already registered one, it is under ⚙️ Project settings → General → Your apps.'),
-    buttons: () => [[T('프로젝트 설정 열기', 'Open project settings'), () => openUrl(cloud?.project ? fbProject() + '/settings/general' : FB_CONSOLE + '/')]],
-    state: () => (cloud?.hasProject ? { s: 'ok', text: cloud.project ? T(`프로젝트 ${cloud.project}`, `Project ${cloud.project}`) : T('로컬 시험 서버', 'Local test server') } : { s: 'wait', text: '' }) },
-  { title: T('Realtime Database 만들기', 'Create a Realtime Database'),
-    desc: T('왼쪽 메뉴의 Realtime Database(데이터베이스 또는 빌드 아래) → [데이터베이스 만들기]. 위치는 가까운 싱가포르(asia-southeast1), 보안 규칙은 "잠금 모드로 시작". 만들면 여기서 주소를 저절로 찾습니다.',
-      'Left menu → Realtime Database (under Databases or Build) → [Create Database]. Pick a location near you and "Start in locked mode" for the security rules. Once it exists, the app finds its address by itself.'),
-    buttons: () => [[T('Realtime Database 열기', 'Open Realtime Database'), () => openUrl(fbProject() + '/database')]],
-    state: () => wizCheck('db') },
-  { title: T('보안 규칙 붙여넣기', 'Paste the security rules'), rules: true,
-    desc: T('Realtime Database 의 [규칙] 탭 내용을 모두 지우고 [규칙 복사]로 복사한 것을 붙여 넣은 뒤 [게시]. PC는 로그인한 자기 칸에만 쓰고, 휴대폰은 암호문만 읽게 하는 규칙입니다.',
-      'In the [Rules] tab of Realtime Database, delete everything, paste what [Copy rules] copied and click [Publish]. These rules let the PC write only to its own signed-in slot and the phone read only ciphertext.'),
-    buttons: () => [[T('규칙 복사', 'Copy rules'), copyRules], [T('규칙 화면 열기', 'Open rules'), () => openUrl(dbInstance() ? `${fbProject()}/database/${dbInstance()}/rules` : fbProject() + '/database')]],
-    state: () => wizCheck('rules') },
-  { title: T('익명 로그인 켜기', 'Turn on anonymous sign-in'),
-    desc: T('왼쪽 메뉴 Authentication(보안 또는 빌드 아래) → [시작하기] → 로그인 방법 → 익명 → 사용 설정 → [저장]. PC의 Claude Office만 이것으로 로그인합니다(휴대폰은 로그인 없음). "익명 계정 자동 정리"는 켜지 마세요 — 30일마다 QR을 다시 찍어야 합니다.',
-      'Left menu → Authentication (under Security or Build) → [Get started] → Sign-in method → Anonymous → Enable → [Save]. Only Claude Office on the PC signs in this way (the phone needs no sign-in). Leave automatic clean-up of anonymous accounts off — otherwise you must rescan the QR every 30 days.'),
-    buttons: () => [[T('Authentication 열기', 'Open Authentication'), () => openUrl(fbProject() + '/authentication/providers')]],
-    state: () => wizCheck('auth') },
-  { title: T('켜고 휴대폰으로 QR 찍기', 'Turn on and scan the QR'),
-    desc: T('[켜기] → 아래 [QR 보기] → 휴대폰 카메라로 찍으면 열립니다. 크롬 메뉴 → [앱 설치](아이폰은 공유 → 홈 화면에 추가)를 하면 주소창 없이 앱처럼 씁니다.',
-      '[Turn on] → [Show QR] below → scan it with your phone camera. Chrome menu → [Install app] (iPhone: Share → Add to Home Screen) makes it work like an app without the address bar.'),
-    buttons: () => [[cloud?.enabled ? T('켜져 있어요', 'On') : T('켜기', 'Turn on'), () => send({ cmd: 'cloud-enable', value: true }), !cloud?.configured || !!cloud?.enabled]],
-    state: () => {
-      if (cloud?.enabled && cloud.state === 'on') return { s: 'ok', text: T('올리는 중 — 아래 [QR 보기]', 'Uploading — [Show QR] below') };
-      if (cloud?.enabled && cloud.state === 'error') return { s: 'fail', text: cloud.error || T('올리지 못하는 중', 'Not uploading') };
-      const page = wizCheck('page');
-      return page.s === 'fail' ? page : { s: 'wait', text: cloud?.configured ? T('[켜기]를 눌러 주세요', 'Click [Turn on]') : '' };
-    } },
-];
-
 // ───────────────────────────── 설정 패널 ─────────────────────────────
 // 항목을 늘릴 때는 SETTINGS 에 한 줄 추가하면 화면은 저절로 그려진다.
 // 설정은 가운데 팝업 — 묶음(section)마다 tab(SETTINGS_TABS 의 id)과 소제목(title, 없으면 소제목 없이)을 정한다. 같은 탭의 묶음은 SETTINGS 순서대로.
@@ -1541,7 +1445,7 @@ const WIZ = [
 //   text   : get() / set(v) / placeholder / max   — 글 입력칸(치는 대로 저장)
 //   picker :                                      — 직원 체크 목록(직접 고르기)
 //   hours  : getStart/setStart/getEnd/setEnd      — 시작~끝 시각(방해 금지 시간대)
-//   cloudwizard / cloudqr :                       — 휴대폰 보기 설정 도우미(WIZ 단계) / QR
+//   cloudqr:                                      — 휴대폰 연결 QR(주소 복사·키 새로 만들기)
 //   공통   : name, desc(글 또는 함수), shown()이 false 면 숨김, enabled()가 false 면 잠금(toggle·action)
 //            pcOnly: true — PC 앱에서만 바꿀 수 있는 것(휴대폰 보기에서는 빼고 그린다)
 // 화면에서만 쓰는 값은 store(localStorage)에 두고, 앱(C#)이 알아야 하는 값은 host.postMessage 로 넘긴다.
@@ -1554,7 +1458,7 @@ const SETTINGS = [
         placeholder: DEFAULT_OFFICE, max: 30, get: () => officeName, set: setOfficeName },
       // 언어 이름은 두 언어로 — 읽지 못하는 언어로 켜져 있어도 찾을 수 있게
       { type: 'choice', name: '화면 언어 / Language', pcOnly: true,
-        desc: T('화면·말풍선·알림을 이 언어로 보여 줍니다. 휴대폰 보기도 PC를 따라갑니다.', 'Screen, speech bubbles and notifications use this language. Phone view follows the PC.'),
+        desc: T('화면·말풍선·알림을 이 언어로 보여 줍니다. 휴대폰 화면도 PC를 따라갑니다.', 'Screen, speech bubbles and notifications use this language. The phone follows the PC.'),
         options: [['ko', '한국어'], ['en', 'English']], get: () => LANG, set: setLanguage },
     ],
   },
@@ -1608,20 +1512,20 @@ const SETTINGS = [
       { type: 'toggle', name: T('항상 위에 표시', 'Always on top'), desc: T('다른 창에 가려지지 않게 맨 위에 띄웁니다.', 'Keeps the window above other windows.'), pcOnly: true,
         get: () => pinned, set: setPinned },
       { type: 'toggle', name: T('프로그램 시작 시 작업표시줄로 이동', 'Start hidden in the tray'), pcOnly: true,
-        desc: T('켜 두면 다음 실행부터 창을 띄우지 않고 작업표시줄 오른쪽 알림 영역(🏢)에 숨긴 채로 켜집니다. 아이콘을 누르면 창이 열립니다. 감시와 휴대폰 보기는 그대로 돌아갑니다.',
-          'From the next launch, starts hidden in the notification area (🏢) without opening the window. Click the icon to open it. Monitoring and phone view keep running.'),
+        desc: T('켜 두면 다음 실행부터 창을 띄우지 않고 작업표시줄 오른쪽 알림 영역(🧑‍💻)에 숨긴 채로 켜집니다. 아이콘을 누르면 창이 열립니다. 감시와 휴대폰 보기는 그대로 돌아갑니다.',
+          'From the next launch, starts hidden in the notification area (🧑‍💻) without opening the window. Click the icon to open it. Monitoring and the phone connection keep running.'),
         get: () => !!appSettings?.startMinimized,
         set: (v) => setAppSetting('startMinimized', v),
         enabled: () => !DEMO && !!appSettings },
       { type: 'toggle', name: T('닫기(✕)를 눌러도 끄지 않고 숨기기', 'Close (✕) hides instead of quitting'), pcOnly: true,
-        desc: T('✕는 창만 숨기고 알림 영역(🏢)에서 계속 돌아갑니다(휴대폰 보기도 계속). 완전히 끝내려면 🏢 아이콘 오른쪽 클릭 → 끝내기.',
-          '✕ only hides the window and the app keeps running in the notification area (🏢), phone view too. To quit, right-click the 🏢 icon → Exit.'),
+        desc: T('✕는 창만 숨기고 알림 영역(🧑‍💻)에서 계속 돌아갑니다(휴대폰 연결도 계속). 완전히 끝내려면 🧑‍💻 아이콘 오른쪽 클릭 → 끝내기.',
+          '✕ only hides the window and the app keeps running in the notification area (🧑‍💻), phone connection too. To quit, right-click the 🧑‍💻 icon → Exit.'),
         get: () => !!appSettings?.closeToTray,
         set: (v) => setAppSetting('closeToTray', v),
         enabled: () => !DEMO && !!appSettings },
       { type: 'toggle', name: T('Windows 시작할 때 자동 실행', 'Run at Windows startup'), pcOnly: true,
-        desc: () => T('PC에 로그인하면 알림 영역(🏢)에 숨긴 채로 자동으로 켜집니다(이 사용자 계정의 시작 프로그램에 등록).',
-          "Starts hidden in the notification area (🏢) when you sign in to Windows (registered in this user's startup apps).")
+        desc: () => T('PC에 로그인하면 알림 영역(🧑‍💻)에 숨긴 채로 자동으로 켜집니다(이 사용자 계정의 시작 프로그램에 등록).',
+          "Starts hidden in the notification area (🧑‍💻) when you sign in to Windows (registered in this user's startup apps).")
           + (appSettings?.autoStartElsewhere ? T(' ⚠️ 지금은 다른 위치의 Claude Office가 등록돼 있어요 — 껐다 켜면 이 프로그램으로 바뀝니다.',
             ' ⚠️ A Claude Office in another folder is registered now — turn this off and on to switch to this one.') : ''),
         get: () => !!appSettings?.autoStart,
@@ -1657,67 +1561,53 @@ const SETTINGS = [
     ],
   },
   {
-    tab: 'general', title: T('Claude Code 연동', 'Claude Code integration'),
+    tab: 'general', title: T('Claude Code 연결', 'Claude Code connection'),
     items: [
-      { type: 'action', name: T('훅 연결', 'Hooks'), pcOnly: true,
-        desc: T('승인 창·입력 요청·세션 종료를 Claude Code 훅으로 받아 정확히 표시합니다. 연결·해제할 때 ~/.claude/settings.json 을 고치므로 확인 창이 먼저 뜹니다.',
-          'Gets permission prompts, input requests and session ends from Claude Code hooks for an exact status. Connecting or removing edits ~/.claude/settings.json, so you confirm first.'),
-        label: () => (data.hooks?.state === 'off' ? T('연결하기', 'Connect') : T('연결 해제', 'Disconnect')),
-        enabled: () => !DEMO && !!data.hooks,   // 견본 화면에서는 바꿀 수 없다(앱이 --demo 면 훅 수신기도 안 켠다)
+      { type: 'action', name: T('Claude Code 연결', 'Connect to Claude Code'), pcOnly: true,
+        desc: T('Claude가 승인을 기다리거나 질문하면 직원이 바로 손을 들고, 세션을 닫으면 바로 퇴근합니다. 휴대폰 지시·승인도 이 연결로 받아요. Claude Code 설정 파일에 몇 줄을 넣으므로 확인 창이 먼저 뜹니다(끊으면 그 줄만 뺍니다).',
+          'Employees raise a hand the moment Claude waits for an approval or asks a question, and go home as soon as a session closes. Phone instructions and approvals come through this too. It adds a few lines to the Claude Code settings file, so you confirm first (disconnecting removes only those lines).'),
+        label: () => (claudeConnected() ? T('연결 끊기', 'Disconnect') : data.hooks && data.hooks.state !== 'off' ? T('다시 연결', 'Reconnect') : T('연결하기', 'Connect')),
+        enabled: () => !DEMO && !!data.hooks,   // 견본 화면에서는 바꿀 수 없다(앱이 --demo 면 알림을 받지도 않는다)
         run: toggleHooks, status: hookStatus },
     ],
   },
   {
-    tab: 'phone', title: T('휴대폰에서 보기', 'Phone view'),
+    tab: 'phone',
     items: [
-      { type: 'action', name: T('휴대폰에서 보기', 'Phone view'), pcOnly: true,
-        desc: T('화면용 요약만 PC에서 암호화해 내 구글 Firebase(무료)에 올리고, 휴대폰은 QR로 열어 봅니다(보기 전용, 로그인 없음, 밖에서도). 대화 원본은 올리지 않습니다.',
-          'Only a screen summary is encrypted on the PC and uploaded to your own Google Firebase (free); your phone opens it from a QR code (view only, no sign-in, works anywhere). Conversations are never uploaded.'),
-        label: () => (!cloud?.configured ? (cloudWizardOpen ? T('도우미 닫기', 'Close wizard') : T('설정 도우미', 'Setup wizard')) : cloud.enabled ? T('끄기', 'Turn off') : T('켜기', 'Turn on')),
-        enabled: () => !DEMO && !!cloud,   // 견본 화면에서는 쓸 수 없다
-        run: () => {
-          if (!cloud.configured) setCloudWizard(!cloudWizardOpen);
-          else send({ cmd: 'cloud-enable', value: !cloud.enabled });
-        },
+      { type: 'action', name: T('휴대폰 연결', 'Phone connection'), pcOnly: true,
+        desc: T('휴대폰으로 사무실을 보고, 자리를 비웠을 때 지시·승인도 합니다. 켜고 QR만 찍으면 끝 — 로그인도 설정도 없어요. 🔒 무료 서버(화면: GitHub · 전달: Google Firebase)를 거치지만 내 PC와 내 휴대폰만 가진 열쇠로 잠가 보내서 서버도 다른 사람도 내용을 볼 수 없어요. 대화 원본은 보내지 않아요.',
+          "See the office on your phone, and instruct and approve while you're away. Turn it on and scan the QR — no sign-in, no setup. 🔒 It goes through a free server (page: GitHub · delivery: Google Firebase), but it's locked with a key only your PC and your phone have, so neither the server nor anyone else can read it. Conversations are never sent."),
+        label: () => (cloud?.enabled ? T('끄기', 'Turn off') : T('켜기', 'Turn on')),
+        enabled: () => !DEMO && !!cloud?.configured,   // 견본 화면에서는 쓸 수 없다
+        run: () => send({ cmd: 'cloud-enable', value: !cloud.enabled }),
         status: cloudStatus },
-      { type: 'cloudwizard', pcOnly: true, shown: () => !DEMO && cloudWizardOpen },
-      { type: 'cloudqr', pcOnly: true, shown: () => !DEMO && !!cloud?.configured },
-      { type: 'choice', name: T('휴대폰 페이지', 'Phone page'), pcOnly: true, shown: () => !DEMO && !!cloud?.configured && cloud.page !== 'local',
-        desc: () => (cloud?.page === 'own'
-          ? T(`내 Firebase Hosting(https://${cloud.project}.web.app)에 tools\\deploy-mobile.ps1 로 올려 둔 페이지를 씁니다.`,
-            `Uses the page you uploaded to your Firebase Hosting (https://${cloud.project}.web.app) with tools\\deploy-mobile.ps1.`)
-          : T('모두가 같이 쓰는 페이지(GitHub)라 따로 올릴 것이 없습니다. 데이터는 내 Firebase에만, 해독 키는 휴대폰에만 있습니다.',
-            'A shared page (GitHub), so there is nothing to upload. Data stays in your Firebase and the key only on your phone.'))
-          + T(' 바꾸면 휴대폰에서 QR을 다시 찍어야 합니다.', ' Changing it means scanning the QR again.'),
-        options: [['public', T('공용 페이지', 'Shared page')], ['own', T('내 Firebase Hosting', 'My Firebase Hosting')]],
-        get: () => cloud?.page, set: (v) => { if (v !== cloud.page) send({ cmd: 'cloud-page', value: v }); } },
-      { type: 'toggle', name: T('휴대폰에서 별명·메모 고치기', 'Edit nicknames & memos on the phone'), pcOnly: true, shown: () => !DEMO && !!cloud?.configured,
-        desc: T('휴대폰의 직원 상세에서 고친 별명·메모를 PC가 몇 초 안에 받아 반영합니다(같은 키로 암호화). 1.0.9 전에 규칙을 붙여 넣었다면 [점검·설정 도우미] 4단계의 규칙을 새로 붙여 넣어야 합니다.',
-          "Nicknames and memos edited in the phone's employee details reach the PC within seconds (encrypted with the same key). If you pasted the rules before 1.0.9, paste the new rules from step 4 of [Check & setup wizard]."),
-        get: () => !!cloud?.phoneEdit, set: (v) => send({ cmd: 'cloud-phone-edit', value: v }), enabled: () => !DEMO && !!cloud },
+      { type: 'cloudqr', pcOnly: true, shown: () => !DEMO && !!cloud?.enabled },
     ],
   },
   {
-    tab: 'phone', title: T('자리 비움 원격', 'Remote while away'),
+    // 자리 비움(휴대폰의 지시·승인을 받는 상태)은 손으로 켜고 끄지 않는다 — 입력 없음·화면 잠금·휴대폰에서 켜지고, 돌아와 입력하면 꺼진다
+    tab: 'phone', title: T('자리를 비웠을 때', "While you're away"),
     items: [
-      { type: 'action', name: T('휴대폰에서 지시·승인', 'Instruct & approve from the phone'), pcOnly: true,
-        desc: T('자리를 비운 동안 휴대폰 보기에서 직원에게 지시를 보내고(같은 대화에서 이어서 일함) 승인 요청에 승인·거절로 답합니다. Claude 로그인은 이 PC에만 있으면 됩니다. 연결하면 ~/.claude/settings.json 에 훅 3개를 넣으므로 확인 창이 먼저 뜹니다. 휴대폰 보기가 켜져 있어야 합니다.',
-          'While you are away, send instructions to an employee from phone view (it continues the same conversation) and answer approval requests. Only this PC needs to be signed in to Claude. Connecting adds 3 hooks to ~/.claude/settings.json, so you confirm first. Phone view must be on.'),
-        label: () => (remoteState?.installed ? T('연결 해제', 'Disconnect') : T('연결하기', 'Connect')),
-        enabled: () => !DEMO && !!remoteState, run: () => send({ cmd: 'remote-hooks' }), status: remoteStatus },
-      { type: 'action', name: T('🏃 자리 비움', '🏃 Away'), pcOnly: true, shown: () => !!remoteState?.installed,
-        desc: T('켜져 있을 때 휴대폰의 지시·승인을 받습니다. 보통은 직접 켤 필요가 없어요 — 입력이 없으면 저절로 켜지고, PC를 안 쓸 때 휴대폰에서 지시를 보내도 켜지며, 돌아와 마우스·키보드를 쓰면 저절로 꺼집니다. 끄면 휴대폰을 기다리던 승인 요청은 PC 승인 창으로 돌아옵니다.',
-          "While on, the phone's instructions and approvals are taken. Usually you don't need to touch it — it turns on after a while without input or when the phone sends while the PC is idle, and turns off when you use the mouse or keyboard again. Turning it off sends pending approval requests back to the PC prompt."),
-        label: () => (remoteState?.away ? T('돌아왔어요', "I'm back") : T('켜기', 'Turn on')),
-        enabled: () => !DEMO && !!remoteState?.installed, run: () => send({ cmd: 'remote-away', value: !remoteState?.away }), status: awayStatus },
+      { type: 'action', name: T('Claude Code 연결이 필요해요', 'Connect to Claude Code first'), pcOnly: true, shown: () => !DEMO && !!remoteState && !remoteState.installed,
+        desc: T('휴대폰에서 지시·승인을 하려면 Claude Code와 연결해야 해요(⚙️ → 🖥️ 일반과 같은 버튼).', 'To instruct and approve from the phone, connect to Claude Code (same button as ⚙️ → 🖥️ General).'),
+        label: () => T('연결하기', 'Connect'), enabled: () => !DEMO && !!data.hooks, run: toggleHooks },
       { type: 'choice', name: T('입력이 없으면 자리 비움', 'Away when idle'), pcOnly: true, shown: () => !!remoteState?.installed,
-        desc: T('마우스·키보드를 이만큼 안 쓰면 자리 비움을 켜고, 돌아와 움직이면 끕니다(작업표시줄에 숨겨 둬도). 이 시간 전이라도 PC를 30초 넘게 안 쓰면 휴대폰에서 지시를 보낼 수 있어요.',
-          "Turns Away on after this long without mouse or keyboard input and off when you're back (even while hidden in the tray). Even before that, the phone can send instructions once the PC has been idle for 30 s."),
+        desc: T('자리 비움일 때 휴대폰의 지시·승인을 받습니다. 마우스·키보드를 이만큼 안 쓰면 켜지고, 돌아와 움직이면 꺼집니다(작업표시줄에 숨겨 둬도). 이 시간 전이라도 PC를 30초 넘게 안 쓰면 휴대폰에서 지시를 보내는 순간 켜져요.',
+          "While Away, the phone's instructions and approvals are taken. It turns on after this long without mouse or keyboard input and off when you're back (even while hidden in the tray). Even sooner, once the PC has been idle for 30 s, sending from the phone turns it on."),
         options: [[0, T('끔', 'Off')], [1, T('1분', '1 min')], [3, T('3분', '3 min')], [5, T('5분', '5 min')], [10, T('10분', '10 min')]],
-        get: () => appSettings?.remoteAwayIdleMinutes ?? 3, set: (v) => setAppSetting('remoteAwayIdleMinutes', v) },
+        get: () => appSettings?.remoteAwayIdleMinutes ?? 3, set: (v) => setAppSetting('remoteAwayIdleMinutes', v), status: remoteStatus },
       { type: 'toggle', name: T('화면을 잠그면 자리 비움', 'Away while the screen is locked'), pcOnly: true, shown: () => !!remoteState?.installed,
-        desc: T('Windows 화면을 잠그면(⊞+L) 자리 비움을 켜고, 잠금을 풀면 끕니다.', 'Locking Windows (⊞+L) turns Away on, and unlocking turns it off.'),
+        desc: T('Windows 화면을 잠그면(⊞+L) 바로 자리 비움을 켜고, 잠금을 풀면 끕니다. 자리를 뜨자마자 오는 승인 요청까지 휴대폰으로 받고 싶을 때.',
+          'Locking Windows (⊞+L) turns Away on right away, and unlocking turns it off — for when even approval requests right after you leave should go to the phone.'),
         get: () => !!appSettings?.remoteAwayOnLock, set: (v) => setAppSetting('remoteAwayOnLock', v), enabled: appReady },
+    ],
+  },
+  {
+    tab: 'phone', title: T('고급', 'Advanced'),
+    items: [
+      { type: 'toggle', name: T('휴대폰에서 별명·메모 고치기', 'Edit nicknames & memos on the phone'), pcOnly: true, shown: () => !DEMO && !!cloud?.configured,
+        desc: T('휴대폰의 직원 상세에서 고친 별명·메모를 PC가 몇 초 안에 받아 반영합니다(같은 열쇠로 잠가서).', "Nicknames and memos edited in the phone's employee details reach the PC within seconds (locked with the same key)."),
+        get: () => !!cloud?.phoneEdit, set: (v) => send({ cmd: 'cloud-phone-edit', value: v }), enabled: () => !DEMO && !!cloud },
     ],
   },
   {
@@ -1747,8 +1637,8 @@ const SETTINGS = [
         desc: T('내보낸 파일을 읽어 합칩니다. 이 PC에 없거나 파일 쪽을 더 나중에 고친 것만 반영합니다.', 'Reads an exported file and merges it. Only entries missing here or edited later in the file are applied.'),
         label: () => T('가져오기', 'Import'), run: () => send({ cmd: 'share-import' }), enabled: appReady },
       { type: 'action', name: T('설정 초기화', 'Reset settings'), pcOnly: true,
-        desc: T('직원 표시·창·알림 설정을 처음 값으로 되돌립니다. 별명·메모·사무실 이름·팀 이름·화면 언어·휴대폰 보기·훅·자동 실행은 그대로입니다.',
-          'Restores employee display, window and notification settings to defaults. Nicknames, memos, office and team names, language, phone view, hooks and startup stay.'),
+        desc: T('직원 표시·창·알림 설정을 처음 값으로 되돌립니다. 별명·메모·사무실 이름·팀 이름·화면 언어·휴대폰 연결·Claude Code 연결·자동 실행은 그대로입니다.',
+          'Restores employee display, window and notification settings to defaults. Nicknames, memos, office and team names, language, phone connection, Claude Code connection and startup stay.'),
         label: () => T('초기화', 'Reset'), run: () => send({ cmd: 'reset-settings' }), enabled: appReady },
     ],
   },
@@ -1760,7 +1650,7 @@ const SETTINGS = [
           'Opens a new GitHub issue with only version, Windows and WebView2 info filled in (no conversation content).'),
         label: () => T('GitHub에 쓰기', 'Write on GitHub'), run: () => send({ cmd: 'report-issue' }), enabled: () => !DEMO },
       { type: 'action', name: T('데이터 폴더', 'Data folder'), pcOnly: true,
-        desc: T('설정과 별명·메모 사본(share.json), 휴대폰 보기 키(cloud.json)가 있는 곳입니다. 다른 PC로 옮길 때는 share.json 을 그 PC의 같은 폴더에 복사하세요. cloud.json 은 남에게 주지 마세요.',
+        desc: T('설정과 별명·메모 사본(share.json), 휴대폰 연결 열쇠(cloud.json)가 있는 곳입니다. 다른 PC로 옮길 때는 share.json 을 그 PC의 같은 폴더에 복사하세요. cloud.json 은 남에게 주지 마세요.',
           'Holds the settings, a copy of nicknames & memos (share.json) and the phone-view key (cloud.json). To move to another PC, copy share.json into the same folder there. Never give cloud.json to anyone.'),
         label: () => T('열기', 'Open'), run: () => send({ cmd: 'open-data-dir' }), enabled: appReady },
     ],
@@ -1926,96 +1816,13 @@ const RENDER = {
     };
   },
 
-  // 휴대폰 보기 설정 도우미 — WIZ 단계. 지금 할 단계만 펼치고(마친 단계는 ✓, 머리를 누르면 펼침), 앱이 확인한 결과를 단계마다 보여 준다
-  cloudwizard(it, row) {
-    row.classList.add('stack');
-    const list = elem('ol', 'wiz');
-    const opened = new Set();   // 사용자가 펼쳐 본 단계
-    const parts = WIZ.map((st, i) => {
-      const li = elem('li', 'wstep'), head = elem('button', 'whead'), body = elem('div', 'wbody');
-      const mark = elem('span', 'wmark', String(i + 1)), htxt = elem('span', 'wht'), sum = elem('span', 'wsum');
-      htxt.append(elem('span', 'wtitle', st.title), sum);
-      head.append(mark, htxt);
-      head.addEventListener('click', () => { if (!opened.delete(i)) opened.add(i); refreshSettings(); });
-      body.append(elem('div', 'desc', st.desc));
-      const bar = elem('div', 'btnbar');   // 콘솔 바로가기 — 먼저 열고, 그다음 아래 칸에 붙여 넣는 순서
-      body.append(bar);
-
-      let err = null, rulesEl = null;
-      if (st.form) {   // Firebase 웹 앱 설정(firebaseConfig) 붙여넣기
-        const ta = elem('textarea', 'field');
-        ta.rows = 6;
-        ta.spellcheck = false;
-        ta.placeholder = 'const firebaseConfig = {\n  apiKey: "…",\n  authDomain: "….firebaseapp.com",\n  projectId: "…",\n  …\n};';
-        err = elem('div', 'pick-note');
-        const save = elem('button', 'act', T('저장', 'Save'));
-        save.addEventListener('click', () => send({ cmd: 'cloud-setup', text: ta.value }));   // 결과는 {type:"cloud-setup", error}
-        const saveBar = elem('div', 'btnbar');
-        saveBar.append(save);
-        body.append(ta, err, saveBar);
-      }
-      if (st.rules) {   // 붙여 넣을 규칙을 그대로 보여 준다(복사가 안 되면 직접 골라 복사)
-        rulesEl = elem('pre', 'rules mono');
-        body.append(rulesEl);
-      }
-      li.append(head, body);
-      list.append(li);
-      return { st, li, mark, sum, body, bar, err, rulesEl, barKey: '' };
-    });
-
-    const foot = elem('div', 'btnbar'), note = elem('div', 'desc');
-    const recheck = elem('button', 'act', T('다시 확인', 'Check again')), close = elem('button', 'act ghost', T('도우미 닫기', 'Close wizard'));
-    recheck.addEventListener('click', () => requestCloudCheck(true));
-    close.addEventListener('click', () => setCloudWizard(false));
-    foot.append(recheck, close);
-    row.append(elem('div', 'desc', T('구글 Firebase(무료)에 내 칸을 만드는 과정입니다. 단계마다 [열기]로 Firebase 콘솔의 그 화면이 열리고, 마치면 여기서 저절로 ✓ 가 됩니다.',
-      'This sets up your own space on Google Firebase (free). The [Open] button of each step opens that page of the Firebase console, and the step turns ✓ here by itself when done.')),
-      list, foot, note);
-
-    return () => {
-      let current = -1;
-      parts.forEach((p, i) => {
-        const r = p.st.state();
-        if (current < 0 && r.s !== 'ok') current = i;
-        p.li.dataset.s = r.s;
-        p.mark.textContent = r.s === 'ok' ? '✓' : r.s === 'fail' || r.s === 'warn' ? '!' : String(i + 1);
-        p.sum.textContent = r.text || '';
-        // 버튼은 글자·잠금이 바뀔 때만 새로 만든다(스냅샷마다 만들면 누르는 도중 사라진다)
-        const btns = p.st.buttons();
-        const key = btns.map(([label, , off]) => label + (off ? '·' : '')).join('|');
-        if (key !== p.barKey) {
-          p.barKey = key;
-          p.bar.replaceChildren(...btns.map(([label, fn, off], j) => {
-            const b = elem('button', j ? 'act ghost' : 'act', label);
-            b.disabled = !!off;
-            b.addEventListener('click', fn);
-            return b;
-          }));
-        }
-        if (p.err) {
-          p.err.textContent = cloudSetupError;
-          p.err.classList.toggle('blocked', !!cloudSetupError);
-        }
-        if (p.rulesEl) p.rulesEl.textContent = cloudCheck?.rules || '';
-      });
-      parts.forEach((p, i) => {
-        p.li.classList.toggle('current', i === current);
-        // 1·2단계(프로젝트 만들기·설정 붙여넣기)는 한 번에 이어서 하므로 함께 펼친다
-        p.body.hidden = !(i === current || (current === 0 && i === 1) || opened.has(i) || p.li.dataset.s === 'warn');
-      });
-      note.textContent = cloudCheck?.error ? `⚠️ ${cloudCheck.error}`
-        : current < 0 ? T('🎉 모두 마쳤어요. 휴대폰으로 QR을 찍어 보세요.', '🎉 All done. Scan the QR with your phone.')
-        : cloudCheck?.at ? T(`마지막 확인 ${fmtTime(cloudCheck.at)} — 도우미를 열어 두면 5초마다 다시 확인합니다.`, `Last checked ${fmtTime(cloudCheck.at)} — rechecks every 5 s while the wizard is open.`) : '';
-    };
-  },
-
-  // 휴대폰 보기: QR(해독 키가 들어 있어 누를 때만 보인다)과 주소 복사·키 새로 만들기·설정 바꾸기
+  // 휴대폰 연결: QR(해독 키가 들어 있어 누를 때만 보인다)과 주소 복사·키 새로 만들기
   cloudqr(it, row) {
     row.classList.add('stack');
     const bar = elem('div', 'btnbar');
     const showBtn = elem('button', 'act'), copyBtn = elem('button', 'act ghost', T('주소 복사', 'Copy link'));
-    const rekeyBtn = elem('button', 'act ghost', T('키 새로 만들기', 'New key')), editBtn = elem('button', 'act ghost', T('점검·설정 도우미', 'Check & setup wizard'));
-    bar.append(showBtn, copyBtn, rekeyBtn, editBtn);
+    const rekeyBtn = elem('button', 'act ghost', T('키 새로 만들기', 'New key'));
+    bar.append(showBtn, copyBtn, rekeyBtn);
     const box = elem('div', 'qrbox'), qrEl = elem('div', 'qr'), urlEl = elem('div', 'qrurl mono');
     box.append(qrEl, urlEl, elem('div', 'desc',
       T('휴대폰 카메라로 찍어 여세요(홈 화면에 추가하면 앱처럼 쓸 수 있어요). 주소에 해독 키가 들어 있으니 남에게 보이지 않게 하고, 보였다면 "키 새로 만들기".',
@@ -2034,7 +1841,6 @@ const RENDER = {
       }
     });
     rekeyBtn.addEventListener('click', () => send({ cmd: 'cloud-rekey' }));   // 앱이 확인 창을 띄운다
-    editBtn.addEventListener('click', () => setCloudWizard(!cloudWizardOpen));
 
     let drawnUrl = null;
     return () => {
@@ -2561,7 +2367,7 @@ async function postInbox(msg) {
     const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, remoteKey, plain));
     const res = await fetch(`${remoteLink.db.replace(/\/+$/, '')}/inbox/${encodeURIComponent(remoteLink.u)}.json`,
       { method: 'POST', body: JSON.stringify({ v: 1, iv: bytesToB64(iv), ct: bytesToB64(ct) }) });
-    lastPostError = res.ok ? '' : T(`⚠️ 보내지 못했어요(${res.status}) — PC 설정 도우미에서 규칙을 새로 붙여 넣어 주세요`, `⚠️ Couldn't send (${res.status}) — paste the new rules in the PC setup wizard`);
+    lastPostError = res.ok ? '' : T(`⚠️ 보내지 못했어요(${res.status}) — 잠시 뒤 다시 보내 주세요`, `⚠️ Couldn't send (${res.status}) — try again in a moment`);
     return res.ok;
   } catch {
     lastPostError = T('⚠️ 보내지 못했어요 — 인터넷 연결을 확인해 주세요', "⚠️ Couldn't send — check your internet connection");
@@ -2573,47 +2379,32 @@ async function postInbox(msg) {
 // 상태는 PC가 요약과 함께 올린 remote(PC 앱 화면은 {type:"remote"}):
 //   {installed, away, since, s:{세션:{listen, asks:[{id,text,detail,t}], said:{text,t,state}, reply:{text,t}}}}
 // 휴대폰은 지시(say)·승인(ok)·거절(no)·자리 비움(away)을 postInbox 로 보낸다.
-// 자리 비움은 PC가 켠다(버튼·메뉴·화면 잠금·입력 없음). 휴대폰은 PC를 아무도 안 쓸 때(idle)만 켤 수 있다 — 지시를 보내면 저절로.
+// 자리 비움은 손으로 켜지 않는다 — PC가 입력 없음·화면 잠금으로 켜고, 휴대폰은 PC를 아무도 안 쓸 때(idle)만 켤 수 있다(지시를 보내면 저절로).
+// 돌아와 입력하거나 잠금을 풀면 꺼진다.
 const remoteOf =(id) => (remoteState?.installed ? remoteState.s?.[id] || {} : null);
 const answered = new Map();      // 휴대폰에서 답한 승인 요청 → 누른 시각(PC에서 사라질 때까지 버튼을 잠근다)
 const askEls = new Map();        // 승인 요청 → 그 칸(다시 그려도 거절 이유 칸에 쓰던 글이 남게)
-const rAsksEl = $('rAsks'), sayEl = $('rSay'), btnRemote = $('btnRemote');
+const rAsksEl = $('rAsks'), sayEl = $('rSay');
 let sayFor = null;               // 지시 칸이 어느 세션 것인지
 let remoteNote = null;           // 방금 보낸 것의 안내 {sid, at, text}
 
 /** PC 앱 화면: 앱이 원격 상태를 알려 줬다. */
 function onRemote(st) {
   remoteState = st || null;
-  refreshRemoteButton();
+  refreshHookButton();
   refreshHud();
   renderPanel();
   refreshSettings();
 }
 
-function refreshRemoteButton() {
-  btnRemote.hidden = REMOTE || DEMO || !remoteState?.installed;
-  if (btnRemote.hidden) return;
-  btnRemote.classList.toggle('on', !!remoteState.away);
-  btnRemote.title = remoteState.away
-    ? T('🏃 자리 비움 중 — 휴대폰에서 지시·승인할 수 있어요\n클릭: 돌아왔어요(끄기)', "🏃 Away — the phone can instruct and approve\nClick: I'm back (turn off)")
-    : T('🏃 자리 비움 켜기 — 휴대폰에서 지시를 보내고 승인 요청에 답할 수 있게 합니다', '🏃 Go away — let the phone send instructions and answer approval requests');
-}
-btnRemote.addEventListener('click', () => send({ cmd: 'remote-away', value: !remoteState?.away }));
-
 function remoteStatus() {
   const st = remoteState;
   if (!st) return { text: T('확인 중…', 'Checking…'), tone: 'var(--dim)' };
-  if (!st.installed) return { text: T('🔕 연결 안 됨', '🔕 Not connected'), tone: 'var(--dim)' };
-  if (!cloud?.enabled) return { text: T('⚠️ 휴대폰 보기가 꺼져 있어 휴대폰에서 보낼 수 없어요', '⚠️ Phone view is off, so the phone cannot send'), tone: '#ffb347' };
+  if (!st.installed) return { text: T('🔕 Claude Code 연결 안 됨', '🔕 Not connected to Claude Code'), tone: 'var(--dim)' };
+  if (!cloud?.enabled) return { text: T('⚠️ 휴대폰 연결이 꺼져 있어 휴대폰에서 보낼 수 없어요', '⚠️ The phone connection is off, so the phone cannot send'), tone: '#ffb347' };
   const n = Object.values(st.s || {}).filter((x) => x.listen).length;
-  return { text: T(`🔗 연결됨 · 지시를 받을 수 있는 세션 ${n}개`, `🔗 Connected · ${n} sessions can take instructions`), tone: '#7dffa0' };
-}
-
-function awayStatus() {
-  const st = remoteState;
-  if (!st?.away) return { text: T('자리에 있음 — 승인 창은 PC에 그대로 뜹니다', 'At the PC — permission prompts show on the PC as usual')
-    + (st?.auto ? T(` · 입력이 ${st.auto}분 없으면 저절로 켜져요`, ` · turns on after ${st.auto} min without input`) : ''), tone: 'var(--dim)' };
-  return { text: T(`🏃 자리 비움 · ${fmtTime(st.since)}부터`, `🏃 Away since ${fmtTime(st.since)}`), tone: '#7dffa0' };
+  return { text: T(`📡 지시를 받을 수 있는 세션 ${n}개`, `📡 ${n} sessions can take instructions`)
+    + (st.away ? T(` · 🏃 자리 비움 ${fmtTime(st.since)}부터`, ` · 🏃 Away since ${fmtTime(st.since)}`) : ''), tone: '#7dffa0' };
 }
 
 /** 상세 패널의 원격 칸. 원격 훅을 연결했을 때만 보인다. */
@@ -2778,7 +2569,7 @@ async function startRemote() {
     if (path === '/' || path === '') remoteNode = type === 'patch' ? { ...(remoteNode || {}), ...value } : value;
     else remoteNode = { ...(remoteNode || {}), [path.replace(/^\//, '').split('/')[0]]: value };
     if (!remoteNode || !remoteNode.ct) {
-      remoteError = T('PC가 아직 아무것도 올리지 않았어요 — PC에서 휴대폰 보기를 켜 주세요', 'The PC has not uploaded anything yet — turn on Phone view on the PC');
+      remoteError = T('PC가 아직 아무것도 올리지 않았어요 — PC에서 ⚙️ → 📱 휴대폰 → 휴대폰 연결을 켜 주세요', 'The PC has not uploaded anything yet — turn on ⚙️ → 📱 Phone → Phone connection on the PC');
       refreshHud();
       return;
     }
@@ -2917,8 +2708,6 @@ if (REMOTE) {
   host.addEventListener('message', (e) => {
     const m = e.data;
     if (m?.type === 'cloud') onCloud(m);
-    else if (m?.type === 'cloud-setup') onCloudSetup(m);
-    else if (m?.type === 'cloud-check') onCloudCheck(m);
     else if (m?.type === 'app') onApp(m);
     else if (m?.type === 'share') onSavedShare(m.data);
     else if (m?.type === 'remote') onRemote(m.data);

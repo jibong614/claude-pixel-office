@@ -270,7 +270,7 @@ internal sealed class RemoteHub
     }
 
     /// <summary>
-    /// 자리 비움 켜기·끄기(PC 쪽: 버튼·알림 영역 메뉴·화면 잠금·입력 없음·돌아옴). 휴대폰은 AwayFromPhone·Say 로 PC 가 비어 있을 때만 켠다.
+    /// 자리 비움 켜기·끄기(PC 쪽: 화면 잠금·입력 없음·돌아옴, 원격 해제). 휴대폰은 AwayFromPhone·Say 로 PC 가 비어 있을 때만 켠다.
     /// 끄면 휴대폰을 기다리던 승인은 모두 PC 승인 창으로, 못 건넨 지시는 버린다.
     /// </summary>
     public void SetAway(bool on, string why)

@@ -26,7 +26,6 @@
     <!-- 영어 화면이면 office.js 가 data-en(글)·data-en-title·data-en-ph 로 바꾼다 -->
     <button id="btnWidget" title="작게 보기(목록) — 직원·상태만 한 줄씩" data-en-title="Compact view (list) — one line per employee">▤</button>
     <button id="btnToday" title="오늘의 근무 일지 — 일한 시간·지시·토큰" data-en-title="Today's work log — work time, prompts, tokens">📊</button>
-    <button id="btnRemote" hidden>🏃</button>
     <button id="btnHook" hidden>🔕</button>
     <button id="btnAway" title="퇴근한 직원 보이기/숨기기">🚪</button>
     <button id="btnPin" title="항상 위에 표시">📌</button>
@@ -52,7 +51,7 @@
     <div id="pState" class="state"></div>
     <!-- 자리 비움 원격: 승인 요청(휴대폰에서 승인·거절)·Claude 의 마지막 답·휴대폰에서 지시 보내기. 원격 훅을 연결했을 때만 -->
     <section id="pRemote" hidden>
-      <h3 data-en="🏃 Remote while away">🏃 자리 비움 원격</h3>
+      <h3 data-en="📱 Instruct & approve from the phone">📱 휴대폰 지시·승인</h3>
       <div id="rStatus" class="rstatus"></div>
       <button id="rAwayNow" class="mini rbtn" hidden data-en="🏃 Go away now (approvals to the phone too)">🏃 지금 자리 비움으로 (승인도 휴대폰으로)</button>
       <div id="rAsks"></div>

@@ -10,7 +10,7 @@ namespace ClaudeOffice;
 /// </summary>
 internal sealed class AppSettings
 {
-    /// <summary>프로그램을 켤 때 창을 띄우지 않고 알림 영역(🏢)에 숨겨 둔다(휴대폰으로만 볼 때).</summary>
+    /// <summary>프로그램을 켤 때 창을 띄우지 않고 알림 영역(🧑‍💻)에 숨겨 둔다(휴대폰으로만 볼 때).</summary>
     public bool StartMinimized { get; set; }
 
     /// <summary>✕ 를 눌러도 끝내지 않고 알림 영역으로 숨긴다(실수로 꺼서 휴대폰 보기가 멈추지 않게). 끝내기는 알림 영역 아이콘 메뉴.</summary>
@@ -31,6 +31,9 @@ internal sealed class AppSettings
     /// <summary>GitHub 에서 새 버전이 나왔는지 하루 두 번 확인. UpdateNotified: 알림을 띄운 버전(같은 버전은 한 번만).</summary>
     public bool UpdateCheck { get; set; } = true;
     public string? UpdateNotified { get; set; }
+
+    /// <summary>처음 실행할 때 "Claude Code와 연결할까요?"를 물어봤다(한 번만 묻는다).</summary>
+    public bool ConnectAsked { get; set; }
 
     /// <summary>자리 비움 원격: Windows 화면을 잠그면 자리 비움을 켜고, 잠금을 풀면 끈다(잠금으로 켠 것만).</summary>
     public bool RemoteAwayOnLock { get; set; } = true;

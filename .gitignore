@@ -4,7 +4,7 @@ obj/
 *.user
 publish/
 
-# 휴대폰 보기 배포(tools/deploy-mobile.ps1 가 만드는 것)
+# 무료 서버 규칙 배포(tools/deploy-rules.ps1 — firebase-tools 가 만드는 것)
 mobile/public/
 mobile/.firebase/
 mobile/*.log

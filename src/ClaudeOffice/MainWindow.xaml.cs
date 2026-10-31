@@ -62,10 +62,10 @@ public partial class MainWindow : Window
             RestorePlacement();
         }
 
-        // 알림 영역 🏢 아이콘 — 견본·점검용(화면 밖) 실행에서는 만들지 않는다(사용자 알림 영역을 어지럽히지 않게)
+        // 알림 영역 🧑‍💻 아이콘 — 견본·점검용(화면 밖) 실행에서는 만들지 않는다(사용자 알림 영역을 어지럽히지 않게)
         if (!App.DemoMode && !App.Offscreen)
         {
-            _tray = new TrayIcon(ShowFromTray, ExitApp, on => SetAway(on, "tray"));
+            _tray = new TrayIcon(ShowFromTray, ExitApp);
             _tray.SetText(Title);
             if (App.Updated)
                 _tray.Notify(L.T($"{App.Version} 버전으로 업데이트했어요", $"Updated to {App.Version}"),
@@ -230,8 +230,8 @@ public partial class MainWindow : Window
         if (!CanInstallUpdate()) { OpenUrl(_updates.Url); return; }
         if (_updater.State is "downloading" or "installing") return;
         if (!App.Offscreen && MessageBox.Show(this,
-                L.T($"새 버전 {_updates.Latest} 으로 업데이트할까요?\r\n\r\n받는 동안(약 65MB) 계속 쓸 수 있고, 다 받아 확인하면 잠깐 꺼졌다가 새 버전으로 다시 켜집니다.\r\n설정·별명·메모·휴대폰 보기는 그대로입니다.",
-                    $"Update to version {_updates.Latest}?\r\n\r\nYou can keep working while it downloads (about 65 MB). When it's verified, the app closes for a moment and reopens as the new version.\r\nSettings, nicknames, memos and phone view stay as they are."),
+                L.T($"새 버전 {_updates.Latest} 으로 업데이트할까요?\r\n\r\n받는 동안(약 65MB) 계속 쓸 수 있고, 다 받아 확인하면 잠깐 꺼졌다가 새 버전으로 다시 켜집니다.\r\n설정·별명·메모·휴대폰 연결는 그대로입니다.",
+                    $"Update to version {_updates.Latest}?\r\n\r\nYou can keep working while it downloads (about 65 MB). When it's verified, the app closes for a moment and reopens as the new version.\r\nSettings, nicknames, memos and the phone connection stay as they are."),
                 "Claude Office", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             return;
         var extra = App.Offscreen ? new[] { "--offscreen" } : Array.Empty<string>();   // 점검 도구로 시험할 때는 새 버전도 화면 밖에
@@ -244,32 +244,20 @@ public partial class MainWindow : Window
 
     // ───────────────────────── 자리 비움 원격 ─────────────────────────
 
-    /// <summary>원격 상태를 휴대폰 업로드·화면·알림 영역 메뉴에 알린다(아무 스레드에서나).</summary>
+    /// <summary>원격 상태를 휴대폰 업로드·화면에 알린다(아무 스레드에서나).</summary>
     private void OnRemoteChanged()
     {
         var json = _remote.StateJson();
-        bool installed = RemoteHub.Installed, away = _remote.Away;
-        _cloud.OnRemote(json, installed, away);
-        Dispatcher.InvokeAsync(() =>
-        {
-            Post("{\"type\":\"remote\",\"data\":" + json + "}");
-            _tray?.SetAway(away, installed);
-        });
+        _cloud.OnRemote(json, RemoteHub.Installed, _remote.Away);
+        Dispatcher.InvokeAsync(() => Post("{\"type\":\"remote\",\"data\":" + json + "}"));
     }
 
-    /// <summary>자리 비움 켜기·끄기 — 화면 버튼·알림 영역 메뉴. 그 밖에 화면 잠금·입력 없음(CheckPresence), 휴대폰(PC 가 비어 있을 때만, RemoteHub).</summary>
-    private void SetAway(bool on, string why)
-    {
-        if (on && !RemoteHub.Installed) return;
-        _awayByLock = false;
-        _remote.SetAway(on, why);
-    }
-
+    // 자리 비움은 손으로 켜고 끄지 않는다(1.1.6) — 켜기: 입력 없음·화면 잠금(여기), 휴대폰(PC 가 비어 있을 때만, RemoteHub) / 끄기: 돌아와 입력·잠금 풀기
     private static readonly TimeSpan LeftAfter = TimeSpan.FromSeconds(30);   // 이만큼 입력이 없으면 "자리에 없음" — 휴대폰이 자리 비움을 켤 수 있다
 
     /// <summary>
     /// 2초마다: 마우스·키보드 입력이 설정한 분만큼 없으면 자리 비움을 켜고, 자리 비움 중에 한동안 비어 있던 PC 에 다시 입력이 오면 끈다(돌아옴).
-    /// 버튼으로 막 켠 경우처럼 아직 자리를 뜨지 않았으면 입력이 와도 끄지 않는다. 잠겨 있는 동안의 입력은 보지 않는다(풀면 OnSessionSwitch).
+    /// "돌아옴"은 자리 비움 중 PC 가 한동안 비어 있었던 뒤의 입력만. 잠겨 있는 동안의 입력은 보지 않는다(풀면 OnSessionSwitch).
     /// </summary>
     private void CheckPresence()
     {
@@ -322,64 +310,6 @@ public partial class MainWindow : Window
             _awayByLock = false;
             _remote.SetAway(false, "unlock");
         }
-    }
-
-    /// <summary>
-    /// 원격 훅 넣기·빼기 — Claude Code 전역 설정을 바꾸고, 휴대폰이 이 PC의 Claude 에게 일을 시킬 수 있게 되는 일이라 반드시 확인을 받는다.
-    /// </summary>
-    private void ToggleRemoteHooks()
-    {
-        var path = HookSetup.SettingsPath;
-        bool installed = RemoteHub.Installed;
-        var question = L.En
-            ? installed
-                ? $"Remove the remote hooks from the Claude Code settings?\r\n\r\n{path}\r\n\r\nThe phone can no longer send instructions or approve. The status hooks stay."
-                : $"Turn on remote from the phone while you're away?\r\n\r\n{path}\r\n\r\n" +
-                  "Adds 3 hooks to the Claude Code settings:\r\n" +
-                  "  · PermissionRequest — while you're away, waits up to 55 min for Approve/Deny from the phone\r\n" +
-                  "  · Stop, SessionStart — wait in the background so an instruction from the phone wakes that session\r\n\r\n" +
-                  "Anyone with the phone-view QR/link can then make Claude on this PC work while you're away.\r\n" +
-                  "It only works while 'Away' is on (set on the PC: 🏃 button, tray menu or locking the screen), and every instruction is logged in remote.log.\r\n" +
-                  "Claude still asks for permission as usual; those prompts go to the phone.\r\n" +
-                  $"New or reopened sessions connect right away; sessions already open connect after their next answer. ({HookSetup.ShellDescription})"
-            : installed
-                ? $"Claude Code 설정에서 원격 훅을 뺄까요?\r\n\r\n{path}\r\n\r\n휴대폰에서 지시·승인을 더 이상 할 수 없습니다. 상태 알림 훅은 그대로 둡니다."
-                : $"자리 비움 원격(휴대폰에서 지시·승인)을 켤까요?\r\n\r\n{path}\r\n\r\n" +
-                  "Claude Code 설정에 훅 3개를 추가합니다:\r\n" +
-                  "  · PermissionRequest — 자리 비움일 때 승인 창 대신 휴대폰의 승인·거절을 기다립니다(최대 55분)\r\n" +
-                  "  · Stop·SessionStart — 뒤에서 기다리다가 휴대폰 지시가 오면 그 세션을 깨워 전합니다\r\n\r\n" +
-                  "휴대폰 보기 QR·주소를 가진 사람은 자리 비움 동안 이 PC의 Claude 에게 일을 시킬 수 있게 됩니다.\r\n" +
-                  "'자리 비움'을 켰을 때만 동작하고(PC에서만: 🏃 버튼·알림 영역 메뉴·화면 잠금), 받은 지시는 모두 remote.log 에 남깁니다.\r\n" +
-                  "Claude 의 승인 요청은 그대로이고 휴대폰으로 갑니다.\r\n" +
-                  $"새로 열거나 다시 연 세션은 바로, 이미 열려 있던 세션은 다음 답을 마친 뒤부터 연결됩니다({HookSetup.ShellDescription}).";
-        if (MessageBox.Show(this, question, L.T("Claude Office — 자리 비움 원격", "Claude Office — Remote while away"), MessageBoxButton.OKCancel,
-                installed ? MessageBoxImage.Question : MessageBoxImage.Warning) != MessageBoxResult.OK)
-            return;
-        try
-        {
-            if (installed)
-            {
-                _remote.SetAway(false, "remote-off");
-                HookSetup.UninstallRemote();
-            }
-            else HookSetup.InstallRemote();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
-        {
-            MessageBox.Show(this, L.T($"settings.json 을 고치지 못했습니다. 파일은 그대로입니다.\r\n\r\n{ex.Message}",
-                                      $"Couldn't edit settings.json. The file is unchanged.\r\n\r\n{ex.Message}"),
-                L.T("Claude Office — 자리 비움 원격", "Claude Office — Remote while away"), MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-        _watcher.RefreshHookStatus();
-        OnRemoteChanged();
-        RunCloudCheckIfConfigured();
-    }
-
-    /// <summary>원격을 켜면 휴대폰이 보낼 수 있는지(inbox 규칙)를 설정 도우미 점검으로 바로 확인한다.</summary>
-    private void RunCloudCheckIfConfigured()
-    {
-        using var doc = JsonDocument.Parse(_cloud.StatusJson());
-        if (doc.RootElement.GetProperty("configured").GetBoolean()) RunCloudCheck();
     }
 
     // ───────────────────────── 사무실 이름·별명·메모 사본 ─────────────────────────
@@ -600,6 +530,18 @@ public partial class MainWindow : Window
         };
 
         core.Navigate(PageUrl());
+
+        // 처음 한 번: Claude Code 와 연결할지 묻는다(설정에서 찾지 않아도 되게). 화면이 먼저 뜨도록 조금 뒤에
+        if (!App.DemoMode && !App.Offscreen && !App.Settings.ConnectAsked)
+            _ = Dispatcher.BeginInvoke(AskConnectOnce, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+    }
+
+    private void AskConnectOnce()
+    {
+        App.Settings.ConnectAsked = true;
+        TrySaveSettings();
+        if (HookSetup.IsInstalled() && HookSetup.IsRemoteInstalled()) return;
+        ToggleHooks(firstRun: true);
     }
 
     /// <summary>화면 주소: 견본이면 ?demo(&amp;select=), 영어 화면이면 lang=en(한국어는 붙이지 않는다 — 예전 주소 그대로).</summary>
@@ -746,22 +688,12 @@ public partial class MainWindow : Window
                         SaveShare(json);
                     }
                     break;
-                case "cloud-setup":
+                case "cloud-setup":   // 점검 도구 전용: 이 PC 의 시험 서버를 쓴다
                     if (!App.DemoMode && root.TryGetProperty("text", out var text))
-                    {
-                        var error = _cloud.Setup(text.GetString() ?? "");
-                        Post(JsonSerializer.Serialize(new { type = "cloud-setup", error }));
-                        if (error is null) RunCloudCheck();   // 다음 단계(데이터베이스·규칙·로그인)를 바로 확인
-                    }
-                    break;
-                case "cloud-check":
-                    if (!App.DemoMode) RunCloudCheck();
+                        Post(JsonSerializer.Serialize(new { type = "cloud-setup", error = _cloud.Setup(text.GetString() ?? "") }));
                     break;
                 case "cloud-phone-edit":
                     if (!App.DemoMode) _cloud.SetPhoneEdit(root.TryGetProperty("value", out var pe) && pe.ValueKind == JsonValueKind.True);
-                    break;
-                case "cloud-page":
-                    if (!App.DemoMode && root.TryGetProperty("value", out var page)) _cloud.SetPage(page.GetString() ?? "public");
                     break;
                 case "widget":
                     if (!App.DemoMode) SetWidget(root.TryGetProperty("value", out var wv) && wv.ValueKind == JsonValueKind.True);
@@ -811,25 +743,19 @@ public partial class MainWindow : Window
                     break;
                 case "cloud-rekey":
                     if (!App.DemoMode && MessageBox.Show(this,
-                            L.T("휴대폰 보기용 암호 키를 새로 만들까요?\r\n\r\n지금 휴대폰에 열려 있는 화면은 더 이상 해독하지 못하고, QR을 다시 찍어야 합니다.\r\n" +
+                            L.T("휴대폰 연결용 열쇠(암호 키)를 새로 만들까요?\r\n\r\n지금 휴대폰에 열려 있는 화면은 더 이상 해독하지 못하고, QR을 다시 찍어야 합니다.\r\n" +
                                 "QR이나 주소가 다른 사람에게 보였을 때 쓰세요.",
-                                "Make a new encryption key for phone view?\r\n\r\nPhones that have the page open can no longer decrypt it and must scan the QR again.\r\n" +
+                                "Make a new key (encryption key) for the phone connection?\r\n\r\nPhones that have the page open can no longer decrypt it and must scan the QR again.\r\n" +
                                 "Use this if someone else saw the QR code or link."),
-                            L.T("Claude Office — 휴대폰 보기", "Claude Office — Phone view"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+                            L.T("Claude Office — 휴대폰 연결", "Claude Office — Phone connection"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
                         _cloud.Rekey();
                     break;
                 case "topmost":
                     // 작게 보기 중에는 늘 맨 위(나오면 화면이 이 설정을 다시 보낸다)
                     Topmost = App.Settings.Widget || (root.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.True);
                     break;
-                case "hooks":
+                case "hooks":   // Claude Code 연결·해제(상태 알림과 휴대폰 지시·승인을 한 번에)
                     if (!App.DemoMode) ToggleHooks();
-                    break;
-                case "remote-hooks":
-                    if (!App.DemoMode) ToggleRemoteHooks();
-                    break;
-                case "remote-away":
-                    if (!App.DemoMode) SetAway(root.TryGetProperty("value", out var av) && av.ValueKind == JsonValueKind.True, "pc");
                     break;
                 case "remote-release":   // 휴대폰을 기다리던 승인을 PC 승인 창으로
                     if (!App.DemoMode && root.TryGetProperty("id", out var rid) && rid.GetString() is { } releaseId) _remote.Release(releaseId);
@@ -845,12 +771,6 @@ public partial class MainWindow : Window
             // 모르는 메시지는 무시
         }
     }
-
-    private void RunCloudCheck() => _ = Task.Run(async () =>
-    {
-        var json = await _cloud.CheckAsync();
-        if (json != null) await Dispatcher.InvokeAsync(() => Post(json));
-    });
 
     // ───────────────────────── 별명·메모 내보내기/가져오기 · 설정 초기화 · 문제 보고 ─────────────────────────
 
@@ -965,52 +885,55 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 🔔 버튼: Claude Code 전역 설정에 훅을 넣거나 뺀다. 전역 설정을 바꾸는 일이라 반드시 확인을 받는다.
+    /// Claude Code 연결·해제(설정 → 🖥️ 일반, 상단 🔕 버튼, 처음 실행할 때 한 번). Claude Code 전역 설정에 훅을 넣거나 빼는 일이라 반드시 확인을 받는다.
+    /// 연결은 한 번에 전부: 상태 알림(승인·질문·세션 종료)과 휴대폰 지시·승인. 예전에 상태 알림만 넣어 둔 것이면 다시 연결해 나머지를 채운다.
     /// </summary>
-    private void ToggleHooks()
+    private void ToggleHooks(bool firstRun = false)
     {
         var path = HookSetup.SettingsPath;
-        bool installed = HookSetup.IsInstalled();
+        bool connected = HookSetup.IsInstalled() && HookSetup.IsRemoteInstalled();
         var question = L.En
-            ? installed
-                ? $"Remove the Claude Office hooks from the Claude Code settings?\r\n\r\n{path}\r\n\r\n" +
-                  "Only the hooks Claude Office added are removed; other settings stay as they are.\r\n" +
-                  "Afterwards, approval waits are only 'guessed' again."
-                : $"Add 3 hooks to the Claude Code settings?\r\n\r\n{path}\r\n\r\n" +
-                  "  · PermissionRequest — raises a hand when a permission prompt opens\r\n" +
-                  "  · Notification — permission and input requests\r\n" +
-                  "  · SessionEnd — closing a session shows the employee going home right away\r\n\r\n" +
-                  $"The hooks only send notices to this app (127.0.0.1:{HookServer.Port}, {HookSetup.ShellDescription}).\r\n" +
-                  "They never approve or block anything, and quietly do nothing when the app is closed.\r\n" +
-                  "The original is kept as settings.json.claudeoffice.bak before editing."
-            : installed
-                ? $"Claude Code 설정에서 Claude Office 훅을 뺄까요?\r\n\r\n{path}\r\n\r\n" +
-                  "Claude Office가 넣은 훅만 지우고 다른 설정은 그대로 둡니다.\r\n" +
-                  "빼고 나면 승인 대기는 다시 '추정'으로만 표시됩니다."
-                : $"Claude Code 설정에 훅 3개를 추가할까요?\r\n\r\n{path}\r\n\r\n" +
-                  "  · PermissionRequest — 승인 창이 뜨면 손을 듭니다\r\n" +
-                  "  · Notification — 승인·입력 요청 알림\r\n" +
-                  "  · SessionEnd — 세션을 닫으면 바로 퇴근으로 표시\r\n\r\n" +
-                  $"훅은 이 프로그램(127.0.0.1:{HookServer.Port})으로 알림만 보냅니다({HookSetup.ShellDescription}).\r\n" +
-                  "승인을 대신하거나 작업을 막지 않고, 프로그램이 꺼져 있으면 조용히 넘어갑니다.\r\n" +
-                  "고치기 전 원본은 settings.json.claudeoffice.bak 으로 남깁니다.";
-        if (MessageBox.Show(this, question, L.T("Claude Office — 훅 연결", "Claude Office — Hooks"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            ? connected
+                ? $"Disconnect from Claude Code?\r\n\r\nOnly the lines Claude Office added to the Claude Code settings are removed; nothing else changes.\r\n{path}\r\n\r\n" +
+                  "Afterwards, whether Claude is waiting is only guessed, and the phone can't send instructions or approve."
+                : (firstRun ? "Welcome! " : "") + "Connect Claude Office to Claude Code? (recommended)\r\n\r\n" +
+                  "Once connected:\r\n" +
+                  "  · an employee raises a hand the moment Claude waits for an approval or asks a question\r\n" +
+                  "  · closing a session shows the employee going home right away\r\n" +
+                  "  · with the phone connected, you can send instructions and approve from the phone while you're away\r\n\r\n" +
+                  $"A few lines are added to the Claude Code settings (the original is kept as settings.json.claudeoffice.bak):\r\n{path}\r\n" +
+                  "They only talk to this app on this PC and do nothing while the app is closed. Disconnect any time in ⚙️ → 🖥️ General.\r\n\r\n" +
+                  "Keep your phone QR to yourself — whoever has it can give Claude on this PC work while you're away."
+            : connected
+                ? $"Claude Code 연결을 끊을까요?\r\n\r\nClaude Code 설정에서 Claude Office 가 넣은 줄만 빼고 다른 설정은 그대로 둡니다.\r\n{path}\r\n\r\n" +
+                  "끊으면 승인을 기다리는지는 짐작으로만 보이고, 휴대폰에서 지시·승인을 할 수 없어요."
+                : (firstRun ? "처음 오셨네요! " : "") + "Claude Code와 연결할까요? (권장)\r\n\r\n" +
+                  "연결하면\r\n" +
+                  "  · Claude가 승인을 기다리거나 질문하면 직원이 바로 손을 들고\r\n" +
+                  "  · 세션을 닫으면 바로 퇴근으로 보이고\r\n" +
+                  "  · 휴대폰을 연결해 두면, 자리를 비운 동안 휴대폰에서 지시·승인도 할 수 있어요\r\n\r\n" +
+                  $"Claude Code 설정 파일에 몇 줄을 넣습니다(원래 파일은 settings.json.claudeoffice.bak 으로 남겨요):\r\n{path}\r\n" +
+                  "이 PC 안에서 이 프로그램과만 주고받고, 프로그램이 꺼져 있으면 아무 일도 하지 않아요. ⚙️ → 🖥️ 일반에서 언제든 끊을 수 있어요.\r\n\r\n" +
+                  "휴대폰 QR은 남에게 보여 주지 마세요 — 가진 사람은 자리를 비운 동안 이 PC의 Claude에게 일을 시킬 수 있어요.";
+        var title = L.T("Claude Office — Claude Code 연결", "Claude Office — Claude Code connection");
+        var answer = MessageBox.Show(this, question, title, firstRun ? MessageBoxButton.YesNo : MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (answer is not (MessageBoxResult.OK or MessageBoxResult.Yes))
             return;
 
         try
         {
-            if (installed)
+            if (connected)
             {
                 _remote.SetAway(false, "hooks-off");
-                HookSetup.Uninstall();   // 원격 훅도 함께
+                HookSetup.Uninstall();   // 상태 알림·휴대폰 지시 모두
             }
-            else HookSetup.Install();
+            else HookSetup.InstallRemote();   // 상태 알림이 없으면 그것부터 넣고 휴대폰 지시·승인까지
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {
-            MessageBox.Show(this, L.T($"settings.json 을 고치지 못했습니다. 파일은 그대로입니다.\r\n\r\n{ex.Message}",
-                                      $"Couldn't edit settings.json. The file is unchanged.\r\n\r\n{ex.Message}"),
-                L.T("Claude Office — 훅 연결", "Claude Office — Hooks"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, L.T($"Claude Code 설정 파일을 고치지 못했습니다. 파일은 그대로입니다.\r\n\r\n{ex.Message}",
+                                      $"Couldn't edit the Claude Code settings file. It is unchanged.\r\n\r\n{ex.Message}"),
+                title, MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         _watcher.RefreshHookStatus();
         OnRemoteChanged();

@@ -69,7 +69,7 @@ internal sealed class HookServer : IDisposable
             Error = ex.SocketErrorCode == SocketError.AddressAlreadyInUse
                 ? L.T($"{Port} 포트를 이미 쓰는 프로그램이 있습니다(Claude Office가 두 개 켜져 있나요?)",
                       $"Another program is using port {Port} (is Claude Office running twice?)")
-                : L.T($"훅 수신을 시작하지 못했습니다: {ex.Message}", $"Couldn't start the hook receiver: {ex.Message}");
+                : L.T($"Claude Code 알림을 받을 준비를 하지 못했습니다: {ex.Message}", $"Couldn't start listening for Claude Code: {ex.Message}");
         }
     }
 
