@@ -2,9 +2,10 @@
 
 [한국어](README.md) · **English**
 
-**A Windows app that shows your Claude Code sessions as a tiny pixel-art office.**
-Each session becomes an employee at a desk. Their pose, monitor and speech bubble show what they are doing right now.
-Employees raise a hand when they are waiting for your approval, and you can watch the office from your phone too.
+**See at a glance what Claude Code is doing and whether it's waiting for you — as a tiny pixel-art office on Windows.**
+
+Each Claude Code conversation (session) becomes an employee at a desk. Their pose, monitor and speech bubble show what they're doing right now,
+and they raise a hand when they need your approval or an answer. While you're away, your phone can watch, approve, and hand out the next task.
 
 > Unofficial tool, not affiliated with Anthropic. It only reads the transcript files Claude Code writes.
 > **English UI**: the app starts in Korean — open ⚙️ → 사무실 (Office) → **화면 언어 / Language → English**.
@@ -12,26 +13,57 @@ Employees raise a hand when they are waiting for your approval, and you can watc
 
 ![The office in motion](docs/screenshots/demo.gif)
 
-Try it in the browser without installing: **https://jibong614.github.io/claude-pixel-office/?demo&lang=en**
+Try it in the browser first, no install: **https://jibong614.github.io/claude-pixel-office/?demo&lang=en**
+
+## Why use it?
+
+1. **Running several Claude Code windows? See who's doing what, at a glance**
+   No more clicking through each window.
+   e.g. "Cart fixes" is ✏️ writing code, "Design cleanup" is ⌨️ building, "Log review" is ✋ waiting for your approval
+2. **Never miss the moment it needs you**
+   A waiting employee raises a hand, the window title and taskbar show `(✋2)`, and a Windows notification pops up.
+   e.g. while you were writing an email, a session sat at "approve this command?" for 20 minutes — now you notice right away
+3. **Know when a long task is done**
+   e.g. kick off a 10-minute build or test run, do something else, and get a notification when it ends (click it to open that employee)
+4. **Keep work moving while you're away — approve and give the next task from your phone**
+   The phone needs no Claude sign-in; scan one QR and it works from anywhere.
+   e.g. at lunch: "May I run the tests?" → tap [Approve] on the phone.
+   When it's done, send "now tidy up the README" from the phone and the resting session wakes up and **continues the same conversation**
+5. **See how much work got done today**
+   Work time, prompts, tokens and top tools for every employee (📊 Today's work log)
+6. **It's fun to watch**
+   Busy coders, dozing employees, empty desks after they go home… The compact view (▤) fits in a corner of the screen
+
+## Screens (shown in Korean UI)
+
+| PC — employee details | PC — settings |
+|---|---|
+| ![Current work, last instruction, recent actions and today's stats](docs/screenshots/panel.png) | ![Settings as a centered pop-up with tabs](docs/screenshots/settings.png) |
+
+| Phone — office | Phone — approve while away |
+|---|---|
+| <img src="docs/screenshots/mobile.png" width="260" alt="The office on a phone"> | <img src="docs/screenshots/mobile-approve.png" width="260" alt="Approve or deny on the phone"> |
 
 ## Features
 
 - 👥 **Session = employee, working folder = team area (rug), subagent = intern next to the desk**
 - 💬 **Shows the actual work**: reading, writing code, running commands, searching, web search, directing interns, planning, writing an answer
-- ✋ **Never miss a moment that needs you**: waiting for a question or approval raises a hand; the window title and taskbar show `(✋2)`
-- 🔔 **Desktop notifications**: when someone starts waiting, or finishes a long task. Click to open that employee. Sound and quiet hours are configurable
-- 🔍 **Click an employee for details**: last instruction, recent actions, interns, your own **nickname and memo**, and **today's stats** (work time, prompts, tokens, top tools)
-- 📊 **Today's work log**: work time, prompts and tokens for every employee
-- ▤ **Compact widget**: shrink the window to a one-line-per-employee list that stays on top
-- 📱 **Phone connection (optional)**: **Turn on → scan one QR** and you're done — no setup, no sign-in, no account. Works anywhere. While you're away the phone can **approve or deny permission requests** and **send an instruction to an employee** (the idle session wakes up and continues the same conversation). 🔒 It goes through a free server, locked with a key only your PC and your phone have, so neither the server nor anyone else can read it
-- 🔗 **Claude Code connection (recommended)**: asked once on first start — exact approval/question status plus phone instructions and approvals (a few lines in the Claude Code settings, disconnect any time)
-- 🔒 **Changes nothing without asking**: reads transcript files only. The Claude Code settings are edited only after you say yes in a confirmation dialog
+- 🔍 **Click an employee for details**: last instruction, recent actions, interns, today's stats, and your own **nickname and memo** (kept even if the session is renamed)
+- 🔔 **Desktop notifications**: when someone starts waiting, or finishes a long task. Sound and quiet hours are configurable
+- ▤ **Compact widget**: a one-line-per-employee list that stays on top
+- 🪟 **Lives in the tray, can run at startup**: closing (✕) only hides it. New versions install from inside the app
+- 🔗 **Claude Code connection (recommended)**: asked once on first start — exact approval/question status, and phone instructions and approvals come through it
+- 📱 **Phone connection (optional)**: **Turn on → scan one QR**. 🔒 It goes through a free server, locked with a key only your PC and your phone have, so neither the server nor anyone else can read it
+- 🌐 Screen language: 한국어 / English
+- 🔒 **Changes nothing without asking**: reads transcript files only; the Claude Code settings are edited only after you say yes in a confirmation dialog
 
 ## Quick start
 
 1. Download `ClaudePixelOffice-v*-win-x64.zip` from [Releases](https://github.com/jibong614/claude-pixel-office/releases) (after that, new versions install from inside the app: it downloads the release zip, checks its SHA-256, swaps the files and restarts)
 2. Unzip and run `ClaudeOffice.exe`
-3. Start a conversation in Claude Code and an employee appears at a desk
+3. On first start, answer **"Connect to Claude Code?"** with **Yes** (recommended)
+4. Start a conversation in Claude Code and an employee appears at a desk
+5. (Optional) To watch from your phone: ⚙️ → 📱 Phone → **Turn on → Show QR** → scan it with your phone camera
 
 - Requires Windows 10/11 and the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) (built into Windows 11). No .NET install needed
 - The exe is not code-signed, so SmartScreen may warn on first run → **More info → Run anyway**
