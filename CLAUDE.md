@@ -7,6 +7,7 @@ Claude Code 세션을 미니어처 픽셀 사무실로 보여 주는 Windows 프
 ## 버전
 - 버전은 `src/ClaudeOffice/ClaudeOffice.csproj` 의 `<Version>` 하나가 원본이다(창 제목 `… v1.0.6`, exe 파일 버전).
 - 올릴 때 [docs/CHANGELOG.md](docs/CHANGELOG.md) 맨 위에 그 버전에서 바뀐 것을 적는다.
+- 휴대폰 화면은 앱과 따로 배포되므로 `wwwroot/office.js` 의 `PAGE_VERSION` 에도 같은 버전을 적는다(다르면 빌드가 멈춘다). 설정 맨 위에 보인다.
 
 ## 작업 규칙
 - 화면을 바꿨으면 빌드 후 `tools/capture.ps1` 로 캡처해 **직접 눈으로 확인**한다(견본 `--demo` + 실제 세션 둘 다).

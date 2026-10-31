@@ -13,9 +13,12 @@
  *   - 브라우저로 직접 열거나 ?demo 를 붙이면 견본 데이터로 모든 상태를 돌아가며 보여 준다.
  */
 
+// 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
+const PAGE_VERSION = '1.1.2';
+
 // ───────────────────────────── 연결 ─────────────────────────────
 
-const host = window.chrome && window.chrome.webview ? window.chrome.webview : null;
+const host =window.chrome && window.chrome.webview ? window.chrome.webview : null;
 const params = new URLSearchParams(location.search);
 // 휴대폰 보기 연결 정보: PC가 보여 준 QR 주소의 # 뒤(데이터 주소 db·경로 u·해독 키 k). # 뒤 값은 웹 서버로 전송되지 않는다.
 // 설치한 앱(홈 화면)은 # 없이 시작 주소로 열리므로, QR로 처음 열 때 이 기기에 저장해 두고 다음부터는 그것을 쓴다.
@@ -134,6 +137,7 @@ const NOTES_MAX = 300;
 const notes = store.get('notes', {}) || {};
 let remoteShare = null;   // 휴대폰 보기: PC가 함께 올린 { office, notes } — 별명·메모·사무실 이름은 PC에서 정한 그대로
 let remoteState = null;   // 자리 비움 원격 상태(PC 앱은 {type:"remote"}, 휴대폰은 요약의 remote) — 아래 "자리 비움 원격"
+let remotePcVersion = '';   // 휴대폰 보기: PC 앱 버전(1.1.2 부터 요약에 실어 보낸다)
 const noteOf = (id) => (REMOTE ? remoteShare?.notes?.[id] : notes[id]) || {};
 const displayName = (s) => noteOf(s.id).nick || s.name;
 
@@ -2107,8 +2111,41 @@ function buildSettings() {
   }
 }
 
+/** 버전 "1.1.2" 비교: a 가 더 새것이면 양수 */
+function cmpVersion(a, b) {
+  const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  return 0;
+}
+
+// 설정 맨 위 버전 줄: PC 는 앱 버전(새 버전이 있으면 함께), 휴대폰은 화면·PC 앱 버전을 나란히(어느 쪽이 옛것인지)
+function refreshVersionLine() {
+  const el = $('sVer');
+  let text, warn = '';
+  if (REMOTE) {
+    text = T(`휴대폰 화면 v${PAGE_VERSION} · PC 앱 `, `Phone page v${PAGE_VERSION} · PC app `)
+      + (remotePcVersion ? `v${remotePcVersion}` : T('v1.1.1 이하', 'v1.1.1 or older'));
+    const d = cmpVersion(PAGE_VERSION, remotePcVersion || '1.1.1');
+    if (d < 0) warn = T('⚠️ 휴대폰 화면이 PC 앱보다 옛 버전이에요 — 새로고침해 보세요(앱으로 설치했다면 완전히 닫았다 열기).',
+      '⚠️ The phone page is older than the PC app — reload it (if installed as an app, close it fully and reopen).')
+      // 내 Firebase Hosting 페이지는 GitHub 에 새 버전이 나와도 저절로 바뀌지 않는다
+      + (/\.(web\.app|firebaseapp\.com)$/.test(location.hostname)
+        ? T(' 그래도 그대로면 내 Firebase Hosting 페이지를 PC에서 다시 올려야 해요(tools\\deploy-mobile.ps1).',
+          ' If it stays the same, upload your Firebase Hosting page again from the PC (tools\\deploy-mobile.ps1).') : '');
+    else if (d > 0) warn = T('⚠️ PC 앱이 옛 버전이에요 — PC에서 ⚙️ → 정보 → [업데이트].', '⚠️ The PC app is older — on the PC, ⚙️ → About → [Update].');
+  } else {
+    text = `Claude Office v${appSettings?.version || PAGE_VERSION}`;
+    const up = appSettings?.update;
+    if (up?.newer) warn = T(`새 버전 v${up.latest} 이 나왔어요 — 맨 아래 정보 → [업데이트]`, `v${up.latest} is out — About (at the bottom) → [Update]`);
+  }
+  el.textContent = text;
+  el.classList.toggle('warn', !!warn);
+  if (warn) el.append(elem('div', '', warn));
+}
+
 function refreshSettings() {
   if (settingsEl.hidden) return;
+  refreshVersionLine();
   for (const { it, row, desc, status, refresh } of settingRows) {
     row.hidden = it.shown ? !it.shown() : false;
     if (row.hidden) continue;
@@ -2656,6 +2693,7 @@ async function startRemote() {
       if (followPcLanguage(obj.lang)) return;
       remoteShare = obj.share || {};
       remoteState = obj.remote || null;   // 자리 비움 원격(아래 onSnapshot 이 상세 패널을 다시 그린다)
+      remotePcVersion = typeof obj.ver === 'string' ? obj.ver : '';
       if (remoteEdit !== (obj.edit === true)) { remoteEdit = obj.edit === true; applyRemoteEdit(); }
       officeName = String(remoteShare.office || '').trim();
       remoteAt = p.t || Date.now();

@@ -497,8 +497,8 @@ internal sealed partial class CloudSync : IDisposable
         lock (_lock) cfg = _cfg;   // 로그인하며 Uid 가 생겼을 수 있다
 
         // edit: 휴대폰에서 별명·메모를 고칠 수 있는지(휴대폰이 입력칸을 열지), lang: 화면 언어(다르면 휴대폰이 그 언어로 다시 연다),
-        // remote: 자리 비움 원격 상태(승인 요청·Claude 의 마지막 답·지시 처리 상태)
-        var body = Encrypt(cfg.Key!, $"{{\"snap\":{snap},\"share\":{share},\"edit\":{(cfg.PhoneEdit ? "true" : "false")},\"lang\":\"{lang}\"" +
+        // remote: 자리 비움 원격 상태(승인 요청·Claude 의 마지막 답·지시 처리 상태), ver: PC 앱 버전(휴대폰 설정에 화면 버전과 나란히)
+        var body = Encrypt(cfg.Key!, $"{{\"snap\":{snap},\"share\":{share},\"edit\":{(cfg.PhoneEdit ? "true" : "false")},\"lang\":\"{lang}\",\"ver\":\"{App.Version}\"" +
                                      (remote != null ? $",\"remote\":{remote}" : "") + "}", now);
         using var resp = await _http.PutAsync(OfficeUrl(cfg, token), new StringContent(body, Encoding.UTF8, "application/json"), ct);
         if (!resp.IsSuccessStatusCode)
