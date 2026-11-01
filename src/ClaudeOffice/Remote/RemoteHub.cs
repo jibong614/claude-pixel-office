@@ -43,6 +43,7 @@ internal sealed class RemoteHub
     private readonly Dictionary<string, Said> _said = new(StringComparer.Ordinal);             // 세션 → 마지막 지시와 그 처리 상태
     private readonly Dictionary<string, Said> _replies = new(StringComparer.Ordinal);          // 세션 → Claude 의 마지막 답(Stop 훅이 알려 줌)
     private readonly Dictionary<string, DateTime> _nonces = new(StringComparer.Ordinal);       // 이미 처리한 휴대폰 메시지(같은 것을 두 번 받지 않게)
+    private readonly HashSet<string> _stopFlags = new(StringComparer.OrdinalIgnoreCase);        // 긴급 중단이 요청된 세션(PreToolUse 훅에서 도구 차단에 씀)
     private bool _away;
     private DateTime _awaySinceUtc;
     private bool _pcIdle;      // PC 를 아무도 안 쓰는 중(입력 없음·화면 잠금) — 이때만 휴대폰이 자리 비움을 켤 수 있다
@@ -82,8 +83,27 @@ internal sealed class RemoteHub
     {
         "listen" => ListenAsync(body, gone),
         "approve" => ApproveAsync(body, gone),
+        "pretool" => PreToolAsync(body),
         _ => Task.FromResult(Array.Empty<byte>()),
     };
+
+    private Task<byte[]> PreToolAsync(byte[] body)
+    {
+        if (!Installed || ParseHook(body) is not { } h) return Task.FromResult(Array.Empty<byte>());
+        bool stopRequested;
+        lock (_lock)
+        {
+            stopRequested = _stopFlags.Remove(h.Sid);
+        }
+        if (stopRequested)
+        {
+            Log("pretool-stop", h.Sid, h.Tool ?? "-");
+            var msg = L.T("🛑 사용자가 모바일/미니펫에서 긴급 작업 중단을 요청했습니다. 작업을 즉시 중단하고 대기하세요.",
+                          "🛑 The user requested an emergency stop from mobile/MiniPet. Halt the task immediately and wait.");
+            return Task.FromResult(Encoding.UTF8.GetBytes(msg));
+        }
+        return Task.FromResult(Array.Empty<byte>());
+    }
 
     private async Task<byte[]> ListenAsync(byte[] body, CancellationToken gone)
     {
@@ -92,6 +112,7 @@ internal sealed class RemoteHub
         string? now = null;
         lock (_lock)
         {
+            _stopFlags.Remove(h.Sid);
             if (h.Event == "Stop" && !string.IsNullOrWhiteSpace(h.LastMessage))
                 _replies[h.Sid] = new Said(ToolCatalog.Clip(h.LastMessage.Trim(), MaxReply), DateTime.UtcNow, "reply");
 
@@ -191,6 +212,31 @@ internal sealed class RemoteHub
         if (changed) Notify();
     }
 
+    /// <summary>세션에 긴급 중단이 요청됨(휴대폰 🛑 또는 PC 🛑). 대기열을 비우고, 승인 대기 중이면 거절하며, 다음 도구 실행을 막는 플래그를 세운다.</summary>
+    public void RequestStop(string sid)
+    {
+        if (string.IsNullOrEmpty(sid)) return;
+        bool changed = false;
+        lock (_lock)
+        {
+            _stopFlags.Add(sid);
+            if (_queued.Remove(sid)) changed = true;
+            if (_said.TryGetValue(sid, out var s) && s.State == "queued")
+            {
+                _said.Remove(sid);
+                changed = true;
+            }
+            foreach (var (id, a) in _approvals.Where(kv => kv.Value.Sid == sid).ToList())
+            {
+                _approvals.Remove(id);
+                a.Tcs.TrySetResult(DenyJson(followUp: false));
+                changed = true;
+            }
+            Log("stop-req", sid, "-");
+        }
+        if (changed) Notify();
+    }
+
     /// <summary>PC 바탕화면 미니펫에서 보낸 지시 — 사용자가 직접 PC 에서 입력한 것이므로 자리 비움 여부와 상관없이 바로 전달·대기열에 넣는다.</summary>
     public void SayFromPc(string sid, string text, int max = MaxText)
     {
@@ -244,7 +290,7 @@ internal sealed class RemoteHub
                 case "say" when m.Sid != null && !string.IsNullOrWhiteSpace(m.Text): Say(m.Sid, m.Text); break;
                 case "cancel" when m.Sid != null: CancelQueued(m.Sid); break;
                 case "stop" when m.Sid != null:
-                    CancelQueued(m.Sid);
+                    RequestStop(m.Sid);
                     StopRequested?.Invoke(m.Sid);
                     Log("stop-phone", m.Sid, "-");
                     break;
@@ -443,6 +489,7 @@ internal sealed class RemoteHub
     {
         lock (_lock)
         {
+            _stopFlags.Remove(sid);
             if (_listeners.Remove(sid, out var l)) l.Tcs.TrySetResult(null);
             _queued.Remove(sid);
             _said.Remove(sid);

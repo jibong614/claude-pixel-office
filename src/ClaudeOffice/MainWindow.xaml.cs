@@ -1090,13 +1090,6 @@ public partial class MainWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-
-    private const byte VK_CONTROL = 0x11;
-    private const byte VK_C = 0x43;
-    private const uint KEYEVENTF_KEYUP = 0x0002;
-
     private static readonly HashSet<string> TerminalOrIdeProcesses = new(StringComparer.OrdinalIgnoreCase)
     {
         "Code", "Cursor", "Windsurf", "WindowsTerminal", "pwsh", "powershell", "cmd",
@@ -1199,14 +1192,29 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>세션 창을 맨 앞으로 올린 뒤 Ctrl+C를 전송하여 실행 중인 명령을 긴급 중단한다.</summary>
+    /// <summary>세션의 실행 중인 명령을 긴급 중단한다. 훅 플래그 설정 및 실행 중인 도구 프로세스 트리를 즉시 강제 종료한다.</summary>
     private void StopSession(string? id)
     {
-        FocusSessionWindow(id);
-        keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
-        keybd_event(VK_C, 0, 0, UIntPtr.Zero);
-        keybd_event(VK_C, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        if (string.IsNullOrEmpty(id)) return;
+        _remote.RequestStop(id);
+        string? cwd = null;
+        if (_watcher.LastSnapshot is { } snap)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(snap);
+                foreach (var s in doc.RootElement.GetProperty("sessions").EnumerateArray())
+                {
+                    if (s.GetProperty("id").GetString() == id)
+                    {
+                        cwd = s.TryGetProperty("cwd", out var c) ? c.GetString() : null;
+                        break;
+                    }
+                }
+            }
+            catch { }
+        }
+        ApprovalProbe.TerminateToolProcesses(id, cwd);
     }
 
     private static bool IsJsonObject(string text)

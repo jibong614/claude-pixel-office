@@ -5,7 +5,8 @@
 **See at a glance what Claude Code is doing and whether it's waiting for you — as a tiny pixel-art office on Windows.**
 
 Each Claude Code conversation (session) becomes an employee at a desk. Their pose, monitor and speech bubble show what they're doing right now,
-and they raise a hand when they need your approval or an answer. While you're away, your phone can watch, approve, and hand out the next task.
+and they raise a hand when they need your approval or an answer.
+Watch over them with the floating **MiniPet (🐾)** on your desktop while doing other work, and when you're away, **instruct and approve directly from your phone (📱)** from anywhere.
 
 > Unofficial tool, not affiliated with Anthropic. It only reads the transcript files Claude Code writes.
 > **English UI**: the app starts in Korean — open ⚙️ → 사무실 (Office) → **화면 언어 / Language → English**.
@@ -18,21 +19,25 @@ Try it in the browser first, no install: **https://jibong614.github.io/claude-pi
 ## Why use it?
 
 1. **Running several Claude Code windows? See who's doing what, at a glance**
-   No more clicking through each window.
+   No more clicking through each terminal window.
    e.g. "Cart fixes" is ✏️ writing code, "Design cleanup" is ⌨️ building, "Log review" is ✋ waiting for your approval
-2. **Never miss the moment it needs you**
+2. **🐾 Desktop MiniPet — Always with you, even with other windows full screen**
+   Even when your code editor or browser is full screen, a tiny transparent pixel pet stays in a corner of your screen, showing live speech bubbles of what your agent is doing.
+   Approve tool requests or send the next task directly from the MiniPet.
+3. **📱 Keep work moving while you're away — Send instructions & emergency stop from your phone**
+   The phone needs no Claude sign-in; scan one QR code and watch live conversations over LTE/5G.
+   - At lunch: "May I run the tests?" → tap **[Approve]** on your phone
+   - When asked a question → **tap multiple-choice options directly on your phone to answer**
+   - Finished a task? Send **"Now write unit tests for this function"** and the resting session wakes up and **continues the same conversation**
+   - Stuck in an infinite loop or runaway build? One tap on **[🛑 Emergency Stop]** to safely halt immediately
+4. **📋 Office Whiteboard — Real-time project TODOs at a glance**
+   Plans and tasks agreed upon in conversations automatically populate the whiteboard next to the window. Get a clear overview of project progress in real time.
+5. **🏆 Quest Book — Gamified feature walkthrough**
+   From naming your office to your first mobile instruction and prompt cache savings, complete **21 gamified achievements**. Level up as you master every feature of Claude Pixel Office.
+6. **Never miss the moment it needs you**
    A waiting employee raises a hand, the window title and taskbar show `(✋2)`, and a Windows notification pops up.
-   e.g. while you were writing an email, a session sat at "approve this command?" for 20 minutes — now you notice right away
-3. **Know when a long task is done**
-   e.g. kick off a 10-minute build or test run, do something else, and get a notification when it ends (click it to open that employee)
-4. **Keep work moving while you're away — approve and give the next task from your phone**
-   The phone needs no Claude sign-in; scan one QR and it works from anywhere.
-   e.g. at lunch: "May I run the tests?" → tap [Approve] on the phone.
-   When it's done, send "now tidy up the README" from the phone and the resting session wakes up and **continues the same conversation**
-5. **See how much work got done today**
-   Work time, prompts, tokens and top tools for every employee (📊 Today's work log)
-6. **It's fun to watch**
-   Busy coders, dozing employees, empty desks after they go home… The compact view (▤) fits in a corner of the screen
+7. **See how much work got done today & cost savings**
+   Work time, prompts, token counts, and cost saved via prompt caching for every employee (📊 Today's work log).
 
 ## Screens (shown in Korean UI)
 
@@ -48,14 +53,18 @@ Try it in the browser first, no install: **https://jibong614.github.io/claude-pi
 
 - 👥 **Session = employee, working folder = team area (rug), subagent = intern next to the desk**
 - 💬 **Shows the actual work**: reading, writing code, running commands, searching, web search, directing interns, planning, writing an answer
+- 🐾 **Desktop MiniPet**: An always-on-top transparent companion. Shows representative agent speech bubbles, quick approvals, instruction input, and emergency stop
+- 📱 **Powerful mobile remote control**: **Turn on → scan one QR**. Remote notifications, approvals, **dispatching new instructions**, answering multiple-choice questions, and **real-time emergency stop (🛑)**. End-to-end encrypted (AES-256-GCM) via free server
+- 📋 **Whiteboard**: Real-time project TODO list automatically extracted from session conversations
+- 🏆 **Achievements (Quest Book)**: 21 achievements, level/EXP system, completed quest filter
+- 🛑 **Dual-action Emergency Stop**: Terminates running tool process trees immediately + blocks subsequent tool calls via `PreToolUse` hook in 0.01 seconds without disturbing Windows idle time
 - 🔍 **Click an employee for details**: last instruction, recent actions, interns, today's stats, and your own **nickname and memo** (kept even if the session is renamed)
 - 🔔 **Desktop notifications**: when someone starts waiting, or finishes a long task. Sound and quiet hours are configurable
 - ▤ **Compact widget**: a one-line-per-employee list that stays on top
 - 🪟 **Lives in the tray, can run at startup**: closing (✕) only hides it. New versions install from inside the app
 - 🔗 **Claude Code connection (recommended)**: asked once on first start — exact approval/question status, and phone instructions and approvals come through it
-- 📱 **Phone connection (optional)**: **Turn on → scan one QR**. 🔒 It goes through a free server, locked with a key only your PC and your phone have, so neither the server nor anyone else can read it
 - 🌐 Screen language: 한국어 / English
-- 🔒 **Changes nothing without asking**: reads transcript files only; the Claude Code settings are edited only after you say yes in a confirmation dialog
+- 🔒 **Safety**: Reads transcript files only; the Claude Code settings are edited only after you say yes in a confirmation dialog
 
 ## Quick start
 
@@ -76,13 +85,17 @@ Build from source (.NET 8 SDK): `dotnet build ClaudeOffice.sln -c Release`
 | Control | What it does |
 |---|---|
 | Click an employee | Detail panel on the right (click again to fold/unfold). The office re-lays out so the panel never covers anyone |
+| 🐾 | **Desktop MiniPet** toggle — small, transparent companion on desktop or taskbar |
+| 📋 Whiteboard | By the left window — displays real-time session TODOs and goals |
+| 🏆 | **Quest Book** — 21 achievements, level progress, completed quests filter |
+| 🛑 | **Emergency Stop** — immediately terminates running command processes and safely returns agent to idle |
 | ▤ | Compact widget (list view, small always-on-top window) |
-| 📊 | Today's work log |
+| 📊 | Today's work log — work time, prompts, tokens, prompt cache cost savings |
 | 🔕 | Not connected to Claude Code — click to connect (disappears once fully connected; see below) |
 | 🚪 / 📌 / ⚙️ | Show/hide employees who went home / always on top / settings |
 | Tray icon 🧑‍💻 | Click to open, right-click → Exit. Closing the window (✕) only hides it by default |
 
-Settings (⚙️) open as a centered pop-up with tabs — 🏢 Office · 👥 Employees · 🔔 Notifications · 📱 Phone · 🖥️ General · ℹ️ About (the last tab is remembered; Esc or a click outside closes it). They include: office name, screen language (한국어 / English), display period (12h–7d), how many employees and how to pick them (most recent / manual checklist), wait-only filter, office size, window behavior (start hidden, close to tray, run at Windows startup; position and size are remembered), notifications, Claude Code connection, phone connection, update check with one-click **Update**, and the data folder.
+Settings (⚙️) open as a centered pop-up with tabs — 🏢 Office · 🐾 MiniPet · 👥 Employees · 🔔 Notifications · 📱 Phone · 🖥️ General · ℹ️ About (the last tab is remembered; Esc or a click outside closes it). They include: office name, screen language (한국어 / English), MiniPet toggles and pinned employee, display period (12h–7d), how many employees and how to pick them (most recent / manual checklist), wait-only filter, office size, window behavior (start hidden, close to tray, run at Windows startup; position and size are remembered), notifications, Claude Code connection, phone connection, update check with one-click **Update**, and the data folder.
 
 Command line: `--demo` (sample office), `--exit` (quit the running instance), `--autostart` (start hidden in the tray), `--offscreen` (for test tools).
 
@@ -90,7 +103,7 @@ Command line: `--demo` (sample office), `--exit` (quit the running instance), `-
 
 Transcripts do not record "a permission dialog is open", so without the connection the app only *guesses* (a file edit that doesn't finish).
 Say **yes** when asked "Connect to Claude Code?" on first start, or later use ⚙️ → 🖥️ General → **Claude Code connection** (or 🔕 in the top bar).
-After a confirmation dialog it adds a few lines (hooks) to `~/.claude/settings.json`; phone instructions and approvals come through the same connection.
+After a confirmation dialog it adds a few lines (hooks) to `~/.claude/settings.json`; phone instructions, approvals, and emergency stops come through the same connection.
 
 | Added (hook) | What it does |
 |---|---|
@@ -98,6 +111,7 @@ After a confirmation dialog it adds a few lines (hooks) to `~/.claude/settings.j
 | `Notification` | permission and input prompts |
 | `SessionEnd` | the employee goes home immediately |
 | `Stop` · `SessionStart` | a session that finished answering (or just opened) waits in the background, and an instruction from the phone wakes it (`asyncRewake`, up to a day). It reconnects within 15 s when the app restarts (updates etc.) — one per session |
+| `PreToolUse` | 🛑 checks emergency stop flag before tool execution — exits with code 2 to block runaway tools and return agent safely to waiting |
 
 - The lines look like `curl … http://127.0.0.1:47821/…; exit 0` (run by Git Bash; on PCs without it, an equivalent PowerShell command). They only talk to this app on this PC,
   and **always exit successfully** when the app is closed, so no errors show up in Claude Code (only the hook waiting for phone instructions keeps quietly waiting in the background until the app is back)
@@ -120,26 +134,27 @@ Details (Korean): [docs/MOBILE.md](docs/MOBILE.md)
 
 ### While you're away — instruct and approve from the phone
 
-With the Claude Code connection, while you're away the phone can **send instructions** to an employee (session) and **answer permission requests**.
+With the Claude Code connection, while you're away the phone can **send instructions** to an employee (session), **answer permission requests and questions**, and **trigger emergency stops**.
 The phone needs no Claude login — the work is done by Claude Code on the PC with its own sign-in.
 
 1. **Just walk away and open the office on your phone.** There's no button to press on the PC or the phone
    - While the phone page is open and the PC has had no input for 30 s, instructions and approvals come to the phone (= Away). Move the mouse or type at the PC and it goes back to the PC
    - Even when you're not looking at the phone, **3 minutes** without input (off/1/5/10 min in Settings) or **locking the screen** (⊞+L, at once) turns Away on — approval requests that arrive meanwhile wait until you open the phone
 2. On the phone, tap an employee to see the **📱 Instruct & approve from the phone** box
-   - ✋ **Approval request**: see exactly what it wants to run, then Approve / Deny. When denying you can write what to do instead, and Claude follows it
-   - **Send an instruction**: the idle session wakes up and **continues the same conversation**. If it is busy, the instruction is delivered as soon as the current work ends
-   - 💬 **Last answer**: Claude's latest reply
+   - 💬 **Send a new instruction (Key Feature!)**: Enter text and tap [Send] — the idle session wakes up and **continues the same conversation** (e.g. "Tidy up README", "Add unit tests for this function"). If it is busy, the instruction is delivered as soon as the current work ends.
+   - ✋ **Approval request**: see exactly what it wants to run, then Approve / Deny. When denying you can write what to do instead, and Claude follows it.
+   - ❓ **Multiple-choice questions**: When Claude asks a question (`AskUserQuestion`), option buttons appear on mobile. Tap any option to answer directly.
+   - 🛑 **Emergency Stop**: If a command is stuck or runaway, tap to immediately terminate the running process on PC and halt Claude safely.
+   - 💬 **Last answer**: Claude's latest reply can be viewed on your phone as well.
 
 - **Safety**
   - **While someone is using the PC** (input in the last 30 s) the phone cannot turn Away on — instructions sent then are dropped and approvals go to the PC prompt
   - What the phone sends is locked with the same key (AES-256-GCM), so only a device that scanned the QR can send; messages older than 10 minutes or already seen are dropped
   - Claude's permission rules stay as they are — anything that needs approval still asks (on the phone)
-  - Every instruction, approval and denial is logged in `remote.log` in the data folder
+  - Every instruction, approval, denial, and emergency stop is logged in `remote.log` in the data folder
   - **The QR/link is the key.** If someone saw it, use **New key** under ⚙️ → 📱 Phone
 - After connecting, **new or reopened sessions** take instructions right away; sessions that were already open start **after their next answer**. When Claude Office restarts (an update, for example), resting sessions reconnect by themselves within 15 seconds
 - Claude's last answer is included in the locked summary (only with the Claude Code connection)
-- Questions (AskUserQuestion) need a choice, so they are not sent to the phone — answer them at the PC
 
 ## How it works
 
@@ -148,10 +163,11 @@ The app scans that folder every 0.7 s and reads **only appended bytes** (the las
 
 ```
 src/ClaudeOffice/
-  Monitoring/   folder watcher, line parser, tool → action/bubble catalog, hook state, today's stats, snapshot JSON
+  Monitoring/   folder watcher, line parser, tool → action/bubble catalog, hook state, today's stats, snapshot JSON, tool process management (ApprovalProbe)
   Hooks/        Claude Code connection — 127.0.0.1 hook receiver, settings.json hook install/remove
   Cloud/        phone connection — locked summary upload to the free server (Firebase), anonymous sign-in
-  Remote/       delivers phone instructions and approvals to sessions through hooks, Away
+  Remote/       delivers phone instructions, approvals and stops to sessions through hooks, Away
+  PetWindow     Desktop MiniPet — transparent window, always on top, interactive companion
   MainWindow    WebView2 host, tray icon, notifications, update check, autostart
   wwwroot/      the office screen (canvas pixel art) — same files for the PC app and the phone page
 mobile/         free-server database rules

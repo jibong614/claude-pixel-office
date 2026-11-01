@@ -32,6 +32,7 @@ internal static class HookSetup
         ("PermissionRequest", "approve"),   // 자리 비움이면 휴대폰에서 승인·거절
         ("Stop", "listen"),                 // 답을 마치면 휴대폰 지시를 기다린다
         ("SessionStart", "listen"),         // 막 연 세션도(아직 한 번도 답하지 않았어도) 지시를 받게
+        ("PreToolUse", "pretool"),          // 도구 실행 전 긴급 중단 플래그 검사 (중단 시 exit 2로 중지)
     };
 
     // 승인 창·알림은 Claude가 기다릴 이유가 없으니 백그라운드(async)로 보낸다.
@@ -157,6 +158,24 @@ internal static class HookSetup
         $"exit 0 {RemoteMarker}";
 
     /// <summary>
+    /// 도구 실행 전 확인(bash): 긴급 중단 플래그가 서 있으면 중단 안내를 stderr 로 내보내고 종료 코드 2(도구 실행 즉시 차단).
+    /// 꺼져 있거나 중단 플래그가 없으면 exit 0 으로 조용히 진행.
+    /// </summary>
+    private static string RemotePreToolBash =>
+        $"out=$(curl -sf -m 2 -H \"Content-Type: application/json\" -H \"X-ClaudeOffice-Token: {Token}\" --data-binary @- http://127.0.0.1:{HookServer.Port}/remote/pretool 2>/dev/null); " +
+        "if [ $? -eq 0 ] && [ -n \"$out\" ]; then printf '%s' \"$out\" >&2; exit 2; fi; " +
+        $"exit 0 {RemoteMarker}";
+
+    /// <summary>
+    /// 도구 실행 전 확인(PowerShell). 한글 안내 바이트(UTF-8) 그대로 stderr 에 쓰고 exit 2.
+    /// </summary>
+    private static string RemotePreToolPowerShell =>
+        "try { $m = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($m); $b = $m.ToArray(); " +
+        $"$r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/remote/pretool -ContentType 'application/json' -Headers @{{'X-ClaudeOffice-Token'='{Token}'}} -Body $b -TimeoutSec 2; " +
+        "$o = $r.RawContentStream.ToArray(); if ($o.Length -gt 0) { $e = [Console]::OpenStandardError(); $e.Write($o, 0, $o.Length); $e.Flush(); exit 2 } " +
+        $"}} catch {{}}; exit 0 {RemoteMarker}";
+
+    /// <summary>
     /// Claude Code 가 훅 명령에 쓸 Git Bash(bash.exe). 없으면 null → PowerShell 명령을 넣는다.
     /// Claude Code 와 같은 순서로 찾는다: CLAUDE_CODE_GIT_BASH_PATH → PATH 의 git.exe 옆 → 흔한 설치 위치.
     /// </summary>
@@ -250,20 +269,24 @@ internal static class HookSetup
         foreach (var (ev, kind) in RemoteEvents)
         {
             bool listen = kind == "listen";
+            bool pretool = kind == "pretool";
             var handler = new JsonObject
             {
                 ["type"] = "command",
-                ["command"] = (bash, listen) switch
+                ["command"] = (bash, kind) switch
                 {
-                    (true, true) => RemoteListenBash,
-                    (true, false) => RemoteApproveBash,
-                    (false, true) => RemoteListenPowerShell,
-                    (false, false) => RemoteApprovePowerShell,
+                    (true, "listen") => RemoteListenBash,
+                    (true, "approve") => RemoteApproveBash,
+                    (true, "pretool") => RemotePreToolBash,
+                    (false, "listen") => RemoteListenPowerShell,
+                    (false, "approve") => RemoteApprovePowerShell,
+                    (false, "pretool") => RemotePreToolPowerShell,
+                    _ => RemoteApprovePowerShell,
                 },
             };
             if (!bash) handler["shell"] = "powershell";
             if (listen) handler["asyncRewake"] = true;
-            handler["timeout"] = listen ? ListenTimeout : ApproveTimeout;
+            handler["timeout"] = listen ? ListenTimeout : (pretool ? 5 : ApproveTimeout);
             Add(hooks, ev, handler);
         }
         Save(root, fmt);
@@ -276,16 +299,20 @@ internal static class HookSetup
     public static bool UpgradeRemote()
     {
         var (mon, rem) = Status();
-        if (!mon && !rem) return false;
         var (root, _) = Load();
         if (root["hooks"] is not JsonObject hooks) return false;
         var commands = hooks.Select(kv => kv.Value).OfType<JsonArray>()
             .SelectMany(groups => groups.OfType<JsonObject>()).Select(g => g["hooks"]).OfType<JsonArray>()
             .SelectMany(handlers => handlers).Where(IsOurs).Select(CommandOf).ToList();
-        var current = new[] { Command, PowerShellCommand, RemoteListenBash, RemoteApproveBash, RemoteListenPowerShell, RemoteApprovePowerShell };
+        bool hasAnyRemote = hooks.Select(kv => kv.Value).OfType<JsonArray>()
+            .SelectMany(groups => groups.OfType<JsonObject>()).Select(g => g["hooks"]).OfType<JsonArray>()
+            .SelectMany(handlers => handlers).Any(IsRemote);
+        if (!mon && !rem && !hasAnyRemote) return false;
+        var current = new[] { Command, PowerShellCommand, RemoteListenBash, RemoteApproveBash, RemoteListenPowerShell, RemoteApprovePowerShell, RemotePreToolBash, RemotePreToolPowerShell };
         var port = $"127.0.0.1:{HookServer.Port}/";
-        if (commands.All(c => current.Contains(c)) || !commands.All(c => c?.Contains(port, StringComparison.Ordinal) == true)) return false;
-        if (rem) InstallRemote(); else Install();
+        if (rem && commands.All(c => current.Contains(c)) && commands.All(c => c?.Contains(port, StringComparison.Ordinal) == true)) return false;
+        if (!hasAnyRemote && mon && commands.All(c => current.Contains(c)) && commands.All(c => c?.Contains(port, StringComparison.Ordinal) == true)) return false;
+        if (hasAnyRemote || rem) InstallRemote(); else Install();
         return true;
     }
 

@@ -105,4 +105,121 @@ internal static partial class ApprovalProbe
 
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct PROCESSENTRY32
+    {
+        public uint dwSize;
+        public uint cntUsage;
+        public uint th32ProcessID;
+        public IntPtr th32DefaultHeapID;
+        public uint th32ModuleID;
+        public uint cntThreads;
+        public uint th32ParentProcessID;
+        public int pcPriClassBase;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szExeFile;
+    }
+
+    /// <summary>세션의 claude.exe 아래에서 실행 중인 도구(명령) 자식 프로세스 트리를 즉시 강제 종료한다.</summary>
+    public static int TerminateToolProcesses(string sessionId, string? cwd = null)
+    {
+        if (string.IsNullOrEmpty(sessionId)) return 0;
+        var procs = new List<(uint Pid, uint ParentPid, string Name)>();
+        var snap = CreateToolhelp32Snapshot(0x00000002 /* TH32CS_SNAPPROCESS */, 0);
+        if (snap == IntPtr.Zero || snap == (IntPtr)(-1)) return 0;
+        try
+        {
+            var entry = new PROCESSENTRY32 { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>() };
+            if (Process32First(snap, ref entry))
+            {
+                do
+                {
+                    procs.Add((entry.th32ProcessID, entry.th32ParentProcessID, entry.szExeFile));
+                } while (Process32Next(snap, ref entry));
+            }
+        }
+        finally { CloseHandle(snap); }
+
+        uint claudePid = 0;
+        foreach (var p in procs)
+        {
+            if (p.Name.Equals("claude.exe", StringComparison.OrdinalIgnoreCase) || p.Name.Equals("claude", StringComparison.OrdinalIgnoreCase))
+            {
+                var cmd = CommandLine((int)p.Pid);
+                if (cmd != null && cmd.Contains(sessionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    claudePid = p.Pid;
+                    break;
+                }
+            }
+        }
+
+        if (claudePid == 0)
+        {
+            var needle = $"claudeoffice-listen-{sessionId}";
+            foreach (var p in procs)
+            {
+                var cmd = CommandLine((int)p.Pid);
+                if (cmd != null && cmd.Contains(needle, StringComparison.OrdinalIgnoreCase))
+                {
+                    claudePid = p.ParentPid;
+                    break;
+                }
+            }
+        }
+
+        if (claudePid == 0 && !string.IsNullOrWhiteSpace(cwd))
+        {
+            foreach (var p in procs)
+            {
+                if (p.Name.Equals("claude.exe", StringComparison.OrdinalIgnoreCase) || p.Name.Equals("claude", StringComparison.OrdinalIgnoreCase))
+                {
+                    var cmd = CommandLine((int)p.Pid);
+                    if (cmd != null && cmd.Contains(cwd, StringComparison.OrdinalIgnoreCase))
+                    {
+                        claudePid = p.Pid;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (claudePid == 0) return 0;
+
+        int killed = 0;
+        foreach (var child in procs.Where(p => p.ParentPid == claudePid))
+        {
+            if (child.Name.Equals("conhost.exe", StringComparison.OrdinalIgnoreCase) || child.Name.Equals("conhost", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var childCmd = CommandLine((int)child.Pid) ?? "";
+            if (childCmd.Contains("modelcontextprotocol", StringComparison.OrdinalIgnoreCase) ||
+                childCmd.Contains("/mcp", StringComparison.OrdinalIgnoreCase) ||
+                childCmd.Contains("\\mcp", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (childCmd.Contains("claudeoffice-listen", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
+            {
+                using var proc = Process.GetProcessById((int)child.Pid);
+                proc.Kill(entireProcessTree: true);
+                killed++;
+            }
+            catch { }
+        }
+        return killed;
+    }
 }

@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.4.8';
+const PAGE_VERSION = '1.4.9';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1875,7 +1875,7 @@ async function stopSession(sid) {
     if (!remoteKey) return;
     const ok = await postInbox({ k: 'stop', sid });
     const msg = ok
-      ? T('🛑 PC로 비상정지(Ctrl+C) 신호를 보냈어요! 잠시 후 멈춥니다.', '🛑 Sent emergency stop (Ctrl+C) to PC! Stopping shortly.')
+      ? T('🛑 PC로 긴급 중단 신호를 보냈어요! 즉시 작업을 멈춥니다.', '🛑 Sent emergency stop to PC! Halting task immediately.')
       : lastPostError;
     remoteNote = { sid, at: Date.now(), text: msg };
     renderPanel();
@@ -2373,10 +2373,10 @@ const ALL_ACHIEVEMENTS = [
     id: 'emergency_stop',
     cat: 'development',
     icon: '🛑',
-    name: '비상 정지 (Ctrl+C)',
+    name: '비상 정지',
     en: 'Emergency Brake',
     desc: '직원이 작업 중일 때 [🛑 작업 중단] 버튼을 눌러 작업을 안전하게 멈춰보세요.',
-    enDesc: 'Press emergency stop [🛑] (Ctrl+C) to abort a running task safely.',
+    enDesc: 'Press emergency stop [🛑] to abort a running task safely.',
     guide: '직원이 일할 때 상세 서랍 또는 미니펫의 [🛑] 버튼 클릭',
     enGuide: 'Click [🛑] button in drawer or MiniPet while working',
     exp: 100,
@@ -4582,12 +4582,12 @@ function renderPanel() {
     );
   }
 
-  // 🛑 긴급 작업 중단 (Ctrl+C) 버튼
+  // 🛑 긴급 작업 중단 버튼
   let stopBtn = $('pStopBtn');
   if (!stopBtn) {
     stopBtn = elem('button', 'mini btn-stop', T('🛑 작업 중단', '🛑 Stop task'));
     stopBtn.id = 'pStopBtn';
-    stopBtn.title = T('현재 실행 중인 명령/작업에 긴급 중단(Ctrl+C) 신호를 보냅니다', 'Send emergency stop (Ctrl+C) to this session');
+    stopBtn.title = T('현재 실행 중인 명령/작업을 긴급 중단합니다', 'Halt current task in this session');
     stopBtn.addEventListener('click', async () => {
       if (selectedId) {
         stopBtn.disabled = true;
@@ -4851,9 +4851,9 @@ function renderRemote(s) {
   // 🛑 긴급 작업 중단 버튼 (일하는 중일 때 상시 노출)
   let rStopBtn = $('rStopBtn');
   if (!rStopBtn) {
-    rStopBtn = elem('button', 'btn-stop-remote', T('🛑 긴급 작업 중단 (PC에 Ctrl+C 전송)', '🛑 Emergency Stop (Send Ctrl+C to PC)'));
+    rStopBtn = elem('button', 'btn-stop-remote', T('🛑 긴급 작업 중단 (작업 즉시 중지)', '🛑 Emergency Stop (Halt task)'));
     rStopBtn.id = 'rStopBtn';
-    rStopBtn.title = T('현재 실행 중인 작업에 즉시 Ctrl+C 신호를 보냅니다', 'Send Ctrl+C to interrupt current task');
+    rStopBtn.title = T('현재 실행 중인 작업을 즉시 중단합니다', 'Halt current task immediately');
     rStopBtn.addEventListener('click', async () => {
       if (selectedId) {
         rStopBtn.disabled = true;
@@ -4862,7 +4862,7 @@ function renderRemote(s) {
         rStopBtn.textContent = T('🛑 비상정지 신호 전송됨', '🛑 Stop Signal Sent');
         setTimeout(() => {
           if (rStopBtn) {
-            rStopBtn.textContent = T('🛑 긴급 작업 중단 (PC에 Ctrl+C 전송)', '🛑 Emergency Stop (Send Ctrl+C to PC)');
+            rStopBtn.textContent = T('🛑 긴급 작업 중단 (작업 즉시 중지)', '🛑 Emergency Stop (Halt task)');
             rStopBtn.disabled = false;
           }
         }, 2200);

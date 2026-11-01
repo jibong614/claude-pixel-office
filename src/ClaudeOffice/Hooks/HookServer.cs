@@ -122,7 +122,7 @@ internal sealed class HookServer : IDisposable
             var lines = Encoding.ASCII.GetString(buf, 0, headEnd).Split("\r\n");
             var request = lines[0].Split(' ');
             var path = request.Length >= 2 ? request[1] : "";
-            string? remote = path switch { "/remote/listen" => "listen", "/remote/approve" => "approve", _ => null };
+            string? remote = path switch { "/remote/listen" => "listen", "/remote/approve" => "approve", "/remote/pretool" => "pretool", _ => null };
             if (request.Length < 2 || request[0] != "POST" || (remote is null && path != "/hook"))
             {
                 await stream.WriteAsync(NotFound, token);

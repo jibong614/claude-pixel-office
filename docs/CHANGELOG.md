@@ -2,6 +2,23 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.4.9 — 2026-11-01
+- **모바일 원격 비상정지 신뢰성 및 안전성 근본 개선 (가상 키 입력 제거 및 이중 안전 중단 시스템 구축)**:
+  - **1. 불안정한 `keybd_event(Ctrl+C)` 키 주입 전면 제거**:
+    - Windows 백그라운드 프로세스의 `SetForegroundWindow` 차단으로 인해 엉뚱한 창으로 키가 전송되던 문제 및 VS Code에서 복사 단축키로 인식되던 근본 원인 해결
+    - 가상 키 전송으로 인해 PC 유휴 시간(`GetLastInputInfo`)이 리셋되어 자리 비움(`_away`) 상태가 풀리던 부작용 원천 차단
+  - **2. 실행 중인 도구 자식 프로세스 트리 즉각 강제 종료 (`TerminateToolProcesses`)**:
+    - `Toolhelp32` 프로세스 스냅샷을 통해 해당 세션의 `claude.exe`를 정확히 식별
+    - `conhost.exe`, MCP 서버(`@modelcontextprotocol`), listen 훅(`claudeoffice-listen`)을 안전하게 보호하고, 현재 실행 중인 도구(셸/명령) 프로세스 트리를 `Process.Kill(entireProcessTree: true)`로 0.01초 만에 즉시 강제 종료하여 1분 대기(`sleep 60`) 등 장시간 실행 명령을 지체 없이 중단
+  - **3. `PreToolUse` 훅 기반 후속 도구 실행 차단 및 안내 신설**:
+    - Claude Code 전역 설정(`settings.json`)에 `PreToolUse` 원격 훅 (`/remote/pretool`) 추가
+    - 비상정지 플래그가 설정된 세션이 다음 도구를 호출하려 할 때 훅에서 종료 코드 `2`와 함께 중단 안내 메시지를 `stderr`로 전달하여 추가 도구 실행을 완벽히 차단하고 즉시 대기 상태로 복귀 유도
+    - 기존 원격 훅 설정 사용자는 앱 구동 시 `UpgradeRemote`를 통해 `PreToolUse` 훅이 자동으로 갱신 등록
+  - **4. 미처리 대기열 및 승인 대기 즉시 거절/정리 연동**:
+    - 중단 신호 수신 즉시 대기열(`_queued`) 지시를 취소하고, 대기 중이던 승인 요청(`PermissionRequest`)도 즉시 거절(`deny`) 처리하여 안전한 대기 상태로 전환
+  - **5. UI 문구 및 안내 명확화**:
+    - 모바일 및 PC 상세 패널의 버튼 문구 및 안내에서 혼선을 주던 'Ctrl+C' 표현을 '작업 즉시 중지'로 정돈하고 피드백 메시지 최적화
+
 ## 1.4.8 — 2026-11-01
 - **모바일 원격 실시간 비상정지(🛑 Ctrl+C) 시스템 구축**:
   - **1. 모바일 전용 긴급 작업 중단 버튼 신설 (`#rStopBtn` 및 `#pStopBtn` 모바일 연동)**:
