@@ -269,6 +269,12 @@ internal static partial class ToolCatalog
         return string.IsNullOrWhiteSpace(s) ? null : s;
     }
 
+    public static bool Bool(JsonElement e, string name) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+
+    public static long Num(JsonElement e, string name) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var n) ? n : 0;
+
     public static string Clip(string? s, int max)
     {
         if (string.IsNullOrEmpty(s)) return "";

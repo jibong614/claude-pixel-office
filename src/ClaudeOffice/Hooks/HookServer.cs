@@ -47,8 +47,10 @@ internal sealed class HookServer : IDisposable
     /// <summary>자리 비움 원격(/remote/...). 없으면 원격 요청에 바로 빈 답.</summary>
     public Remote.RemoteHub? Remote { get; set; }
 
-    public bool Listening { get; private set; }
-    public string? Error { get; private set; }
+    private volatile bool _listening;
+    private volatile string? _error;
+    public bool Listening { get => _listening; private set => _listening = value; }
+    public string? Error { get => _error; private set => _error = value; }
     public DateTime LastReceivedUtc => new(Interlocked.Read(ref _lastReceivedTicks), DateTimeKind.Utc);
 
     public void Start()
@@ -121,7 +123,7 @@ internal sealed class HookServer : IDisposable
             var request = lines[0].Split(' ');
             var path = request.Length >= 2 ? request[1] : "";
             string? remote = path switch { "/remote/listen" => "listen", "/remote/approve" => "approve", _ => null };
-            if (request.Length < 2 || request[0] != "POST" || (remote is null && !path.StartsWith("/hook", StringComparison.Ordinal)))
+            if (request.Length < 2 || request[0] != "POST" || (remote is null && path != "/hook"))
             {
                 await stream.WriteAsync(NotFound, token);
                 return;
@@ -130,21 +132,25 @@ internal sealed class HookServer : IDisposable
             // curl --data-binary 는 본문을 다 읽은 뒤 보내므로 항상 Content-Length 가 붙는다(chunked 는 오지 않음)
             int length = -1;
             bool expectContinue = false, fromBrowser = false, json = false;
+            string? hookToken = null;
             foreach (var line in lines.Skip(1))
             {
                 int colon = line.IndexOf(':');
                 if (colon <= 0) continue;
                 var name = line[..colon].Trim();
                 var value = line[(colon + 1)..].Trim();
-                if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)) int.TryParse(value, out length);
+                if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)) length = int.TryParse(value, out var parsed) ? parsed : -1;
                 else if (name.Equals("Expect", StringComparison.OrdinalIgnoreCase)) expectContinue = value.Equals("100-continue", StringComparison.OrdinalIgnoreCase);
-                else if (name.Equals("Origin", StringComparison.OrdinalIgnoreCase)) fromBrowser = true;
+                else if (name.Equals("Origin", StringComparison.OrdinalIgnoreCase)
+                      || name.Equals("Referer", StringComparison.OrdinalIgnoreCase)
+                      || name.StartsWith("Sec-Fetch-", StringComparison.OrdinalIgnoreCase)) fromBrowser = true;
                 else if (name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)) json = value.StartsWith("application/json", StringComparison.OrdinalIgnoreCase);
+                else if (name.Equals("X-ClaudeOffice-Token", StringComparison.OrdinalIgnoreCase)) hookToken = value;
             }
-            // 원격은 훅만: 브라우저는 다른 사이트로 application/json 을 그냥 보내지 못한다(사전 확인에서 막힘)
-            if (fromBrowser || (remote != null && !json))
+            // 웹 페이지(Origin·Sec-Fetch-*)나 잘못된 토큰은 거부한다. 토큰 헤더가 아예 없는 경우(토큰 도입 전 이미 열려 있던 Claude Code 세션의 훅)는 JSON 본문일 때 허용한다.
+            if (fromBrowser || (hookToken != null && !HookSetup.ValidToken(hookToken)) || !json)
             {
-                await stream.WriteAsync(NotFound, token);
+                if (remote != "listen") await stream.WriteAsync(NotFound, token);
                 return;
             }
             if (length < 0 || length > MaxBodyBytes)
@@ -180,6 +186,10 @@ internal sealed class HookServer : IDisposable
         catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or ObjectDisposedException or EndOfStreamException)
         {
             // 연결이 끊기거나 시간 초과 — 훅 쪽은 exit 0 으로 끝나므로 여기서도 그냥 버린다
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ClaudeOffice] 훅 처리 중 오류: {ex}");
         }
     }
 

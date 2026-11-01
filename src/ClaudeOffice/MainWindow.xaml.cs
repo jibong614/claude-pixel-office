@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -15,7 +15,7 @@ namespace ClaudeOffice;
 ///   C# → 화면 : PostWebMessageAsJson(스냅샷 | {type:"cloud"} 휴대폰 연결 상태 | {type:"remote"} 휴대폰 지시·승인 상태 | {type:"app"} app.json 설정·새 버전
 ///               | {type:"share"} 저장해 둔 사무실 이름·별명·메모 | {type:"select", id} 이 직원을 열기 | {type:"reset"} 설정 초기화)
 ///   화면 → C# : { cmd: "ready" | "topmost" | "hooks" | "window" | "share" | "cloud-enable" | "cloud-rekey" | "cloud-phone-edit" | "app-setting"
-///               | "notify-test" | "update-check" | "update-install" | "open-url" | "open-folder" | "open-data-dir" | "widget" | … , ... }
+///               | "notify-test" | "update-check" | "update-install" | "open-url" | "open-folder" | "open-data-dir" | "widget" | "pet" | … , ... }
 ///               "cloud-setup" 은 점검 도구 전용(가짜 무료 서버에 잇기).
 /// </summary>
 public partial class MainWindow : Window
@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private bool _leftWhileAway;      // 자리 비움 중에 PC 가 한동안 비어 있었음 → 그 뒤 입력이 오면 "돌아옴"
     private readonly System.Windows.Threading.DispatcherTimer _presence = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly TrayIcon? _tray;
+    private PetWindow? _petWindow;
     private bool _pageReady;
     private bool _exiting, _cleanedUp;
     private string? _pendingSelect;   // 알림을 눌러 창을 열었는데 화면이 아직 준비 중이면, 준비되는 대로 그 직원을 연다
@@ -66,14 +67,26 @@ public partial class MainWindow : Window
         // 알림 영역 🧑‍💻 아이콘 — 견본·점검용(화면 밖) 실행에서는 만들지 않는다(사용자 알림 영역을 어지럽히지 않게)
         if (!App.DemoMode && !App.Offscreen)
         {
-            _tray = new TrayIcon(ShowFromTray, ExitApp);
+            _tray = new TrayIcon(
+                ShowFromTray,
+                sid => { ShowFromTray(); SelectSession(sid); },
+                () => SetPet(!App.Settings.Pet, null),
+                () => SetWidget(!App.Settings.Widget),
+                ExitApp);
             _tray.SetText(Title);
+            _tray.SetPetChecked(App.Settings.Pet);
+            _tray.SetWidgetChecked(App.Settings.Widget);
             if (App.Updated)
                 _tray.Notify(L.T($"{App.Version} 버전으로 업데이트했어요", $"Updated to {App.Version}"),
                              L.T("바뀐 내용은 ⚙️ → 정보 → 버전에서 GitHub 릴리스로", "See what's new: ⚙️ → About → Version (GitHub release)"),
                              silent: true, onClick: ShowFromTray);
         }
 
+        IsVisibleChanged += (_, _) =>
+        {
+            if (!App.Offscreen && _pageReady)
+                Web.CoreWebView2?.PostWebMessageAsJson(IsVisible ? "{\"type\":\"visible\",\"value\":true}" : "{\"type\":\"visible\",\"value\":false}");
+        };
         Loaded += OnLoaded;   // 숨긴 채 시작하면 처음 열 때 불린다(화면 WebView2 는 그때 준비)
         Closing += (_, e) =>
         {
@@ -116,6 +129,8 @@ public partial class MainWindow : Window
         if (_cleanedUp) return;
         _cleanedUp = true;
         if (IsVisible) SavePlacement();
+        _petWindow?.CloseForce();
+        _petWindow = null;
         Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
         _presence.Stop();
         _watcher.Dispose();
@@ -144,6 +159,7 @@ public partial class MainWindow : Window
         }
 
         // 훅이 설정에 없어도 수신기는 켜 둔다(가볍고, 🔔로 연결하면 바로 받기 시작한다)
+        _remote.SetPet(App.Settings.Pet, App.Settings.PetSessionId);
         _hooks.Remote = _remote;
         _hooks.Received += ev => { if (ev.Event == "SessionEnd") _remote.OnSessionEnd(ev.SessionId); };
         _hooks.Start();
@@ -154,15 +170,27 @@ public partial class MainWindow : Window
             List<Notice> notices;
             try { notices = _notifier.OnSnapshot(json, NameOf); }
             catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { notices = []; }
+            int waitCount = 0;
+            string? firstWaitId = null, firstWaitName = null;
+            try { (waitCount, firstWaitId, firstWaitName) = ParseWaitingInfo(json); }
+            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { }
             Dispatcher.InvokeAsync(() =>
             {
                 Post(json);
-                foreach (var n in notices) ShowNotice(n);
+                _tray?.SetWaiting(waitCount, firstWaitId, firstWaitName);
+                foreach (var n in notices)
+                {
+                    ShowNotice(n);
+                    var kind = n.Title.Contains('✅') ? "done" : "ask";
+                    Post(JsonSerializer.Serialize(new { type = "sound", kind }));
+                }
             });
         };
         _cloud.StatusChanged += json => Dispatcher.InvokeAsync(() => Post(json));
         _cloud.NotesFromPhone += edits => Dispatcher.InvokeAsync(() => ApplyPhoneEdits(edits));
         _cloud.RemoteFromPhone += _remote.FromPhone;
+        _remote.StopRequested += sid => Dispatcher.InvokeAsync(() => StopSession(sid));
+        _remote.SetPet(App.Settings.Pet, App.Settings.PetSessionId);
         _remote.Changed += OnRemoteChanged;
         OnRemoteChanged();
         Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
@@ -178,6 +206,8 @@ public partial class MainWindow : Window
         _updates.Checked += () => Dispatcher.InvokeAsync(OnUpdateChecked);
         _updater.Changed += () => Dispatcher.InvokeAsync(() => Post(AppSettingsJson()));   // 받는 중 진행률
         _updates.Start();
+
+        if (App.Settings.Pet) ApplyPetWindow();
     }
 
     // ───────────────────────── 알림 ─────────────────────────
@@ -185,6 +215,28 @@ public partial class MainWindow : Window
     private string NameOf(string id, string name)
     {
         lock (_shareLock) return _nicks.TryGetValue(id, out var nick) ? nick : name;
+    }
+
+    private (int Count, string? FirstId, string? FirstName) ParseWaitingInfo(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("sessions", out var sessions) || sessions.ValueKind != JsonValueKind.Array)
+            return (0, null, null);
+        int count = 0;
+        string? firstId = null, firstName = null;
+        foreach (var e in sessions.EnumerateArray())
+        {
+            var act = e.TryGetProperty("act", out var a) ? a.GetString() : null;
+            if (act is not ("waiting" or "asking")) continue;
+            count++;
+            if (firstId is null)
+            {
+                firstId = e.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                var rawName = e.TryGetProperty("name", out var nmEl) ? nmEl.GetString() ?? "" : "";
+                firstName = firstId != null ? NameOf(firstId, rawName) : rawName;
+            }
+        }
+        return (count, firstId, firstName);
     }
 
     /// <summary>PC 알림을 띄운다 — 창을 보고 있거나 방해 금지 시간이면 띄우지 않는다. 누르면 창을 열고 그 직원을 보여 준다.</summary>
@@ -202,7 +254,7 @@ public partial class MainWindow : Window
 
     private void SelectSession(string id)
     {
-        if (_pageReady) Post(JsonSerializer.Serialize(new { type = "select", id }));
+        if (_pageReady) Web.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "select", id }));
         else _pendingSelect = id;
     }
 
@@ -250,7 +302,7 @@ public partial class MainWindow : Window
                 "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
-    // ───────────────────────── 자리 비움 원격 ─────────────────────────
+    // ───────────────────────── 자리 비움 원격 · 바탕화면 미니펫 ─────────────────────────
 
     /// <summary>원격 상태를 휴대폰 업로드·화면에 알린다(아무 스레드에서나).</summary>
     private void OnRemoteChanged()
@@ -258,6 +310,38 @@ public partial class MainWindow : Window
         var json = _remote.StateJson();
         _cloud.OnRemote(json, RemoteHub.Installed, _remote.Away);
         Dispatcher.InvokeAsync(() => Post("{\"type\":\"remote\",\"data\":" + json + "}"));
+    }
+
+    private void SetPet(bool on, string? sid)
+    {
+        if (sid != null) App.Settings.PetSessionId = string.IsNullOrWhiteSpace(sid) ? null : sid.Trim();
+        App.Settings.Pet = on;
+        TrySaveSettings();
+        _tray?.SetPetChecked(on);
+        _remote.SetPet(on, App.Settings.PetSessionId);
+        ApplyPetWindow();
+        Post(AppSettingsJson());
+    }
+
+    private void ApplyPetWindow()
+    {
+        if (App.DemoMode) return;
+        if (App.Settings.Pet)
+        {
+            if (_petWindow is null)
+                _petWindow = new PetWindow(VirtualHost, FindWebRoot(), e => OnWebMessage(null, e), () => SetPet(false, null));
+            _petWindow.ApplyBackdrop(App.Settings.PetNoBg);
+            if (!_petWindow.IsVisible)
+            {
+                _petWindow.RestorePlacement();
+                _petWindow.Show();
+            }
+        }
+        else if (_petWindow is { IsVisible: true })
+        {
+            _petWindow.SavePlacement();
+            _petWindow.Hide();
+        }
     }
 
     // 자리 비움은 손으로 켜고 끄지 않는다(1.1.6) — 켜기: 입력 없음·화면 잠금(여기), 휴대폰(PC 가 비어 있을 때만, RemoteHub) / 끄기: 돌아와 입력·잠금 풀기
@@ -361,11 +445,14 @@ public partial class MainWindow : Window
         foreach (var e in edits)
         {
             long cur = 0;
-            try { cur = notes[e.Id]?["t"]?.GetValue<long>() ?? 0; } catch (Exception ex) when (ex is InvalidOperationException or FormatException) { }
+            var prev = notes[e.Id] as System.Text.Json.Nodes.JsonObject;
+            try { cur = prev?["t"]?.GetValue<long>() ?? 0; } catch (Exception ex) when (ex is InvalidOperationException or FormatException) { }
             if (e.T <= cur) continue;
             var n = new System.Text.Json.Nodes.JsonObject();
             if (!string.IsNullOrWhiteSpace(e.Nick)) n["nick"] = e.Nick;
             if (!string.IsNullOrWhiteSpace(e.Memo)) n["memo"] = e.Memo;
+            if (prev?["look"] is { } lk) n["look"] = lk.DeepClone();
+            if (prev?["deco"] is { } dc) n["deco"] = dc.DeepClone();
             n["t"] = e.T;
             notes[e.Id] = n;
             applied++;
@@ -449,6 +536,7 @@ public partial class MainWindow : Window
             SavePlacement();   // 지금 모양의 위치·크기를 먼저 기억
             App.Settings.Widget = on;
             TrySaveSettings();
+            _tray?.SetWidgetChecked(on);
             if (on) ApplyWidgetPlacement();
             else
             {
@@ -576,6 +664,7 @@ public partial class MainWindow : Window
         _cloud.SetLanguage(L.Code);
         _watcher.Reparse();
         Web.CoreWebView2?.Navigate(PageUrl());
+        _petWindow?.ReloadLanguage();
     }
 
     /// <summary>앱 쪽 설정(app.json·시작 프로그램 등록)과 새 버전 확인 결과를 화면 설정 패널에 알린다.</summary>
@@ -599,6 +688,10 @@ public partial class MainWindow : Window
             quietEnd = s.QuietEnd,
             updateCheck = s.UpdateCheck,
             widget = s.Widget,
+            pet = s.Pet,
+            petSessionId = s.PetSessionId ?? "",
+            petCompact = s.PetCompact,
+            petNoBg = s.PetNoBg,
             language = s.Language == "en" ? "en" : "ko",
             remoteAwayOnLock = s.RemoteAwayOnLock,
             remoteAwayIdleMinutes = s.RemoteAwayIdleMinutes,
@@ -617,6 +710,7 @@ public partial class MainWindow : Window
     private void Post(string json)
     {
         if (_pageReady) Web.CoreWebView2?.PostWebMessageAsJson(json);
+        _petWindow?.Post(json);
     }
 
     private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -630,7 +724,7 @@ public partial class MainWindow : Window
             switch (root.GetProperty("cmd").GetString())
             {
                 case "ready":
-                    _pageReady = true;
+                    if (sender != null) _pageReady = true;
                     if (_watcher.LastSnapshot is { } snap) Post(snap);
                     if (!App.DemoMode)
                     {
@@ -640,7 +734,7 @@ public partial class MainWindow : Window
                         Post("{\"type\":\"share\",\"data\":" + (LoadShare() is { } saved && IsJsonObject(saved) ? saved : "null") + "}");
                         Post("{\"type\":\"remote\",\"data\":" + _remote.StateJson() + "}");
                     }
-                    if (_pendingSelect is { } sel) { _pendingSelect = null; SelectSession(sel); }
+                    if (sender != null && _pendingSelect is { } sel) { _pendingSelect = null; SelectSession(sel); }
                     break;
                 case "app-setting":   // 앱 쪽 설정(app.json), autoStart 는 시작 프로그램 등록
                     if (!App.DemoMode && root.TryGetProperty("key", out var key) && root.TryGetProperty("value", out var val))
@@ -709,10 +803,87 @@ public partial class MainWindow : Window
                 case "widget-size":
                     if (root.TryGetProperty("height", out var wh) && wh.TryGetDouble(out var wheight)) FitWidgetHeight(wheight);
                     break;
+                case "pet":
+                    if (!App.DemoMode)
+                    {
+                        var sid = root.TryGetProperty("sid", out var ps) && ps.ValueKind == JsonValueKind.String ? ps.GetString() : null;
+                        SetPet(root.TryGetProperty("value", out var pv) && pv.ValueKind == JsonValueKind.True, sid);
+                    }
+                    break;
+                case "pet-session":
+                {
+                    if (!App.DemoMode)
+                    {
+                        var raw = root.TryGetProperty("id", out var psi) && psi.ValueKind == JsonValueKind.String ? psi.GetString()
+                                : root.TryGetProperty("value", out var psv) && psv.ValueKind == JsonValueKind.String ? psv.GetString()
+                                : null;
+                        if (raw != null)
+                        {
+                            App.Settings.PetSessionId = string.IsNullOrWhiteSpace(raw) ? null : raw.Trim();
+                            TrySaveSettings();
+                            _remote.SetPet(App.Settings.Pet, App.Settings.PetSessionId);
+                            Post(AppSettingsJson());
+                        }
+                    }
+                    break;
+                }
+                case "pet-compact":
+                    if (!App.DemoMode && root.TryGetProperty("value", out var pcv))
+                    {
+                        App.Settings.PetCompact = pcv.ValueKind == JsonValueKind.True;
+                        TrySaveSettings();
+                        Post(AppSettingsJson());
+                    }
+                    break;
+                case "pet-nobg":
+                    if (!App.DemoMode && root.TryGetProperty("value", out var pnb))
+                    {
+                        App.Settings.PetNoBg = pnb.ValueKind == JsonValueKind.True;
+                        TrySaveSettings();
+                        _petWindow?.ApplyBackdrop(App.Settings.PetNoBg);
+                        Post(AppSettingsJson());
+                    }
+                    break;
+                case "pet-say":
+                    if (!App.DemoMode && root.TryGetProperty("sid", out var saySid) && root.TryGetProperty("text", out var sayTxt)
+                        && saySid.GetString() is { Length: > 0 } sId && sayTxt.GetString() is { Length: > 0 } sText)
+                    {
+                        _remote.SayFromPc(sId, sText);
+                    }
+                    break;
+                case "pet-cancel-say":
+                    if (!App.DemoMode && root.TryGetProperty("sid", out var cancelSid) && cancelSid.GetString() is { Length: > 0 } cSid)
+                    {
+                        _remote.CancelQueued(cSid);
+                    }
+                    break;
+                case "pet-decide":
+                    if (!App.DemoMode && root.TryGetProperty("id", out var askId) && askId.GetString() is { Length: > 0 } aId)
+                    {
+                        bool? allow = root.TryGetProperty("allow", out var al)
+                            ? al.ValueKind == JsonValueKind.True ? true : al.ValueKind == JsonValueKind.False ? false : null
+                            : null;
+                        var why = root.TryGetProperty("text", out var wt) && wt.ValueKind == JsonValueKind.String ? wt.GetString() : null;
+                        _remote.DecideFromPc(aId, allow, why);
+                    }
+                    break;
+                case "pet-open-office":
+                    ShowFromTray();
+                    if (root.TryGetProperty("id", out var openId) && openId.GetString() is { Length: > 0 } oId)
+                        SelectSession(oId);
+                    break;
+                case "pet-drag":
+                    _petWindow?.StartDrag();
+                    break;
+                case "pet-size":
+                    if (root.TryGetProperty("height", out var ph) && ph.TryGetDouble(out var pheight))
+                        _petWindow?.FitHeight(pheight);
+                    break;
                 case "notify-test":
                     if (_tray is null) break;
                     _tray.Notify(L.T("✋ 알림 시험", "✋ Test notification"), L.T("이렇게 알려 드려요 — 누르면 창이 열립니다", "This is how you'll be notified — click to open the window"),
                                  silent: !App.Settings.NotifySound, onClick: ShowFromTray);
+                    Post(JsonSerializer.Serialize(new { type = "sound", kind = "test" }));
                     break;
                 case "update-install":
                     if (!App.DemoMode) StartUpdate();
@@ -726,6 +897,19 @@ public partial class MainWindow : Window
                 case "open-folder":   // 직원의 작업 폴더 — 화면이 보낸 경로가 아니라 지금 스냅샷에 있는 그 세션의 cwd 만 연다
                     if (!App.DemoMode && root.TryGetProperty("id", out var fid) && CwdOf(fid.GetString()) is { } cwd && Directory.Exists(cwd))
                         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{cwd}\"") { UseShellExecute = true });
+                    break;
+                case "focus-session":   // 이 세션이 돌아가는 VS Code·터미널 창을 찾아 맨 앞으로 가져온다
+                    if (!App.DemoMode && !App.Offscreen && root.TryGetProperty("id", out var fsid) && fsid.GetString() is { Length: > 0 } targetSid)
+                    {
+                        FocusSessionWindow(targetSid);
+                        SelectSession(targetSid);
+                    }
+                    break;
+                case "stop-session":   // 진행 중인 세션에 작업 중단(Ctrl+C) 신호를 보낸다
+                    if (!App.DemoMode && !App.Offscreen && root.TryGetProperty("id", out var stid) && stid.GetString() is { Length: > 0 } stopSid)
+                    {
+                        StopSession(stopSid);
+                    }
                     break;
                 case "share-export":
                     if (!App.DemoMode) ExportShare();
@@ -844,6 +1028,10 @@ public partial class MainWindow : Window
         App.Settings.QuietEnd = 8;
         App.Settings.UpdateCheck = true;
         if (wasWidget) SetWidget(false);
+        App.Settings.PetCompact = App.Settings.PetNoBg = false;
+        _petWindow?.ApplyBackdrop(false);
+        if (App.Settings.Pet) SetPet(false, "");
+        else App.Settings.PetSessionId = null;
         Topmost = false;
         TrySaveSettings();
         Post("{\"type\":\"reset\"}");   // 화면이 자기 설정(localStorage)을 지우고 다시 읽는다
@@ -877,6 +1065,148 @@ public partial class MainWindow : Window
             if (s.GetProperty("id").GetString() == id)
                 return s.TryGetProperty("cwd", out var c) ? c.GetString() : null;
         return null;
+    }
+
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    private const byte VK_CONTROL = 0x11;
+    private const byte VK_C = 0x43;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
+
+    private static readonly HashSet<string> TerminalOrIdeProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Code", "Cursor", "Windsurf", "WindowsTerminal", "pwsh", "powershell", "cmd",
+        "mintty", "wezterm-gui", "alacritty", "wt", "devenv", "rider64", "idea64", "claude",
+    };
+
+    /// <summary>세션의 작업 폴더명·세션명·실행 위치(VS Code/터미널)를 바탕으로 해당 실행 창을 찾아 맨 앞으로 활성화한다.</summary>
+    private void FocusSessionWindow(string? id)
+    {
+        if (string.IsNullOrEmpty(id) || _watcher.LastSnapshot is not { } snap) return;
+        string? cwd = null, name = null, title = null, entry = null, team = null;
+        using (var doc = JsonDocument.Parse(snap))
+        {
+            foreach (var s in doc.RootElement.GetProperty("sessions").EnumerateArray())
+            {
+                if (s.GetProperty("id").GetString() != id) continue;
+                cwd = s.TryGetProperty("cwd", out var c) ? c.GetString() : null;
+                name = s.TryGetProperty("name", out var n) ? n.GetString() : null;
+                title = s.TryGetProperty("title", out var t) ? t.GetString() : null;
+                entry = s.TryGetProperty("entry", out var e) ? e.GetString() : null;
+                team = s.TryGetProperty("team", out var tm) ? tm.GetString() : null;
+                break;
+            }
+        }
+
+        var leaf = !string.IsNullOrWhiteSpace(cwd)
+            ? Path.GetFileName(cwd.TrimEnd('\\', '/'))
+            : (!string.IsNullOrWhiteSpace(team) ? team.Split('/').LastOrDefault() : null);
+
+        uint selfPid = (uint)Environment.ProcessId;
+        IntPtr bestHwnd = IntPtr.Zero;
+        int bestScore = 0;
+        var sb = new System.Text.StringBuilder(512);
+
+        EnumWindows((hWnd, _) =>
+        {
+            if (!IsWindowVisible(hWnd)) return true;
+            GetWindowThreadProcessId(hWnd, out uint pid);
+            if (pid == 0 || pid == selfPid) return true;
+            sb.Clear();
+            if (GetWindowText(hWnd, sb, sb.Capacity) <= 0) return true;
+            var wTitle = sb.ToString();
+
+            string procName = "";
+            try { procName = Process.GetProcessById((int)pid).ProcessName; }
+            catch { }
+
+            bool isTermOrIde = TerminalOrIdeProcesses.Contains(procName);
+            int score = 0;
+
+            if (!string.IsNullOrWhiteSpace(cwd) && wTitle.Contains(cwd, StringComparison.OrdinalIgnoreCase))
+                score += 100;
+            if (!string.IsNullOrWhiteSpace(leaf) && leaf.Length >= 2 && wTitle.Contains(leaf, StringComparison.OrdinalIgnoreCase))
+                score += 60;
+            if (!string.IsNullOrWhiteSpace(name) && name.Length >= 2 && wTitle.Contains(name, StringComparison.OrdinalIgnoreCase))
+                score += 45;
+            if (!string.IsNullOrWhiteSpace(title) && title.Length >= 2 && wTitle.Contains(title, StringComparison.OrdinalIgnoreCase))
+                score += 35;
+
+            if (isTermOrIde)
+            {
+                score += 20;
+                if (entry != null && entry.Contains("vscode", StringComparison.OrdinalIgnoreCase)
+                    && procName is "Code" or "Cursor" or "Windsurf")
+                    score += 15;
+                else if (entry != null && entry.Contains("cli", StringComparison.OrdinalIgnoreCase)
+                    && procName is "WindowsTerminal" or "pwsh" or "powershell" or "cmd" or "mintty" or "wezterm-gui")
+                    score += 15;
+            }
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestHwnd = hWnd;
+            }
+            return true;
+        }, IntPtr.Zero);
+
+        bool isVsCode = entry != null && entry.Contains("vscode", StringComparison.OrdinalIgnoreCase);
+        if (isVsCode && Guid.TryParse(id, out _))
+        {
+            // VS Code 확장(claude-vscode)의 공식 URI 프로토콜로 해당 세션 탭을 직접 열고 선택한다
+            try
+            {
+                Process.Start(new ProcessStartInfo($"vscode://anthropic.claude-code/open?session={id}") { UseShellExecute = true });
+            }
+            catch { }
+        }
+
+        if (bestHwnd != IntPtr.Zero && bestScore >= 20)
+        {
+            if (IsIconic(bestHwnd)) ShowWindow(bestHwnd, 9);   // SW_RESTORE
+            SetForegroundWindow(bestHwnd);
+        }
+        else if (!isVsCode && !string.IsNullOrWhiteSpace(cwd) && Directory.Exists(cwd))
+        {
+            // 일치하는 터미널·VS Code 창이 하나도 없으면 작업 폴더를 열어 준다
+            try { Process.Start(new ProcessStartInfo("explorer.exe", $"\"{cwd}\"") { UseShellExecute = true }); }
+            catch { }
+        }
+    }
+
+    /// <summary>세션 창을 맨 앞으로 올린 뒤 Ctrl+C를 전송하여 실행 중인 명령을 긴급 중단한다.</summary>
+    private void StopSession(string? id)
+    {
+        FocusSessionWindow(id);
+        keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_C, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_C, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
     private static bool IsJsonObject(string text)

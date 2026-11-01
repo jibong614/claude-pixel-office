@@ -6,6 +6,9 @@ internal sealed record PendingTool(string Id, string Name, string Text, Activity
 /// <summary>직원 상세 패널에 보여 줄 최근 작업 한 줄.</summary>
 internal sealed record LogItem(DateTime Utc, string Icon, string Text);
 
+/// <summary>화이트보드 및 상세 패널에 보여 줄 할 일 항목.</summary>
+internal sealed record TodoItem(string Content, string Status);
+
 internal enum WaitKind
 {
     Permission,   // 도구 사용 승인 창
@@ -65,6 +68,10 @@ internal sealed class TranscriptState
     public string? AiTitle;       // 자동 요약 제목
     public string? AgentName;
     public string? LastPrompt;
+    public string? LastReply;     // 가장 최근 assistant 답변 요약(알림·상세 패널용)
+    public string? LastThinking;  // 최근 생각(thinking) 내용
+    public List<TodoItem>? Todos; // TodoWrite 등에서 등록된 할 일 목록
+    public bool HasSecret;        // 대화 중 API 키/시크릿 누출 감지 여부
     public bool LastPromptFromPhone;   // 마지막 지시가 휴대폰 원격 지시(뒤따르는 last-prompt 줄은 PC 에서 친 옛 지시라 덮어쓰지 않는다)
     public string? Cwd;
     public string? Entrypoint;    // claude-vscode, cli ...

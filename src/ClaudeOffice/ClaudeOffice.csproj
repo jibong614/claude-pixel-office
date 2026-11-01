@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -12,7 +12,7 @@
     <RootNamespace>ClaudeOffice</RootNamespace>
     <Product>Claude Office</Product>
     <!-- 버전 규칙(요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0)은 CLAUDE.md, 기록은 docs/CHANGELOG.md -->
-    <Version>1.2.1</Version>
+    <Version>1.4.8</Version>
     <!-- 실행 파일 아이콘(탐색기·바로가기). 창 아이콘은 MainWindow.xaml 의 Icon -->
     <ApplicationIcon>Assets\office.ico</ApplicationIcon>
   </PropertyGroup>

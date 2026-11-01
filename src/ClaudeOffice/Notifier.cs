@@ -79,8 +79,12 @@ internal sealed class Notifier
                 {
                     long worked = since - t.BusySince;
                     if (s.NotifyDone && worked >= s.NotifyDoneMinutes * 60_000L && now - since < TooOld.TotalMilliseconds)
-                        notices.Add(new Notice(L.T($"✅ {name} 일을 마쳤어요", $"✅ {name} is done"),
-                                               L.T($"{Duration(worked)} 동안 일했어요 · {team}", $"Worked for {Duration(worked)} · {team}"), id));
+                    {
+                        var reply = e.TryGetProperty("reply", out var rp) && rp.ValueKind == JsonValueKind.String ? rp.GetString() : null;
+                        var meta = L.T($"{Duration(worked)} 동안 일했어요 · {team}", $"Worked for {Duration(worked)} · {team}");
+                        var body = !string.IsNullOrWhiteSpace(reply) ? $"{ToolCatalog.Clip(reply.Trim(), 110)}\n{meta}" : meta;
+                        notices.Add(new Notice(L.T($"✅ {name} 일을 마쳤어요", $"✅ {name} is done"), body, id));
+                    }
                 }
                 t.BusySince = 0;   // 쉬는 중·질문 중·잠·퇴근이면 다음 일은 새로 센다
             }

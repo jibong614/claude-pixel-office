@@ -16,11 +16,26 @@ namespace ClaudeOffice.Monitoring;
 internal static partial class TranscriptParser
 {
     // <system-reminder>…</system-reminder>, <command-name>…</command-name> 같은 주입 블록
-    [GeneratedRegex(@"<([a-zA-Z][\w-]*)\b[^>]*>.*?</\1>", RegexOptions.Singleline)]
+    [GeneratedRegex(@"<([a-zA-Z][\w-]*)\b[^>]*>.*?</\1>", RegexOptions.Singleline, matchTimeoutMilliseconds: 200)]
     private static partial Regex TagBlock();
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex Spaces();
+
+    // API 키/토큰/비밀키 누출 감지 패턴 (sk-, AKIA, ghp_, xox-, PRIVATE KEY)
+    [GeneratedRegex(@"(?:sk-(?:ant-|proj-)?[a-zA-Z0-9_\-]{20,}|AKIA[0-9A-Z]{16}|gh[pous]_[a-zA-Z0-9]{36}|xox[baprs]-[0-9a-zA-Z]{10,48}|-----BEGIN (?:RSA|EC|DSA|OPENSSH) PRIVATE KEY-----)", RegexOptions.Compiled, matchTimeoutMilliseconds: 200)]
+    private static partial Regex SecretPattern();
+
+    private static void CheckSecret(TranscriptState s, string? text)
+    {
+        if (s.HasSecret || string.IsNullOrEmpty(text)) return;
+        try
+        {
+            if (SecretPattern().IsMatch(text))
+                s.HasSecret = true;
+        }
+        catch (RegexMatchTimeoutException) { }
+    }
 
     public static void Apply(TranscriptState s, ReadOnlyMemory<byte> line)
     {
@@ -61,7 +76,8 @@ internal static partial class TranscriptParser
             s.Log(ts, "📦", L.T("대화 압축 후 이어서 진행", "Continuing after compaction"));
             return;
         }
-        if (!r.TryGetProperty("message", out var msg) || !msg.TryGetProperty("content", out var content)) return;
+        if (!r.TryGetProperty("message", out var msg) || msg.ValueKind != JsonValueKind.Object
+            || !msg.TryGetProperty("content", out var content)) return;
 
         if (content.ValueKind == JsonValueKind.String)
         {
@@ -104,6 +120,7 @@ internal static partial class TranscriptParser
     private static void OnPrompt(TranscriptState s, string? raw, DateTime ts)
     {
         if (string.IsNullOrWhiteSpace(raw)) return;
+        CheckSecret(s, raw);
 
         if (raw.TrimStart().StartsWith("[Request interrupted", StringComparison.Ordinal))
         {
@@ -134,7 +151,7 @@ internal static partial class TranscriptParser
 
     private static void OnAssistant(TranscriptState s, JsonElement r, DateTime ts)
     {
-        if (!r.TryGetProperty("message", out var msg)) return;
+        if (!r.TryGetProperty("message", out var msg) || msg.ValueKind != JsonValueKind.Object) return;
 
         var model = Str(msg, "model");
         if (model != null && model != "<synthetic>") s.Model = model;
@@ -157,11 +174,21 @@ internal static partial class TranscriptParser
                     case "thinking":
                     case "redacted_thinking":
                         s.SetBase(Activity.Thinking, "💭", L.T("생각 중", "Thinking"), ts);
+                        var thTxt = Str(b, "thinking") ?? Str(b, "text");
+                        if (!string.IsNullOrWhiteSpace(thTxt))
+                        {
+                            s.LastThinking = ToolCatalog.Clip(thTxt.Trim(), 1200);
+                            CheckSecret(s, thTxt);
+                        }
                         break;
 
                     case "text":
-                        if (Str(b, "text") != null)
+                        if (Str(b, "text") is { } ansTxt && !string.IsNullOrWhiteSpace(ansTxt))
+                        {
                             s.SetBase(Activity.Talking, "💬", L.T("답변 쓰는 중", "Writing an answer"), ts);
+                            s.LastReply = ToolCatalog.Clip(Spaces().Replace(ansTxt.Trim(), " "), 240);
+                            CheckSecret(s, ansTxt);
+                        }
                         break;
 
                     case "tool_use":
@@ -170,6 +197,24 @@ internal static partial class TranscriptParser
                         var name = Str(b, "name") ?? "도구";
                         var id = Str(b, "id") ?? Guid.NewGuid().ToString("N");
                         var input = b.TryGetProperty("input", out var inp) ? inp : default;
+                        if (input.ValueKind != JsonValueKind.Undefined)
+                            CheckSecret(s, input.GetRawText());
+                        if (name is "TodoWrite" or "TaskCreate" or "TaskUpdate" or "TaskList")
+                        {
+                            if (input.ValueKind == JsonValueKind.Object && input.TryGetProperty("todos", out var todoArr) && todoArr.ValueKind == JsonValueKind.Array)
+                            {
+                                var list = new List<TodoItem>();
+                                foreach (var item in todoArr.EnumerateArray())
+                                {
+                                    var itemContent = Str(item, "content") ?? Str(item, "text") ?? Str(item, "task") ?? Str(item, "subject");
+                                    var status = Str(item, "status") ?? "pending";
+                                    if (!string.IsNullOrWhiteSpace(itemContent))
+                                        list.Add(new TodoItem(ToolCatalog.Clip(itemContent, 80), status));
+                                }
+                                if (list.Count > 0)
+                                    s.Todos = list;
+                            }
+                        }
                         var (act, icon) = ToolCatalog.Classify(name);
                         var text = ToolCatalog.Describe(name, input);
                         s.Pending[id] = new PendingTool(id, name, text, act, icon, ts);
@@ -199,7 +244,8 @@ internal static partial class TranscriptParser
             if (mid is null || mid != s.LastCompletedMessageId)
             {
                 s.LastCompletedMessageId = mid;
-                s.Log(ts, "✅", L.T("응답 완료", "Reply finished"));
+                var summary = !string.IsNullOrWhiteSpace(s.LastReply) ? " — " + ToolCatalog.Clip(s.LastReply, 60) : "";
+                s.Log(ts, "✅", L.T("응답 완료", "Reply finished") + summary);
             }
         }
     }
@@ -217,15 +263,16 @@ internal static partial class TranscriptParser
     internal static string? CleanPrompt(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
-        var t = TagBlock().Replace(raw, " ");
+        string t;
+        try { t = TagBlock().Replace(raw.Length > 32768 ? raw[..32768] : raw, " "); }
+        catch (RegexMatchTimeoutException) { t = raw; }
         t = Spaces().Replace(t, " ").Trim();
         return t.Length == 0 ? null : t;
     }
 
     private static string? Str(JsonElement e, string name) => ToolCatalog.Str(e, name);
 
-    private static bool Bool(JsonElement e, string name) =>
-        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+    private static bool Bool(JsonElement e, string name) => ToolCatalog.Bool(e, name);
 
     internal static DateTime? Time(JsonElement r)
     {

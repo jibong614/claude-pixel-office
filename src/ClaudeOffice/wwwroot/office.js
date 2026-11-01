@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.2.1';
+const PAGE_VERSION = '1.4.8';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -62,6 +62,7 @@ window.addEventListener('hashchange', () => {
 const HOSTED = location.protocol === 'https:' && location.hostname !== 'office.local';
 const REMOTE = !params.has('demo') && (!!remoteLink || HOSTED);
 const DEMO = !REMOTE && (!host || params.has('demo'));
+const PET_WINDOW = params.has('pet');   // 바탕화면 미니펫 전용 창(?pet=1)
 
 // 화면 언어(⚙️ → 사무실 → 화면 언어). PC 앱은 주소의 ?lang=en 으로 알려 준다(한국어는 붙이지 않음).
 // 휴대폰 보기는 PC가 요약에 실어 보낸 언어를 이 기기에 저장해 두고 쓴다(startRemote — 다르면 저장하고 다시 연다).
@@ -148,8 +149,11 @@ function setNote(id, patch) {
   const n = { ...noteOf(id), ...patch, t: Date.now() };
   if (!n.nick) delete n.nick;
   if (!n.memo || !n.memo.trim()) delete n.memo;
-  if (n.nick || n.memo) notes[id] = n;
+  if (!Number.isInteger(n.look) || n.look <= 0) delete n.look;
+  if (!Number.isInteger(n.deco) || n.deco < 0 || n.deco > 3) delete n.deco;
+  if (n.nick || n.memo || n.look || n.deco !== undefined) notes[id] = n;
   else delete notes[id];
+  lookCache.clear();
   const ids = Object.keys(notes);
   if (ids.length > NOTES_MAX)   // 오래 안 고친 것부터 정리(끝없이 쌓이지 않게)
     ids.sort((a, b) => notes[a].t - notes[b].t).slice(0, ids.length - NOTES_MAX).forEach((k) => delete notes[k]);
@@ -167,9 +171,13 @@ function onSavedShare(saved) {
       if (!n || typeof n !== 'object' || (notes[id] && (notes[id].t || 0) >= (n.t || 0))) continue;
       const nick = typeof n.nick === 'string' ? n.nick.slice(0, 30) : '';
       const memo = typeof n.memo === 'string' ? n.memo.slice(0, 2000) : '';
-      if (nick || memo) notes[id] = { ...(nick && { nick }), ...(memo && { memo }), t: Number(n.t) || Date.now() };
-      else if (notes[id]) delete notes[id];   // 휴대폰에서 둘 다 지운 것(빈 기록 {t})
+      const look = Number.isInteger(n.look) && n.look > 0 ? n.look : 0;
+      const deco = Number.isInteger(n.deco) && n.deco >= 0 && n.deco <= 3 ? n.deco : undefined;
+      if (nick || memo || look || deco !== undefined) {
+        notes[id] = { ...(nick && { nick }), ...(memo && { memo }), ...(look && { look }), ...(deco !== undefined && { deco }), t: Number(n.t) || Date.now() };
+      } else if (notes[id]) delete notes[id];   // 휴대폰에서 둘 다 지운 것(빈 기록 {t})
     }
+    lookCache.clear();
     store.set('notes', notes);
     const t = saved.teams;   // 팀 이름·색·순서: 이 화면에 아무것도 없을 때만 사본 것으로
     if (t && typeof t === 'object' && !Object.keys(teamPrefs).length && !teamOrder.length && !seatOrder.length) {
@@ -195,9 +203,110 @@ function resetScreenSettings() {
   location.reload();
 }
 
-/** 알림을 눌러 창을 열었을 때: 그 직원의 상세 패널을 연다. */
+// ─────────────────────────── 레트로 8비트 효과음 (Web Audio) ───────────────────────────
+let retroAudioCtx = null;
+let lastSoundTime = 0;
+
+function getRetroAudioCtx() {
+  try {
+    if (!retroAudioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) retroAudioCtx = new AC();
+    }
+    if (retroAudioCtx && retroAudioCtx.state === 'suspended') {
+      retroAudioCtx.resume().catch(() => {});
+    }
+    return retroAudioCtx;
+  } catch {
+    return null;
+  }
+}
+
+function isQuietNow() {
+  if (!appSettings?.quietEnabled) return false;
+  const start = appSettings.quietStart ?? 22, end = appSettings.quietEnd ?? 8;
+  if (start === end) return false;
+  const h = new Date().getHours();
+  return start < end ? (h >= start && h < end) : (h >= start || h < end);
+}
+
+function playRetroSound(kind, force = false) {
+  if (!force) {
+    if (appSettings && appSettings.notifySound === false) return;
+    if (isQuietNow()) return;
+    const now = Date.now();
+    if (now - lastSoundTime < 1500) return;
+    try {
+      const lastShared = parseInt(localStorage.getItem('co.last_sound') || '0', 10);
+      if (now - lastShared < 1000) return;
+      localStorage.setItem('co.last_sound', String(now));
+    } catch {}
+    lastSoundTime = now;
+  }
+  const ctx = getRetroAudioCtx();
+  if (!ctx) return;
+
+  const t0 = ctx.currentTime;
+  if (kind === 'ask') {
+    // ✋ 승인·질문 대기: 경쾌한 2단 띵-동 (D5 587Hz -> A5 880Hz)
+    playTone(ctx, 587.33, t0, 0.075, 'triangle', 0.15);
+    playTone(ctx, 880.00, t0 + 0.08, 0.16, 'triangle', 0.18);
+  } else if (kind === 'done') {
+    // ✅ 작업 완료: 4음 아르페지오 (C5 -> E5 -> G5 -> C6)
+    playTone(ctx, 523.25, t0, 0.055, 'triangle', 0.12);
+    playTone(ctx, 659.25, t0 + 0.055, 0.055, 'triangle', 0.13);
+    playTone(ctx, 783.99, t0 + 0.11, 0.055, 'triangle', 0.14);
+    playTone(ctx, 1046.50, t0 + 0.165, 0.22, 'triangle', 0.16);
+  } else if (kind === 'send') {
+    // 🚀 지시 전송: 짧고 가벼운 45ms 픽셀 블립 (880Hz -> 1320Hz)
+    playSweep(ctx, 880, 1320, t0, 0.045, 'triangle', 0.10);
+  } else if (kind === 'test') {
+    // ▶ 미리듣기: ask 후 done
+    playTone(ctx, 587.33, t0, 0.075, 'triangle', 0.15);
+    playTone(ctx, 880.00, t0 + 0.08, 0.16, 'triangle', 0.18);
+    playTone(ctx, 523.25, t0 + 0.35, 0.055, 'triangle', 0.12);
+    playTone(ctx, 659.25, t0 + 0.405, 0.055, 'triangle', 0.13);
+    playTone(ctx, 783.99, t0 + 0.46, 0.055, 'triangle', 0.14);
+    playTone(ctx, 1046.50, t0 + 0.515, 0.22, 'triangle', 0.16);
+  }
+}
+
+function playTone(ctx, freq, start, dur, type = 'triangle', vol = 0.15) {
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, start);
+    gain.gain.setValueAtTime(0.001, start);
+    gain.gain.linearRampToValueAtTime(vol, start + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + dur + 0.02);
+  } catch {}
+}
+
+function playSweep(ctx, startFreq, endFreq, start, dur, type = 'triangle', vol = 0.10) {
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(startFreq, start);
+    osc.frequency.exponentialRampToValueAtTime(endFreq, start + dur);
+    gain.gain.setValueAtTime(0.001, start);
+    gain.gain.linearRampToValueAtTime(vol, start + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + dur + 0.01);
+  } catch {}
+}
+
+/** 알림이나 메뉴를 눌러 창을 열었을 때: 그 직원(또는 @today 근무 일지)의 패널을 연다. */
 function selectSession(id) {
-  if (!data.sessions.some((s) => s.id === id)) return;
+  if (id !== REPORT_ID && !data.sessions.some((s) => s.id === id)) return;
   if (!settingsEl.hidden) setSettingsOpen(false);
   selectedId = id;
   drawerFolded = false;
@@ -205,15 +314,20 @@ function selectSession(id) {
 }
 let selectedId = params.get('select');   // 화면 점검용: ?demo&select=demo-b1 이면 상세 패널을, select=settings 면 설정을 연 채로 시작
 let hoverId = null;
+let curWhiteboardBox = null;
 
 function onSnapshot(snap) {
   if (!snap || !Array.isArray(snap.sessions)) return;
   data = snap;
   skew = (snap.now || Date.now()) - Date.now();
+  if (PET_WINDOW) { renderPet(); return; }
   refreshHud();
   refreshHookButton();
   refreshSettings();
   if (selectedId) renderPanel();
+  if (whiteboardModalEl && !whiteboardModalEl.hidden) renderWhiteboardCards();
+  if (achieveModalEl && !achieveModalEl.hidden) renderAchieveModal();
+  if (DEMO && petOn()) renderPet();
 }
 
 // ───────────────────────────── 상태별 표현 ─────────────────────────────
@@ -230,7 +344,7 @@ const ACT = {
   delegating: { label: T('인턴 지휘', 'Leading interns'),      pose: 'type',  screen: 'team',   bubble: 'normal',  tone: '#d7a6ff', busy: true },
   planning:   { label: T('계획 정리', 'Planning'),             pose: 'think', screen: 'todo',   bubble: 'thought', tone: '#ffd27a', busy: true },
   working:    { label: T('작업 중', 'Working'),                pose: 'type',  screen: 'code',   bubble: 'normal',  tone: '#ffd27a', busy: true },
-  asking:     { label: T('답변 기다림', 'Waiting for answer'), pose: 'raise', screen: 'alert',  bubble: 'alert',   tone: '#ffb347', wait: true },
+  asking:     { label: T('질문 답변 대기', 'Waiting for answer'), pose: 'raise', screen: 'alert',  bubble: 'alert',   tone: '#ffb347', wait: true },
   waiting:    { label: T('승인 대기', 'Needs approval'),       pose: 'raise', screen: 'alert',  bubble: 'alert',   tone: '#ffb347', wait: true },
   idle:       { label: T('대기', 'Idle'),                      pose: 'idle',  screen: 'saver',  bubble: 'calm',    tone: '#c9c3d9' },
   sleeping:   { label: T('졸음', 'Dozing'),                    pose: 'sleep', screen: 'off',    bubble: 'zzz',     tone: '#8f88a8' },
@@ -281,12 +395,17 @@ function shade(hex, f) {
   return v;
 }
 
-// 세션 ID로 정해지는 생김새(같은 세션은 늘 같은 얼굴)
+// 세션 ID(또는 사용자가 바꾼 모습 번호·소품)로 정해지는 생김새
 const lookCache = new Map();
 function looks(id) {
-  let L = lookCache.get(id);
+  const n = noteOf(id);
+  const lookIdx = Number.isInteger(n.look) && n.look > 0 ? n.look : 0;
+  const decoOverride = Number.isInteger(n.deco) && n.deco >= 0 && n.deco <= 3 ? n.deco : null;
+  const key = `${id}:${lookIdx}:${decoOverride ?? ''}`;
+  let L = lookCache.get(key);
   if (L) return L;
-  const h = hash(id), h2 = hash(id + '#');
+  const seed = lookIdx ? `${id}@${lookIdx}` : id;
+  const h = hash(seed), h2 = hash(seed + '#');
   L = {
     skin: SKINS[h % SKINS.length],
     hair: HAIRS[(h >>> 4) % HAIRS.length],
@@ -294,10 +413,10 @@ function looks(id) {
     pants: PANTS[(h >>> 14) % PANTS.length],
     hairStyle: (h2 >>> 2) % 3,
     glasses: (h2 >>> 6) % 4 === 0,
-    deco: (h2 >>> 9) % 4,
+    deco: decoOverride !== null ? decoOverride : (h2 >>> 9) % 4,
     blink: h2 % 3200,
   };
-  lookCache.set(id, L);
+  lookCache.set(key, L);
   return L;
 }
 
@@ -319,11 +438,23 @@ let logicalW = 0, logicalH = 0, cssW = 0;
 let zones = [], desks = [];
 let layoutKey = '';
 let fontName = 12, fontSmall = 11, fontBubble = 12;
+let searchQuery = '';
 
-// 책상에 앉힐 직원: 퇴근 숨김 → (직접 고르기면) 체크한 직원만 → 최대 인원을 넘으면 최근에 일한 순으로 자른다.
+function matchSearch(s, q) {
+  if (!q) return true;
+  const n = noteOf(s.id);
+  const hay = [displayName(s), s.name, s.title, teamLabel(s.team), s.team, s.text, s.branch, s.cwd, n.memo].filter(Boolean).join(' ').toLowerCase();
+  return hay.includes(q);
+}
+
+// 책상에 앉힐 직원: 퇴근 숨김 → 검색 필터 → (직접 고르기면) 체크한 직원만 → 최대 인원을 넘으면 최근에 일한 순으로 자른다.
 // 자르기만 하고 순서는 바꾸지 않는다 — 자리는 언제나 출근 순서(C#이 보낸 순서)라 책상이 뒤섞이지 않는다.
 function visibleSessions() {
   let list = data.sessions.filter((s) => showAway || s.act !== 'away');
+  if (searchQuery) {
+    const q = searchQuery.trim().toLowerCase();
+    if (q) list = list.filter((s) => matchSearch(s, q));
+  }
   if (waitOnly) list = list.filter(isWaiting);
   if (pickMode === 'manual') list = list.filter((s) => pickedIds.has(s.id));
   if (list.length <= maxShown) return list;
@@ -587,13 +718,44 @@ function drawWall(t) {
   const hudW = Math.ceil((hudEl.offsetWidth + 24) / U);
   const left = pw + 36, right = logicalW - hudW;
   const n = Math.max(0, Math.floor((right - left) / 72));
+  const windowXs = [];
   for (let i = 0; i < n; i++) {
     const x = Math.round(left + ((right - left) / n) * (i + 0.5)) - 17;
+    windowXs.push(x);
     drawWindow(x, 6, sky, t, i);
+  }
+
+  // 화이트보드: 창문 사이에 공간이 있으면 가운데 걸고, 창문이 1개면 창문 오른쪽에 배치
+  if (n >= 2) {
+    const wx = Math.round((windowXs[0] + 34 + windowXs[1]) / 2) - 11;
+    drawWhiteboard(wx, 8);
+    curWhiteboardBox = { x: wx, y: 8, w: 24, h: 18 };
+  } else if (n === 1 && logicalW - hudW > windowXs[0] + 64) {
+    const wx = windowXs[0] + 40;
+    drawWhiteboard(wx, 8);
+    curWhiteboardBox = { x: wx, y: 8, w: 24, h: 18 };
+  } else {
+    curWhiteboardBox = null;
   }
 
   drawPlant(pw + 30, WALL_H - 14);
   drawCooler(logicalW - 20, WALL_H - 26);
+}
+
+function drawWhiteboard(x, y) {
+  // 알루미늄 프레임 & 보드 본체
+  R(x - 1, y - 1, 24, 18, PAL.frameDark);
+  R(x, y, 22, 16, '#f8fafc');
+  // 보드 헤더 라인
+  R(x + 2, y + 2, 8, 1, '#3b82f6');
+  // 미니 할 일 체크리스트
+  P(x + 3, y + 5, '#10b981'); R(x + 6, y + 5, 12, 1, '#94a3b8');   // 완료 항목
+  P(x + 3, y + 8, '#f59e0b'); R(x + 6, y + 8, 10, 1, '#64748b');   // 진행 중 항목
+  P(x + 3, y + 11, '#cbd5e1'); R(x + 6, y + 11, 8, 1, '#cbd5e1');  // 대기 항목
+  // 하단 펜 받침대 & 펜·지우개
+  R(x + 2, y + 15, 18, 1, '#94a3b8');
+  P(x + 4, y + 14, '#ef4444'); P(x + 6, y + 14, '#3b82f6'); P(x + 8, y + 14, '#10b981');
+  R(x + 13, y + 14, 3, 1, '#334155');
 }
 
 function drawWindow(x, y, sky, t, i) {
@@ -605,14 +767,53 @@ function drawWindow(x, y, sky, t, i) {
   g.save();
   g.beginPath(); g.rect(x + 2, y + 2, 30, 20); g.clip();
   if (sky.kind === 'night') {
-    for (let k = 0; k < 5; k++) {
-      if (tick(t, 700 + k * 90, 3) === 0) continue;   // 반짝반짝
+    // 밤하늘: 여러 속도로 반짝이는 별들
+    for (let k = 0; k < 6; k++) {
+      if (tick(t, 600 + k * 110, 3) === 0) continue;
       P(x + 3 + (hash('s' + i + k) % 28), y + 3 + (hash('t' + k + i) % 17), '#f4f1d0');
     }
-    if (i === 0) { R(x + 23, y + 5, 4, 4, '#f4f1d0'); R(x + 25, y + 5, 2, 2, sky.top); }   // 초승달
+    // 초승달과 부드러운 달빛
+    if (i === 0) {
+      R(x + 23, y + 4, 4, 4, '#fff9d6');
+      R(x + 25, y + 4, 2, 2, sky.top);
+      P(x + 22, y + 5, '#fffde8');
+    }
+    // 가끔 지나가는 별똥별(유성) 애니메이션 (약 13초 주기)
+    const starCycle = t % 13000;
+    if (i === 0 && starCycle < 1100) {
+      const prog = starCycle / 1100;
+      const mx = Math.round(x + 3 + prog * 24);
+      const my = Math.round(y + 3 + prog * 13);
+      P(mx, my, '#ffffff');
+      P(mx - 1, my - 1, '#e0e8ff');
+      P(mx - 2, my - 2, 'rgba(255,255,255,0.4)');
+    }
+  } else if (sky.kind === 'dusk') {
+    // 노을: 지는 주황빛 태양과 붉게 물든 구름
+    if (i === 0) {
+      R(x + 20, y + 10, 5, 4, '#ff7043');
+      R(x + 21, y + 9, 3, 1, '#ffab91');
+    }
+    const cx = Math.round(((t / 320 + i * 19) % 48) - 8);
+    R(x + 2 + cx, y + 7 + (i % 2) * 5, 8, 2, 'rgba(255,180,160,0.85)');
+    R(x + 4 + cx, y + 6 + (i % 2) * 5, 4, 1, 'rgba(255,210,180,0.9)');
+  } else if (sky.kind === 'dawn') {
+    // 새벽/아침: 부드럽게 떠오르는 해와 파스텔빛 구름
+    if (i === 0) {
+      R(x + 6, y + 12, 5, 3, '#ffd54f');
+      R(x + 7, y + 11, 3, 1, '#fff59d');
+    }
+    const cx = Math.round(((t / 280 + i * 19) % 48) - 8);
+    R(x + 2 + cx, y + 7 + (i % 2) * 5, 8, 2, 'rgba(255,230,210,0.85)');
+    R(x + 4 + cx, y + 6 + (i % 2) * 5, 4, 1, 'rgba(255,245,230,0.9)');
   } else {
-    if (i === 0 && sky.kind === 'day') R(x + 25, y + 5, 4, 4, '#fff1a8');
-    const cx = Math.round(((t / 260 + i * 19) % 48) - 8);   // 흘러가는 구름
+    // 낮: 황금빛 태양과 흘러가는 구름
+    if (i === 0) {
+      R(x + 23, y + 4, 5, 5, '#ffe57f');
+      R(x + 24, y + 3, 3, 1, '#fff59d');
+      R(x + 24, y + 9, 3, 1, '#fff59d');
+    }
+    const cx = Math.round(((t / 260 + i * 19) % 48) - 8);
     R(x + 2 + cx, y + 7 + (i % 2) * 5, 8, 2, 'rgba(255,255,255,0.85)');
     R(x + 4 + cx, y + 6 + (i % 2) * 5, 4, 1, 'rgba(255,255,255,0.85)');
   }
@@ -664,6 +865,36 @@ function drawZone(z) {
 // ───────────────────────────── 책상 한 칸 ─────────────────────────────
 // 한 칸(66×68) 안의 배치: 의자·사람(왼쪽, 오른쪽을 봄) → 책상 → 모니터 → 이름표(아래, 글자)
 
+function drawTrashCan(tx, ty, ctx, t) {
+  const tokens = ctx || 0;
+  const pct = tokens / MAX_CTX_TOKENS;
+  // 휴지통 본체 (폭 6, 높이 7)
+  R(tx, ty, 6, 1, '#787a85');         // 상단 테두리(림)
+  R(tx, ty + 1, 6, 6, '#565860');     // 본체
+  R(tx + 1, ty + 1, 4, 1, '#3a3c42'); // 내부 음영
+  R(tx + 1, ty + 6, 4, 1, '#44464d'); // 바닥
+
+  if (pct >= 0.8) {
+    // 80%+ Context: 쓰레기통이 꽉 차서 구겨진 종이가 넘치고 바닥에도 하나 떨어짐!
+    R(tx + 1, ty - 2, 4, 3, '#ffffff');
+    P(tx + 2, ty - 3, '#ffffff');
+    P(tx + 4, ty - 2, '#d8d8d8');
+    P(tx + 1, ty + 1, '#f0f0f0');
+    P(tx + 3, ty + 2, '#ffffff');
+    P(tx + 7, ty + 5, '#ffffff');       // 바닥에 떨어진 종이 뭉치
+    P(tx + 7, ty + 6, '#d0d0d0');
+  } else if (pct >= 0.5) {
+    // 50%+: 종이 뭉치가 절반 정도 참
+    R(tx + 1, ty + 1, 4, 2, '#f0f0f0');
+    P(tx + 2, ty, '#ffffff');
+    P(tx + 3, ty + 2, '#d8d8d8');
+  } else if (pct >= 0.25) {
+    // 25%+: 바닥에 조금 쌓임
+    P(tx + 2, ty + 4, '#d8d8d8');
+    P(tx + 3, ty + 4, '#ffffff');
+  }
+}
+
 function drawDesk(d, t) {
   const s = d.s, a = actOf(s), L = looks(s.id);
   const x = d.x, y = d.y;
@@ -675,6 +906,7 @@ function drawDesk(d, t) {
   drawMonitor(x + 36, y + 18, a.screen, t, hash(s.id));
   R(x + 26, y + 34, 9, 1, PAL.keyboard);
   drawDeco(x, y, L.deco);
+  drawTrashCan(x + 59, y + 43, s.ctx, t);
 
   const interns = s.interns || [];
   interns.slice(0, 3).forEach((it, i) => drawIntern(internX(d, i), d.y + 33, it, t, i));
@@ -1095,10 +1327,19 @@ function drawInternChips(d) {
 // ───────────────────────────── 그리기 루프 ─────────────────────────────
 
 let lastFrame = 0;
+let windowHidden = false;   // PC 앱이 알림 영역으로 숨었을 때(true)는 캔버스를 그리지 않는다
 function frame(ts) {
   requestAnimationFrame(frame);
+  if (windowHidden || document.visibilityState === 'hidden') return;
   if (ts - lastFrame < 33) return;   // 약 30fps면 충분
   lastFrame = ts;
+
+  if (PET_WINDOW) {
+    drawPetFrame(ts);
+    return;
+  }
+  if (DEMO && petOn()) drawPetFrame(ts);
+  if (widgetOn()) return;   // 목록 보기일 때는 사무실 캔버스를 그리지 않는다
 
   ensureLayout();
   syncDesks();
@@ -1155,10 +1396,14 @@ function entryName(e) {
 
 const $ = (id) => document.getElementById(id);
 const summaryEl = $('summary'), emptyEl = $('empty'), tooltipEl = $('tooltip'), panelEl = $('panel');
-const btnAway = $('btnAway'), btnPin = $('btnPin'), btnHook = $('btnHook'), btnSettings = $('btnSettings'), btnWidget = $('btnWidget'), btnToday = $('btnToday');
+const btnAway = $('btnAway'), btnPin = $('btnPin'), btnHook = $('btnHook'), btnSettings = $('btnSettings'), btnPet = $('btnPet'), btnWidget = $('btnWidget'), btnToday = $('btnToday'), btnAchieve = $('btnAchieve');
 const settingsEl = $('settings'), settingsBody = $('sBody'), drawerTab = $('drawerTab');
 
 function refreshHud() {
+  if (PET_WINDOW) {
+    document.body.style.setProperty('--hud-h', '0px');
+    return;
+  }
   let busy = 0, wait = 0, rest = 0, away = 0;
   for (const s of data.sessions) {
     const a = actOf(s);
@@ -1173,7 +1418,7 @@ function refreshHud() {
     if (remoteState?.away) parts.splice(1, 0, T('🏃 자리 비움', '🏃 Away'));   // 지시·승인을 보낼 수 있다
     document.body.classList.toggle('stale', remoteStale());   // PC가 꺼졌거나 소식이 없으면 사무실을 흐리게(멈춘 모습임을 알게)
   }
-  if (busy) parts.push(T(`⚙️ 작업 ${busy}`, `⚙️ Working ${busy}`));
+  if (busy) parts.push(T(`💻 작업 ${busy}`, `💻 Working ${busy}`));
   if (wait) parts.push(T(`✋ 확인 필요 ${wait}`, `✋ Needs you ${wait}`));
   if (rest) parts.push(T(`☕ 휴식 ${rest}`, `☕ Resting ${rest}`));
   if (away) parts.push(T(`🚪 퇴근 ${away}`, `🚪 Gone home ${away}`));
@@ -1198,6 +1443,7 @@ let listView = LOCAL_WIDGET && store.get('listView', false);
 const widgetOn = () => (LOCAL_WIDGET ? listView : !!appSettings?.widget);
 
 function setWidget(on) {
+  if (on) markQuest('try_widget');
   if (LOCAL_WIDGET) { listView = on; store.set('listView', on); applyWidget(); }
   else send({ cmd: 'widget', value: on });   // 앱이 창 크기를 바꾸고 {type:"app", widget} 으로 알려 준다 → applyWidget
 }
@@ -1244,7 +1490,1680 @@ function renderWidget() {
   const h = Math.ceil(wlistEl.getBoundingClientRect().height);
   if (!LOCAL_WIDGET && h !== lastWidgetH) { lastWidgetH = h; send({ cmd: 'widget-size', height: h }); }
 }
-setInterval(() => { if (widgetOn()) renderWidget(); }, 5000);   // "N분 전" 갱신
+
+// ───────────────────────────── 바탕화면 미니펫 ─────────────────────────────
+// 대표 직원 한 명을 바탕화면 구석(우측 하단 기본, 드래그로 이동)에 작은 책상·컴퓨터와 함께 꺼내 두고,
+// 상태(타이핑·생각·손들기·졸음)를 보거나, 바로 지시를 던지거나, 승인·거절하거나, 다른 직원으로 바꿀 수 있다.
+
+const petEl = $('pet');
+const LOCAL_PET = REMOTE || DEMO;
+let demoPetOpen = LOCAL_PET && (params.get('select') === 'pet' || store.get('petOpen', false));
+let demoPetSessionId = store.get('petSessionId', '') || '';
+let demoPetCompact = store.get('petCompact', false);
+let demoPetNoBg = store.get('petNoBg', false);
+
+const petOn = () => (PET_WINDOW ? true : LOCAL_PET ? demoPetOpen : !!appSettings?.pet);
+const petSessionPref = () => (LOCAL_PET ? demoPetSessionId : (appSettings?.petSessionId || ''));
+const petCompactOn = () => (LOCAL_PET ? demoPetCompact : !!appSettings?.petCompact);
+const petNoBgOn = () => (LOCAL_PET ? demoPetNoBg : !!appSettings?.petNoBg);
+
+function setPet(on) {
+  if (on) markQuest('try_pet');
+  if (LOCAL_PET) {
+    demoPetOpen = !!on;
+    store.set('petOpen', demoPetOpen);
+    applyPetState();
+    refreshSettings();
+  } else {
+    send({ cmd: 'pet', value: !!on });
+  }
+}
+
+function setPetSession(sid) {
+  const v = sid || '';
+  if (LOCAL_PET) {
+    demoPetSessionId = v;
+    store.set('petSessionId', v);
+    if (petOn()) renderPet();
+    refreshSettings();
+    if (selectedId) renderPanel();
+  } else {
+    send({ cmd: 'pet-session', id: v });
+  }
+}
+
+function setPetCompact(v) {
+  if (LOCAL_PET) {
+    demoPetCompact = !!v;
+    store.set('petCompact', demoPetCompact);
+    if (petOn()) renderPet();
+    refreshSettings();
+  } else {
+    send({ cmd: 'pet-compact', value: !!v });
+  }
+}
+
+function setPetNoBg(v) {
+  if (LOCAL_PET) {
+    demoPetNoBg = !!v;
+    store.set('petNoBg', demoPetNoBg);
+    if (petOn()) renderPet();
+    refreshSettings();
+  } else {
+    send({ cmd: 'pet-nobg', value: !!v });
+  }
+}
+
+/** 미니펫에 앉힐 대표 직원: 지정한 세션이 있으면 그 직원, 없거나 사라졌으면 확인 필요(✋) → 작업 중 → 최근 활동 순으로 고른다. */
+function resolvePetSession() {
+  const list = data.sessions || [];
+  if (!list.length) return null;
+  const pref = petSessionPref();
+  if (pref) {
+    const found = list.find((s) => s.id === pref);
+    if (found) return found;
+  }
+  const active = list.filter((s) => s.act !== 'away');
+  const pool = active.length ? active : list;
+  return pool.slice().sort((a, b) => WIDGET_RANK(a) - WIDGET_RANK(b) || (b.last || 0) - (a.last || 0))[0] || list[0];
+}
+
+function applyPetState() {
+  if (btnPet) {
+    btnPet.hidden = REMOTE;
+    btnPet.classList.toggle('on', petOn());
+  }
+  if (PET_WINDOW) {
+    document.body.classList.add('pet-window');
+    petEl.hidden = false;
+    renderPet();
+    return;
+  }
+  if (DEMO) {
+    const show = petOn();
+    document.body.classList.toggle('pet-float', show);
+    petEl.hidden = !show;
+    if (show) renderPet();
+  }
+}
+
+let petDomBuilt = false;
+let petSelEl = null, petBgBtn = null, petFoldBtn = null, petStopBtn = null, petAlertEl = null, petAlertTargetId = '';
+let petStageEl = null, petCanvasEl = null, petCtx = null;
+let petBarNm = null, petBarSt = null, petAsksEl = null, petFeedEl = null, petFeedHd = null, petFeedTx = null;
+let petCmdWrap = null, petInputEl = null, petSendBtn = null, petNoteEl = null, petCancelBtn = null, petWakeBtn = null, petGuideBtn = null, petEmptyEl = null;
+const petArt = document.createElement('canvas');
+const petAskEls = new Map();
+const petAnswered = new Map();
+let petNote = null;   // { sid, at, text }
+let lastPetH = 0;
+
+function ensurePetDom() {
+  if (petDomBuilt) return;
+  petDomBuilt = true;
+
+  const head = elem('div', 'pet-head');
+  const badge = elem('span', 'pet-badge', '🐾');
+  badge.title = T('드래그해 위치 이동', 'Drag to move');
+  petSelEl = elem('select', 'pet-sel');
+  petSelEl.title = T('대표 직원 선택(바탕화면 미니펫에 앉힐 세션)', 'Choose representative employee');
+  petSelEl.addEventListener('change', () => setPetSession(petSelEl.value));
+
+  petBgBtn = elem('button', 'pet-ibtn', '🖼️');
+  petBgBtn.addEventListener('click', () => setPetNoBg(!petNoBgOn()));
+
+  petFoldBtn = elem('button', 'pet-ibtn', '💬');
+  petFoldBtn.addEventListener('click', () => setPetCompact(!petCompactOn()));
+
+  petStopBtn = elem('button', 'pet-ibtn btn-stop', '🛑');
+  petStopBtn.title = T('현재 세션에 긴급 중단(Ctrl+C) 신호를 보냅니다', 'Send emergency stop (Ctrl+C) to this session');
+  petStopBtn.addEventListener('click', () => {
+    const s = resolvePetSession();
+    if (s) {
+      stopSession(s.id);
+      petStopBtn.style.opacity = '0.5';
+      setTimeout(() => { if (petStopBtn) petStopBtn.style.opacity = '1'; }, 1500);
+      markQuest('emergency_stop');
+    }
+  });
+  petStopBtn.hidden = true;
+
+  const focusBtn = elem('button', 'pet-ibtn', '🖥️');
+  focusBtn.title = T('이 세션이 열려 있는 VS Code·터미널 창으로 이동', "Bring this session's VS Code or terminal window to the front");
+  focusBtn.addEventListener('click', () => {
+    const s = resolvePetSession();
+    if (s) send({ cmd: 'focus-session', id: s.id });
+  });
+
+  const officeBtn = elem('button', 'pet-ibtn', '🏢');
+  officeBtn.title = T('메인 사무실 창에서 이 직원 열기', 'Open this employee in the main office window');
+  officeBtn.addEventListener('click', () => {
+    const s = resolvePetSession();
+    if (PET_WINDOW) send({ cmd: 'pet-open-office', id: s?.id || '' });
+    else if (s) selectSession(s.id);
+  });
+
+  const closeBtn = elem('button', 'pet-ibtn', '✕');
+  closeBtn.title = T('바탕화면 미니펫 닫기', 'Close Desktop MiniPet');
+  closeBtn.addEventListener('click', () => setPet(false));
+
+  head.append(badge, petSelEl, petBgBtn, petFoldBtn, petStopBtn, focusBtn, officeBtn, closeBtn);
+
+  petAlertEl = elem('button', 'pet-alert');
+  petAlertEl.hidden = true;
+  petAlertEl.title = T('클릭하면 확인을 기다리는 직원으로 바로 전환합니다', 'Click to switch to the waiting employee');
+  petAlertEl.addEventListener('click', () => {
+    if (petAlertTargetId) setPetSession(petAlertTargetId);
+  });
+
+  petStageEl = elem('div', 'pet-stage');
+  petCanvasEl = document.createElement('canvas');
+  petCanvasEl.id = 'petCanvas';
+  petCtx = petCanvasEl.getContext('2d');
+  const bar = elem('div', 'pet-bar');
+  bar.title = T('클릭: 메인 사무실 창에서 자세히 보기', 'Click: open details in the main office');
+  petBarNm = elem('span', 'nm');
+  petBarSt = elem('span', 'st');
+  bar.append(petBarNm, petBarSt);
+  bar.addEventListener('click', () => {
+    const s = resolvePetSession();
+    if (PET_WINDOW) send({ cmd: 'pet-open-office', id: s?.id || '' });
+    else if (s) selectSession(s.id);
+  });
+  petStageEl.append(petCanvasEl, bar);
+
+  // 헤더나 구석 방 그림(캔버스)을 잡고 끌면 창 이동
+  const startDrag = (e) => {
+    if (e.button !== 0) return;
+    if (e.target instanceof Element && e.target.closest('select, button, input, textarea, .pet-bar')) return;
+    if (PET_WINDOW) send({ cmd: 'pet-drag' });
+  };
+  head.addEventListener('mousedown', startDrag);
+  petStageEl.addEventListener('mousedown', startDrag);
+
+  petEmptyEl = elem('div', 'pet-empty');
+  petAsksEl = elem('div', 'pet-asks');
+
+  petFeedEl = elem('div', 'pet-feed');
+  petFeedHd = elem('div', 'hd');
+  petFeedTx = elem('div', 'tx');
+  petFeedEl.append(petFeedHd, petFeedTx);
+
+  petCmdWrap = elem('div', 'pet-cmd');
+  const irow = elem('div', 'pet-input-row');
+  petInputEl = elem('textarea', 'field');
+  petInputEl.rows = 1;
+  petInputEl.maxLength = 1000;
+  petInputEl.placeholder = T('이 직원에게 보낼 지시', 'Instruction for this employee (Enter to send)');
+  petSendBtn = elem('button', 'pet-send', T('보내기', 'Send'));
+  petSendBtn.addEventListener('click', sendPetSay);
+  petInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendPetSay();
+    }
+  });
+  irow.append(petInputEl, petSendBtn);
+  const noteRow = elem('div', 'pet-note-row');
+  petNoteEl = elem('div', 'pet-note');
+  petCancelBtn = elem('button', 'cancel-q', T('취소', 'Cancel'));
+  petCancelBtn.title = T('아직 전달되지 않은 대기 중 지시를 취소합니다', 'Cancel the queued instruction');
+  petCancelBtn.hidden = true;
+  petCancelBtn.addEventListener('click', () => {
+    const s = resolvePetSession();
+    if (s) cancelQueuedSay(s.id);
+  });
+  petWakeBtn = elem('button', 'wake-term', T('🖥️ 터미널로', '🖥️ Terminal'));
+  petWakeBtn.title = T('터미널 창으로 이동 후 Ctrl+V로 붙여넣고 Enter를 누르세요 (지시가 복사됨)', 'Focus terminal & press Ctrl+V then Enter (copied)');
+  petWakeBtn.hidden = true;
+  petWakeBtn.addEventListener('click', () => {
+    const s = resolvePetSession();
+    if (s) onWakeTerminal(s.id);
+  });
+  petGuideBtn = elem('button', 'guide-link', T('ℹ️ 안내', 'ℹ️ Guide'));
+  petGuideBtn.title = T('세션 최초 연결 방법 안내 보기', 'View first-time connection guide');
+  petGuideBtn.hidden = true;
+  petGuideBtn.addEventListener('click', () => {
+    const s = resolvePetSession();
+    if (s) openConnectGuide(s.id);
+  });
+  noteRow.append(petNoteEl, petCancelBtn, petWakeBtn, petGuideBtn);
+  petCmdWrap.append(irow, noteRow);
+
+  petEl.replaceChildren(head, petAlertEl, petStageEl, petEmptyEl, petAsksEl, petFeedEl, petCmdWrap);
+}
+
+function makePetAsk(sid, a) {
+  const isQuestion = a.kind === 'question' || (Array.isArray(a.options) && a.options.length > 0);
+  const el = elem('div', 'pet-ask');
+  el.dataset.sid = sid;
+  const head = elem('div', '');
+  head.append(
+    elem('span', 'what', (isQuestion ? T('❓ 질문: ', '❓ Question: ') : T('✋ 승인 요청: ', '✋ Approve: ')) + a.text),
+    elem('span', 'dim age')
+  );
+  el.append(head);
+  if (a.detail) el.append(elem('div', isQuestion ? 'qtxt' : 'cmd', a.detail));
+
+  const why = elem('input', 'field');
+  why.type = 'text';
+  why.maxLength = 1000;
+
+  const btns = elem('div', 'btns');
+  const term = elem('button', 'pet-btn', T('🖥️ 터미널에서', '🖥️ In terminal'));
+  term.title = T('미니펫에서 결정하지 않고 원래 터미널·VS Code 창으로 넘깁니다', 'Pass to the terminal or VS Code prompt');
+  term.addEventListener('click', () => answerPetAsk(sid, a.id, null, '', isQuestion));
+
+  if (isQuestion) {
+    if (Array.isArray(a.options) && a.options.length > 0) {
+      const opts = elem('div', 'opts');
+      for (const opt of a.options) {
+        const ob = elem('button', 'opt-btn', `👉 ${opt}`);
+        ob.addEventListener('click', () => answerPetAsk(sid, a.id, true, opt, true));
+        opts.append(ob);
+      }
+      el.append(opts);
+    }
+    why.placeholder = T('직접 답 입력 (Enter 전송)', 'Type a custom answer (Enter to send)');
+    const sendAns = () => {
+      const val = why.value.trim() || (Array.isArray(a.options) && a.options[0]) || '';
+      if (val) answerPetAsk(sid, a.id, true, val, true);
+    };
+    why.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendAns(); } });
+    const ok = elem('button', 'pet-btn ok', T('💬 답 보내기', '💬 Send answer'));
+    ok.addEventListener('click', sendAns);
+    btns.append(term, ok);
+    el.append(why, btns);
+    return el;
+  }
+
+  why.placeholder = T('거절 시 대신 시킬 일 (선택)', 'What to do instead if denied (optional)');
+  const no = elem('button', 'pet-btn no', T('🚫 거절', '🚫 Deny'));
+  const ok = elem('button', 'pet-btn ok', T('👍 승인', '👍 Approve'));
+  no.addEventListener('click', () => answerPetAsk(sid, a.id, false, why.value, false));
+  ok.addEventListener('click', () => answerPetAsk(sid, a.id, true, '', false));
+  btns.append(term, no, ok);
+  el.append(why, btns);
+  return el;
+}
+
+function answerPetAsk(sid, id, allow, why, isQuestion = false) {
+  petAnswered.set(id, Date.now());
+  answered.set(id, Date.now());
+  const text = (why || '').trim().slice(0, 1000);
+  const doneMsg = allow === true
+    ? (isQuestion && text ? T(`💬 "${text.slice(0, 22)}" 답을 보냈어요`, `💬 Answered "${text.slice(0, 22)}"`) : T('👍 승인을 보냈어요', '👍 Approval sent'))
+    : allow === false ? T('🚫 거절을 보냈어요', '🚫 Denial sent')
+    : T('🖥️ 터미널로 넘겼어요', '🖥️ Passed to terminal');
+  if (DEMO) {
+    const r = remoteState?.s?.[sid];
+    if (r && Array.isArray(r.asks)) r.asks = r.asks.filter((x) => x.id !== id);
+    if (isQuestion && allow === true && text && r) {
+      r.said = { text, t: Date.now(), state: 'delivered' };
+    }
+    petNote = { sid, at: Date.now(), text: doneMsg };
+    remoteNote = { sid, at: Date.now(), text: doneMsg };
+    renderPet();
+    if (selectedId) renderPanel();
+    return;
+  }
+  send({ cmd: 'pet-decide', id, allow, text: allow === true && !isQuestion ? '' : text });
+  if (allow === null) send({ cmd: 'focus-session', id: sid });
+  petNote = { sid, at: Date.now(), text: doneMsg };
+  remoteNote = { sid, at: Date.now(), text: doneMsg };
+  renderPet();
+  if (selectedId) renderPanel();
+}
+
+function wakeTerminal(sid, text) {
+  if (sid) {
+    send({ cmd: 'focus-session', id: sid });
+    if (!PET_WINDOW) selectSession(sid);
+  }
+  const toCopy = text || T('안녕', 'Hello');
+  if (toCopy && navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(toCopy).catch(() => {});
+  }
+}
+
+function doWakeTerminal(sid) {
+  if (!sid) return;
+  const r = remoteOf(sid);
+  const text = r && r.said ? r.said.text : '';
+  const toCopy = text || T('안녕', 'Hello');
+  wakeTerminal(sid, toCopy);
+  markQuest('first_connect');
+  const note = text
+    ? T(`📋 작성하신 지시("${text.slice(0, 18)}") 자동 복사됨! 터미널에서 Ctrl+V 후 Enter를 누르세요`,
+        `📋 Copied your instruction ("${text.slice(0, 18)}")! Press Ctrl+V then Enter in terminal`)
+    : T(`📋 연결 약속어 '${toCopy}' 자동 복사됨! 터미널에서 Ctrl+V 후 Enter를 누르면 연결됩니다`,
+        `📋 Copied handshake phrase '${toCopy}'! Press Ctrl+V then Enter in terminal to connect`);
+  if (PET_WINDOW) {
+    petNote = { sid, at: Date.now(), text: note };
+    renderPet();
+  } else {
+    remoteNote = { sid, at: Date.now(), text: note };
+    renderPanel();
+  }
+}
+
+function onWakeTerminal(sid) {
+  if (!sid) return;
+  const skip = store.get('skipConnectGuide', false);
+  if (!skip) {
+    openConnectGuide(sid);
+    return;
+  }
+  doWakeTerminal(sid);
+}
+
+async function stopSession(sid) {
+  if (!sid) return;
+  if (DEMO) {
+    const s = (data.sessions || []).find((x) => x.id === sid);
+    if (s) {
+      s.act = 'idle';
+      s.icon = '☕';
+      s.text = T('작업 중단됨 (대기)', 'Stopped (Idle)');
+      s.reply = T('사용자에 의해 작업이 긴급 중단되었습니다.', 'Task was stopped by user.');
+      renderPanel();
+      if (petOn()) renderPet();
+    }
+    return;
+  }
+  if (REMOTE) {
+    if (!remoteKey) return;
+    const ok = await postInbox({ k: 'stop', sid });
+    const msg = ok
+      ? T('🛑 PC로 비상정지(Ctrl+C) 신호를 보냈어요! 잠시 후 멈춥니다.', '🛑 Sent emergency stop (Ctrl+C) to PC! Stopping shortly.')
+      : lastPostError;
+    remoteNote = { sid, at: Date.now(), text: msg };
+    renderPanel();
+    return;
+  }
+  send({ cmd: 'stop-session', id: sid });
+}
+
+let connectGuideSid = '';
+const connectGuideEl = $('connectGuide');
+
+function openConnectGuide(sid) {
+  if (!connectGuideEl) return;
+  connectGuideSid = sid || selectedId || resolvePetSession()?.id || '';
+  connectGuideEl.hidden = false;
+  const skip = store.get('skipConnectGuide', false);
+  const chk = $('cgSkip');
+  if (chk) chk.checked = !!skip;
+  applyConnectGuideLang();
+  if (PET_WINDOW) syncPetHeight();
+}
+
+function closeConnectGuide() {
+  if (!connectGuideEl) return;
+  connectGuideEl.hidden = true;
+  connectGuideSid = '';
+  if (PET_WINDOW) syncPetHeight();
+}
+
+function applyConnectGuideLang() {
+  if (!connectGuideEl) return;
+  const t = (id, ko, en) => { const el = $(id); if (el) el.textContent = T(ko, en); };
+  t('cgTitle', '📡 세션 최초 1회 연결 안내', '📡 First-time Session Connection Guide');
+  t('cgLead', '이 세션에 오피스에서 지시를 보내려면 최초 1회 터미널 연결이 필요합니다.', 'To send instructions to this session, a one-time connection is required.');
+  t('cgSub', '새로 시작된 세션은 터미널에서 최소 1회 명령이 실행되어야 오피스 감시 훅과 실시간으로 연결됩니다.', 'Due to Claude Code security, a new session must run once in the terminal to connect with Office hooks.');
+
+  const sid = connectGuideSid || selectedId || resolvePetSession()?.id || '';
+  const r = sid ? remoteOf(sid) : null;
+  const text = r && r.said ? r.said.text : '';
+
+  if (text) {
+    t('cgPrevLbl', '📋 클립보드에 자동 복사된 지시 (미리보기):', '📋 Instruction automatically copied by Office:');
+    const pt = $('cgPrevTxt');
+    if (pt) pt.textContent = `"${text}"`;
+    t('cgPrevHint', '💡 사용자가 직접 복사할 필요 없이 오피스가 알아서 복사해 두었습니다. 터미널 창에서 바로 [Ctrl+V]를 누르고 [Enter]를 실행하세요.',
+      '💡 No need to press Ctrl+C; Office copies it for you, so just press Ctrl+V in the terminal.');
+  } else {
+    t('cgPrevLbl', '🤝 연결용 약속 언어 (클립보드에 자동 복사됨):', '🤝 Connection handshake phrase (auto-copied):');
+    const pt = $('cgPrevTxt');
+    if (pt) pt.textContent = T('"안녕" (가벼운 인사로 첫 대화를 시작해 연결을 엽니다)', '"Hello" (simple greeting to start the first conversation and connect)');
+    t('cgPrevHint', '💡 별도 지시가 없을 땐 약속어 "안녕"이 복사됩니다. Claude가 첫 답변을 마치면 즉시 실시간 연결이 완료됩니다!',
+      '💡 Handshake phrase "Hello" is copied. Once Claude finishes replying, the session is connected!');
+  }
+
+  t('cgS1Title', '🖥️ 1. [지금 터미널로 이동] 클릭', '1. Click [🖥️ Terminal] button');
+  t('cgS1Desc', '해당 직원의 VS Code / 터미널 창으로 화면이 자동 전환되고 위 내용이 클립보드에 준비됩니다.', "Switches to this session's terminal / VS Code window and automatically copies the text above.");
+  t('cgS2Title', '⌨️ 2. 터미널 창에서 Ctrl+V 후 Enter 실행', '2. Paste with Ctrl+V & Enter');
+  t('cgS2Desc', '별도로 복사하지 않아도 클립보드에 이미 들어 있으니, 입력창에 그대로 붙여넣고 Enter를 누르세요.', 'No need to press Ctrl+C beforehand. Just paste with Ctrl+V and press Enter.');
+  t('cgS3Title', '✅ 3. 실시간 연결 완료!', '3. Connection Complete!');
+  t('cgS3Desc', 'Claude의 첫 답변이 끝나면 연결이 완료되어, 다음부터는 터미널로 이동할 필요 없이 오피스나 미니펫에서 바로 지시가 전달됩니다!', 'Once Claude finishes this reply, future instructions will be sent directly from the Office / MiniPet.');
+  t('cgSkipLbl', '다음부터는 팝업 없이 바로 터미널로 이동', 'Skip this guide next time and jump directly to terminal');
+  t('cgWakeBtn', '🖥️ 지금 터미널로 이동 (클립보드 자동 복사)', '🖥️ Go to Terminal Now (Copy)');
+  t('cgCancelBtn', '닫기', 'Close');
+}
+
+function initConnectGuide() {
+  if (!connectGuideEl) return;
+  $('cgClose')?.addEventListener('click', closeConnectGuide);
+  $('cgCancelBtn')?.addEventListener('click', closeConnectGuide);
+  connectGuideEl.addEventListener('click', (e) => {
+    if (e.target === connectGuideEl) closeConnectGuide();
+  });
+  $('cgSkip')?.addEventListener('change', (e) => {
+    store.set('skipConnectGuide', !!e.target.checked);
+  });
+  $('cgWakeBtn')?.addEventListener('click', () => {
+    const sid = connectGuideSid || selectedId || resolvePetSession()?.id;
+    const chk = $('cgSkip');
+    if (chk) store.set('skipConnectGuide', !!chk.checked);
+    closeConnectGuide();
+    if (sid) doWakeTerminal(sid);
+  });
+}
+
+const whiteboardModalEl = $('whiteboardModal');
+
+function openWhiteboardModal() {
+  if (!whiteboardModalEl) return;
+  whiteboardModalEl.hidden = false;
+  renderWhiteboardCards();
+  markQuest('view_whiteboard');
+}
+
+function closeWhiteboardModal() {
+  if (!whiteboardModalEl) return;
+  whiteboardModalEl.hidden = true;
+}
+
+function renderWhiteboardCards() {
+  if (!whiteboardModalEl || whiteboardModalEl.hidden) return;
+  const body = $('wbBody');
+  const sumEl = $('wbSummary');
+  if (!body) return;
+
+  const sessionsWithTodos = (data.sessions || []).filter((s) => (s.todos || []).length > 0);
+
+  let totalTodos = 0;
+  let totalDone = 0;
+  let totalProg = 0;
+
+  for (const s of data.sessions || []) {
+    for (const t of s.todos || []) {
+      totalTodos++;
+      if (t.status === 'completed') totalDone++;
+      else if (t.status === 'in_progress') totalProg++;
+    }
+  }
+
+  const overallPct = totalTodos > 0 ? Math.round((totalDone / totalTodos) * 100) : 0;
+  if (sumEl) {
+    sumEl.textContent = totalTodos > 0
+      ? T(`전체 ${totalTodos}개 중 ${totalDone}개 완료 (${overallPct}%) · 진행 중 ${totalProg}개`,
+          `${totalDone}/${totalTodos} completed (${overallPct}%) · ${totalProg} in progress`)
+      : T('등록된 할 일이 없습니다', 'No to-dos recorded');
+  }
+
+  body.replaceChildren();
+
+  if (sessionsWithTodos.length === 0) {
+    const empty = elem('div', 'wb-empty');
+    empty.append(
+      elem('div', 'wb-empty-icon', '📋'),
+      elem('div', 'wb-empty-text', T('진행 중인 할 일이 등록된 세션이 없습니다.\nClaude Code에서 작업을 진행하면 세션별 체크리스트가 여기에 표시됩니다.',
+        'No sessions have to-dos yet.\nStart working in Claude Code and checklists will appear here.'))
+    );
+    body.append(empty);
+    return;
+  }
+
+  for (const s of sessionsWithTodos) {
+    const todos = s.todos || [];
+    const doneCount = todos.filter((t) => t.status === 'completed').length;
+    const pct = todos.length > 0 ? Math.round((doneCount / todos.length) * 100) : 0;
+
+    const card = elem('div', 'wb-card');
+    const head = elem('div', 'wb-card-head');
+    const title = elem('div', 'wb-card-title', `${s.icon} ${displayName(s)}`);
+    const act = elem('div', 'wb-card-act');
+    const stat = elem('span', 'wb-card-stat', `${doneCount}/${todos.length} (${pct}%)`);
+    const btn = elem('button', 'wb-card-btn', T('👉 이동', '👉 Go'));
+    btn.title = T('이 직원의 상세 화면으로 이동합니다', 'Jump to this employee');
+    btn.addEventListener('click', () => {
+      closeWhiteboardModal();
+      selectSession(s.id);
+    });
+    act.append(stat, btn);
+    head.append(title, act);
+
+    const prog = elem('div', 'wb-prog');
+    const fill = elem('div', 'wb-prog-fill');
+    fill.style.width = `${pct}%`;
+    prog.append(fill);
+
+    const ul = elem('ul', 'wb-list');
+    for (const t of todos) {
+      const isDone = t.status === 'completed';
+      const isProg = t.status === 'in_progress';
+      const icon = isDone ? '✅' : isProg ? '⏳' : '⬜';
+      const cls = isDone ? 'completed' : isProg ? 'in_progress' : 'pending';
+      const li = elem('li', `wb-item ${cls}`);
+      const iconSpan = elem('span', 'wb-item-icon', icon);
+      const textSpan = elem('span', 'wb-item-text', t.content);
+      li.append(iconSpan, textSpan);
+      ul.append(li);
+    }
+
+    card.append(head, prog, ul);
+    body.append(card);
+  }
+}
+
+// ───────────────────────────── 직원 직급 & 성장 시스템 ─────────────────────────────
+const RANKS = [
+  { lv: 1,  name: '인턴',       en: 'Intern',             exp: 0 },
+  { lv: 2,  name: '수습',       en: 'Junior Apprentice',  exp: 100 },
+  { lv: 3,  name: '주임',       en: 'Senior Apprentice',  exp: 300 },
+  { lv: 4,  name: '대리',       en: 'Associate',          exp: 600 },
+  { lv: 5,  name: '과장',       en: 'Specialist',         exp: 1000 },
+  { lv: 6,  name: '차장',       en: 'Lead Specialist',    exp: 1500 },
+  { lv: 7,  name: '팀장',       en: 'Team Lead',          exp: 2200 },
+  { lv: 8,  name: '부장',       en: 'Director',           exp: 3000 },
+  { lv: 9,  name: '이사',       en: 'VP / Principal',     exp: 4000 },
+  { lv: 10, name: '수석 연구원', en: 'Chief Scientist',    exp: 5500 },
+];
+
+function calcSessionExp(s) {
+  if (!s) return 0;
+  const tw = s.week || {};
+  const td = s.today || {};
+  const workMs = Math.max(tw.work || 0, td.work || 0);
+  const workMin = Math.floor(workMs / 60000);
+  const prompts = Math.max(tw.prompts || 0, td.prompts || 0);
+  const tools = (tw.tools && tw.tools.length ? tw.tools : td.tools) || [];
+  const toolCount = tools.reduce((acc, x) => acc + (x.c || 0), 0);
+  const internBonus = (s.interns || []).length * 50;
+  return Math.max(0, workMin * 5 + prompts * 20 + toolCount * 3 + internBonus);
+}
+
+function calcSessionRank(s) {
+  const exp = calcSessionExp(s);
+  let curRank = RANKS[0];
+  let nextRank = RANKS[1];
+
+  for (let i = RANKS.length - 1; i >= 0; i--) {
+    if (exp >= RANKS[i].exp) {
+      curRank = RANKS[i];
+      nextRank = RANKS[i + 1] || null;
+      break;
+    }
+  }
+
+  const name = T(curRank.name, curRank.en);
+  const nextName = nextRank ? T(nextRank.name, nextRank.en) : null;
+  const curBase = curRank.exp;
+  const target = nextRank ? nextRank.exp : curBase;
+  const range = nextRank ? (target - curBase) : 1;
+  const curProg = nextRank ? (exp - curBase) : 1;
+  const pct = nextRank ? Math.min(100, Math.max(0, Math.round((curProg / range) * 100))) : 100;
+
+  return {
+    lv: curRank.lv,
+    name,
+    exp,
+    nextRank,
+    nextName,
+    pct,
+    needed: nextRank ? Math.max(0, target - exp) : 0,
+  };
+}
+
+function getSessionStats(s) {
+  if (!s) return { workMs: 0, prompts: 0, toolCount: 0, cacheRead: 0, saved: 0, nowHour: 12, exp: 0 };
+  const tw = s.week || {};
+  const td = s.today || {};
+  const workMs = Math.max(tw.work || 0, td.work || 0);
+  const prompts = Math.max(tw.prompts || 0, td.prompts || 0);
+  const tools = (tw.tools && tw.tools.length ? tw.tools : td.tools) || [];
+  const toolCount = tools.reduce((acc, x) => acc + (x.c || 0), 0);
+  const cacheRead = Math.max(tw.cacheRead || 0, td.cacheRead || 0);
+  const { saved } = calcTokenCost(td.work ? td : tw, s.model);
+  const nowHour = new Date().getHours();
+  const exp = calcSessionExp(s);
+  return { workMs, prompts, toolCount, cacheRead, saved, nowHour, exp };
+}
+
+// ───────────────────────────── 도전 과제 (퀘스트) 저장 및 알림 ─────────────────────────────
+let userQuests = null;
+function getQuestStore() {
+  if (!userQuests) userQuests = store.get('quests', {});
+  return userQuests;
+}
+function getQuest(id) {
+  return !!getQuestStore()[id];
+}
+function markQuest(id) {
+  if (!id) return;
+  const qStore = getQuestStore();
+  if (qStore[id]) return;
+  qStore[id] = Date.now();
+  store.set('quests', qStore);
+
+  const ach = ALL_ACHIEVEMENTS.find((x) => x.id === id);
+  if (ach) {
+    showQuestToast(ach);
+    playRetroSound('done');
+    if (achieveModalEl && !achieveModalEl.hidden) renderAchieveModal();
+    if (selectedId) renderPanel();
+  }
+}
+
+let toastTimer = null;
+function showQuestToast(ach) {
+  const toast = $('questToast');
+  if (!toast) return;
+  if (toastTimer) clearTimeout(toastTimer);
+
+  toast.replaceChildren();
+  const icon = elem('div', 'quest-toast-icon', ach.icon);
+  const body = elem('div', 'quest-toast-body');
+  const tag = elem('div', 'quest-toast-tag', T('🏆 도전 과제 달성!', '🏆 Challenge Completed!'));
+  const title = elem('div', 'quest-toast-title', `${T(ach.name, ach.en)} (+${ach.exp || 100} EXP)`);
+  const desc = elem('div', 'quest-toast-desc', T(ach.desc, ach.enDesc));
+  body.append(tag, title, desc);
+
+  toast.append(icon, body);
+  toast.hidden = false;
+  toast.onclick = () => {
+    toast.hidden = true;
+    openAchieveModal();
+  };
+
+  toastTimer = setTimeout(() => {
+    toast.hidden = true;
+  }, 4000);
+}
+
+// ───────────────────────────── 21종 온보딩 & 실전 도전 과제 카탈로그 ─────────────────────────────
+const ALL_ACHIEVEMENTS = [
+  // 🏢 1. 오피스 기초 & 온보딩 (12개)
+  {
+    id: 'rename_company',
+    cat: 'onboarding',
+    icon: '🏢',
+    name: '나만의 회사 설립',
+    en: 'Company Headquarters',
+    desc: '벽면 간판과 창 제목에 표시될 우리 회사/팀의 고유 이름을 지어보세요.',
+    enDesc: 'Set a custom company name for the wall sign and window title.',
+    guide: '설정 ⚙️ ➔ [화면] 탭 ➔ 사무실 이름 입력',
+    enGuide: 'Settings ⚙️ ➔ [Display] tab ➔ Office name',
+    exp: 100,
+    action: () => setSettingsOpen(true, 'display'),
+    check: () => !!(officeName && officeName !== DEFAULT_OFFICE && officeName.trim()) || !!getQuest('rename_company'),
+  },
+  {
+    id: 'set_nickname',
+    cat: 'onboarding',
+    icon: '🏷️',
+    name: '직원 애칭 붙이기',
+    en: 'Special Nickname',
+    desc: '직원 상세 서랍에서 직원의 친근한 별명을 지어주세요.',
+    enDesc: 'Give an employee a friendly nickname in the detail panel.',
+    guide: '직원 클릭 ➔ [별명] 입력창에 입력',
+    enGuide: 'Click employee ➔ Type in [Nickname] field',
+    exp: 80,
+    action: () => { closeAchieveModal(); const s = visibleSessions()[0]; if (s) selectSession(s.id); },
+    check: () => Object.values(notes || {}).some((n) => n && n.nick && n.nick.trim()) || !!getQuest('set_nickname'),
+  },
+  {
+    id: 'write_memo',
+    cat: 'onboarding',
+    icon: '📝',
+    name: '업무 메모장',
+    en: 'Work Notes',
+    desc: '직원 상세 서랍의 메모장에 진행 중인 작업이나 기억할 내용을 적어보세요.',
+    enDesc: 'Write a work note or reminder in the detail drawer.',
+    guide: '직원 클릭 ➔ [메모] 입력창에 작성',
+    enGuide: 'Click employee ➔ Type in [Memo] field',
+    exp: 80,
+    action: () => { closeAchieveModal(); const s = visibleSessions()[0]; if (s) selectSession(s.id); },
+    check: () => Object.values(notes || {}).some((n) => n && n.memo && n.memo.trim()) || !!getQuest('write_memo'),
+  },
+  {
+    id: 'decorate_desk',
+    cat: 'onboarding',
+    icon: '☕',
+    name: '데스크테리어',
+    en: 'Desk Decorator',
+    desc: '직원 책상에 머그컵(☕), 화분(🪴), 책(📚) 등 귀여운 소품을 배치해보세요.',
+    enDesc: 'Place a mug, plant, or books on an employee\'s desk.',
+    guide: '직원 클릭 ➔ 서랍 하단 [☕ 머그컵 / 🪴 화분 / 📚 책] 클릭',
+    enGuide: 'Click employee ➔ Pick ☕/🪴/📚 at drawer bottom',
+    exp: 80,
+    action: () => { closeAchieveModal(); const s = visibleSessions()[0]; if (s) selectSession(s.id); },
+    check: () => Object.values(notes || {}).some((n) => n && ((typeof n.look === 'number' && n.look > 0) || (typeof n.deco === 'number' && n.deco >= 0))) || !!getQuest('decorate_desk'),
+  },
+  {
+    id: 'move_seat',
+    cat: 'onboarding',
+    icon: '💺',
+    name: '자리 재배치',
+    en: 'Office Reshuffle',
+    desc: '같은 팀 내에서 [◀ 자리] 또는 [자리 ▶] 버튼으로 책상 자리를 바꿔보세요.',
+    enDesc: 'Move employee seat forward or backward within the team.',
+    guide: '직원 클릭 ➔ 팀 정보 옆 [◀ 자리 / 자리 ▶] 클릭',
+    enGuide: 'Click employee ➔ Click [◀ Seat / Seat ▶]',
+    exp: 80,
+    action: () => { closeAchieveModal(); const s = visibleSessions()[0]; if (s) selectSession(s.id); },
+    check: () => !!(seatOrder && Object.keys(seatOrder).length > 0) || !!getQuest('move_seat'),
+  },
+  {
+    id: 'view_whiteboard',
+    cat: 'onboarding',
+    icon: '📋',
+    name: '화이트보드 마스터',
+    en: 'Whiteboard Master',
+    desc: '사무실 벽면의 픽셀 화이트보드를 클릭해 전사 할 일(Todo) 칸반 보드를 열어보세요.',
+    enDesc: 'Click the wall whiteboard to open the team-wide Todo Kanban board.',
+    guide: '사무실 벽면의 화이트보드를 마우스로 직접 클릭',
+    enGuide: 'Click wall whiteboard on office canvas',
+    exp: 80,
+    action: () => { closeAchieveModal(); openWhiteboardModal(); },
+    check: () => !!getQuest('view_whiteboard'),
+  },
+  {
+    id: 'try_pet',
+    cat: 'onboarding',
+    icon: '🐾',
+    name: '바탕화면 파트너',
+    en: 'Desktop Companion',
+    desc: '바탕화면 미니펫을 켜서 직원을 내 컴퓨터 바탕화면 구석에 꺼내두세요.',
+    enDesc: 'Turn on Desktop MiniPet to keep an employee in the screen corner.',
+    guide: '상단 바 [🐾] 버튼 또는 단축키 M 누르기',
+    enGuide: 'Top [🐾] button or shortcut M',
+    exp: 100,
+    action: () => { closeAchieveModal(); setPet(true); },
+    check: () => petOn() || !!getQuest('try_pet'),
+  },
+  {
+    id: 'try_widget',
+    cat: 'onboarding',
+    icon: '📋',
+    name: '작게 보기 모드',
+    en: 'Compact Widget',
+    desc: '복잡한 그래픽 대신 한 줄 목록(위젯)으로 전환해 화면을 간결하게 정리해보세요.',
+    enDesc: 'Switch to the compact single-line widget list view.',
+    guide: '상단 바 [📋] 버튼 또는 단축키 W 누르기',
+    enGuide: 'Top [📋] button or shortcut W',
+    exp: 80,
+    action: () => { closeAchieveModal(); setWidget(true); },
+    check: () => widgetOn() || !!getQuest('try_widget'),
+  },
+  {
+    id: 'try_search',
+    cat: 'onboarding',
+    icon: '🔍',
+    name: '스피드 검색',
+    en: 'Quick Finder',
+    desc: '빠른 검색창을 열어 직원, 팀 이름, 작업 내용을 즉시 찾아보세요.',
+    enDesc: 'Open search to find employees, teams, or tasks quickly.',
+    guide: '상단 바 [🔍] 버튼 또는 단축키 / 누르기',
+    enGuide: 'Top [🔍] button or shortcut /',
+    exp: 80,
+    action: () => { closeAchieveModal(); setSearchOpen(true); },
+    check: () => !!getQuest('try_search'),
+  },
+  {
+    id: 'view_worklog',
+    cat: 'onboarding',
+    icon: '📊',
+    name: '근무 일지 분석',
+    en: 'Work Log Analyst',
+    desc: '오늘의 근무 일지를 열어 전체 직원의 작업 시간과 토큰 비용을 확인해보세요.',
+    enDesc: 'Open the work log to inspect employee work times and token costs.',
+    guide: '상단 바 [📊] 버튼 또는 단축키 R 누르기',
+    enGuide: 'Top [📊] button or shortcut R',
+    exp: 80,
+    action: () => { closeAchieveModal(); btnToday.click(); },
+    check: () => (selectedId === REPORT_ID) || !!getQuest('view_worklog'),
+  },
+  {
+    id: 'pin_window',
+    cat: 'onboarding',
+    icon: '📌',
+    name: '항상 위에 고정',
+    en: 'Always On Top',
+    desc: '다른 작업 창에 가려지지 않도록 오피스 창을 화면 맨 위에 고정해보세요.',
+    enDesc: 'Pin the Office window so it stays on top of other applications.',
+    guide: '상단 바 [📌] 버튼 클릭',
+    enGuide: 'Top [📌] button',
+    exp: 80,
+    action: () => { setPinned(true); },
+    check: () => pinned || !!getQuest('pin_window'),
+  },
+  {
+    id: 'mobile_register',
+    cat: 'onboarding',
+    icon: '📱',
+    name: '스마트 오피스',
+    en: 'Mobile Office',
+    desc: '휴대폰 원격 연결을 켜거나 QR 코드를 스캔해 모바일에서 오피스를 열어보세요.',
+    enDesc: 'Enable phone connection or scan QR to inspect your office on mobile.',
+    guide: '설정 ⚙️ ➔ [휴대폰] 탭 ➔ 연결 켜기 / QR 스캔',
+    enGuide: 'Settings ⚙️ ➔ [Phone] tab ➔ Turn on / Scan QR',
+    exp: 150,
+    action: () => setSettingsOpen(true, 'phone'),
+    check: () => !!(cloud?.enabled || cloud?.state === 'on' || getQuest('mobile_register') || REMOTE),
+  },
+
+  // ⚡ 2. 실전 개발 & 세션 협업 (6개)
+  {
+    id: 'first_connect',
+    cat: 'development',
+    icon: '🚀',
+    name: '첫 발걸음',
+    en: 'First Step',
+    desc: 'Claude Code 세션과 연결하고 오피스 또는 미니펫에서 첫 지시를 전달해보세요.',
+    enDesc: 'Connect a Claude Code session and deliver your first instruction.',
+    guide: '지시 입력창에 명령 입력 후 [전송] 또는 터미널 연결',
+    enGuide: 'Enter prompt and click [Send] or connect terminal',
+    exp: 100,
+    action: () => { closeAchieveModal(); const s = visibleSessions()[0]; if (s) selectSession(s.id); },
+    check: (s, stats) => stats.prompts >= 1 || !!(s && s.said && s.said.text) || !!(s && s.reply) || !!getQuest('first_connect'),
+  },
+  {
+    id: 'emergency_stop',
+    cat: 'development',
+    icon: '🛑',
+    name: '비상 정지 (Ctrl+C)',
+    en: 'Emergency Brake',
+    desc: '직원이 작업 중일 때 [🛑 작업 중단] 버튼을 눌러 작업을 안전하게 멈춰보세요.',
+    enDesc: 'Press emergency stop [🛑] (Ctrl+C) to abort a running task safely.',
+    guide: '직원이 일할 때 상세 서랍 또는 미니펫의 [🛑] 버튼 클릭',
+    enGuide: 'Click [🛑] button in drawer or MiniPet while working',
+    exp: 100,
+    action: null,
+    check: () => !!getQuest('emergency_stop'),
+  },
+  {
+    id: 'multitasker',
+    cat: 'development',
+    icon: '⚡',
+    name: '멀티태스커',
+    en: 'Multi-tasker',
+    desc: '인턴(서브에이전트)과 협업하거나 누적 지시 8회 이상을 수행해보세요.',
+    enDesc: 'Collaborate with subagent interns or execute 8+ prompts.',
+    guide: '지시 8회 이상 전송 또는 서브에이전트 협업 실행',
+    enGuide: 'Send 8+ prompts or run subagent collaboration',
+    exp: 120,
+    action: null,
+    check: (s, stats) => (s && s.interns && s.interns.length > 0) || stats.prompts >= 8,
+  },
+  {
+    id: 'craftsman',
+    cat: 'development',
+    icon: '🛠️',
+    name: '장인 개발자',
+    en: 'Craftsman',
+    desc: '파일 읽기/수정/Bash 등 도구 호출 8회 이상 또는 실전 구현 40분 이상을 달성해보세요.',
+    enDesc: 'Execute 8+ tool calls or 40+ min practical coding.',
+    guide: '도구 8회 호출 또는 40분 이상 작업 진행',
+    enGuide: '8+ tool calls or 40+ min work time',
+    exp: 150,
+    action: null,
+    check: (s, stats) => stats.toolCount >= 8 || stats.workMs >= 40 * 60000,
+  },
+  {
+    id: 'token_saver',
+    cat: 'development',
+    icon: '💎',
+    name: '토큰 절약왕',
+    en: 'Token Saver',
+    desc: '프롬프트 캐싱을 적극 활용해 API 비용 $0.05 이상 절약 또는 캐시 3만 토큰을 달성해보세요.',
+    enDesc: 'Save $0.05+ via prompt cache or 30k+ cache read tokens.',
+    guide: '긴 대화나 도구 실행 시 캐싱 재활용으로 비용 절감',
+    enGuide: 'Save API costs by reusing prompt cache',
+    exp: 150,
+    action: null,
+    check: (s, stats) => stats.saved >= 0.05 || stats.cacheRead > 30000,
+  },
+  {
+    id: 'night_owl',
+    cat: 'development',
+    icon: '🌙',
+    name: '야근 요정',
+    en: 'Night Owl',
+    desc: '21시 이후 늦은 밤까지 성실하게 작업하거나 누적 90분 이상 근무해보세요.',
+    enDesc: 'Work late past 21:00 or accumulate 90+ min work time.',
+    guide: '21:00 ~ 06:00 사이 작업 또는 90분 이상 근무',
+    enGuide: 'Work between 21:00 ~ 06:00 or 90+ min work',
+    exp: 150,
+    action: null,
+    check: (s, stats) => stats.workMs >= 90 * 60000 || stats.nowHour >= 21 || stats.nowHour < 6,
+  },
+
+  // 👑 3. 승진 & 명예의 전당 (3개)
+  {
+    id: 'rank_apprentice',
+    cat: 'mastery',
+    icon: '🌱',
+    name: '첫 승진의 기쁨',
+    en: 'First Promotion',
+    desc: '직원을 Lv.2 수습으로 승진시켜보세요. (누적 100 EXP)',
+    enDesc: 'Promote an employee to Lv.2 Junior Apprentice (100 EXP).',
+    guide: '작업 시간, 지시 전송 등으로 100 EXP 획득',
+    enGuide: 'Reach 100 EXP via work time and prompts',
+    exp: 100,
+    action: null,
+    check: (s, stats) => stats.exp >= 100,
+  },
+  {
+    id: 'rank_manager',
+    cat: 'mastery',
+    icon: '👔',
+    name: '중간 관리자',
+    en: 'Mid-level Manager',
+    desc: '직원을 Lv.5 과장으로 승진시켜보세요. (누적 1,000 EXP)',
+    enDesc: 'Promote an employee to Lv.5 Specialist (1,000 EXP).',
+    guide: '누적 1,000 EXP 획득하여 과장 직급 달성',
+    enGuide: 'Reach 1,000 EXP to achieve Specialist rank',
+    exp: 300,
+    action: null,
+    check: (s, stats) => stats.exp >= 1000,
+  },
+  {
+    id: 'rank_grandmaster',
+    cat: 'mastery',
+    icon: '👑',
+    name: '만렙 마스터',
+    en: 'Grandmaster',
+    desc: '최고 직급인 Lv.10 수석 연구원 직급을 달성해보세요! (누적 5,500 EXP)',
+    enDesc: 'Reach the maximum rank of Lv.10 Chief Scientist (5,500 EXP).',
+    guide: '누적 5,500 EXP를 달성해 오피스 최고 직급 등극',
+    enGuide: 'Reach 5,500 EXP to reach Chief Scientist',
+    exp: 1000,
+    action: null,
+    check: (s, stats) => stats.exp >= 5500,
+  },
+];
+
+function isAchieved(ach, sessions) {
+  if (getQuest(ach.id)) return true;
+  if (ach.check.length === 0) return !!ach.check();
+  return (sessions || []).some((s) => ach.check(s, getSessionStats(s)));
+}
+
+function calcSessionBadges(s) {
+  if (!s) return [];
+  const stats = getSessionStats(s);
+  return ALL_ACHIEVEMENTS.map((ach) => {
+    let unlocked = false;
+    if (getQuest(ach.id)) unlocked = true;
+    else if (ach.check.length === 0) unlocked = !!ach.check();
+    else unlocked = ach.check(s, stats);
+
+    return {
+      id: ach.id,
+      cat: ach.cat,
+      icon: ach.icon,
+      name: T(ach.name, ach.en),
+      desc: T(ach.desc, ach.enDesc),
+      guide: T(ach.guide, ach.enGuide),
+      exp: ach.exp,
+      tip: unlocked
+        ? `${T('✓ [달성 완료]', '✓ [Unlocked]')} ${T(ach.desc, ach.enDesc)}`
+        : `${T('🔒 [도전 과제]', '🔒 [Challenge]')} ${T(ach.desc, ach.enDesc)} (💡 ${T(ach.guide, ach.enGuide)})`,
+      unlocked,
+    };
+  });
+}
+
+function initWhiteboardModal() {
+  if (!whiteboardModalEl) return;
+  $('wbClose')?.addEventListener('click', closeWhiteboardModal);
+  whiteboardModalEl.addEventListener('click', (e) => {
+    if (e.target === whiteboardModalEl) closeWhiteboardModal();
+  });
+}
+
+const achieveModalEl = $('achieveModal');
+let achieveCurTab = 'badges';
+let achieveCurCat = 'all';
+let achieveHideDone = store.get('ac_hide_done', false);
+
+function openAchieveModal(tab) {
+  if (!achieveModalEl) return;
+  if (tab) achieveCurTab = tab;
+  achieveModalEl.hidden = false;
+  renderAchieveModal();
+}
+
+function closeAchieveModal() {
+  if (!achieveModalEl) return;
+  achieveModalEl.hidden = true;
+}
+
+function renderAchieveModal() {
+  if (!achieveModalEl || achieveModalEl.hidden) return;
+  const sumEl = $('acSummary');
+  const tabBadges = $('acTabBadges');
+  const tabRanks = $('acTabRanks');
+  const secBadges = $('acSecBadges');
+  const secRanks = $('acSecRanks');
+
+  tabBadges?.classList.toggle('active', achieveCurTab === 'badges');
+  tabRanks?.classList.toggle('active', achieveCurTab === 'ranks');
+  if (secBadges) secBadges.hidden = achieveCurTab !== 'badges';
+  if (secRanks) secRanks.hidden = achieveCurTab !== 'ranks';
+
+  const sessions = data.sessions || [];
+
+  // 전체 업적 현황 통계
+  let totalAchievedCount = 0;
+  let totalBonusExp = 0;
+  for (const ach of ALL_ACHIEVEMENTS) {
+    if (isAchieved(ach, sessions)) {
+      totalAchievedCount++;
+      totalBonusExp += ach.exp || 100;
+    }
+  }
+  const pct = Math.round((totalAchievedCount / ALL_ACHIEVEMENTS.length) * 100);
+  if (sumEl) {
+    sumEl.textContent = T(
+      `도전 과제 ${ALL_ACHIEVEMENTS.length}개 중 ${totalAchievedCount}개 달성 (${pct}%) · 획득 보너스 +${totalBonusExp} EXP`,
+      `Challenges: ${totalAchievedCount}/${ALL_ACHIEVEMENTS.length} Completed (${pct}%) · +${totalBonusExp} Bonus EXP`
+    );
+  }
+
+  // 1. 도전 과제 도감 탭
+  if (secBadges && achieveCurTab === 'badges') {
+    secBadges.replaceChildren();
+
+    // 상단 툴바: 카테고리 필터 + 완료한 업적 숨기기 토글
+    const toolbar = elem('div', 'ac-toolbar');
+    const catBar = elem('div', 'ac-cats');
+    const cats = [
+      { id: 'all', name: T(`🌟 전체 (${ALL_ACHIEVEMENTS.length})`, `🌟 All (${ALL_ACHIEVEMENTS.length})`) },
+      { id: 'onboarding', name: T('🏢 오피스 기초 (12)', '🏢 Office Basics (12)') },
+      { id: 'development', name: T('⚡ 실전 개발 (6)', '⚡ Dev & Tools (6)') },
+      { id: 'mastery', name: T('👑 승진 & 랭킹 (3)', '👑 Mastery (3)') },
+    ];
+    cats.forEach((c) => {
+      const cBtn = elem('button', `ac-cat-btn ${achieveCurCat === c.id ? 'active' : ''}`, c.name);
+      cBtn.type = 'button';
+      cBtn.addEventListener('click', () => {
+        achieveCurCat = c.id;
+        renderAchieveModal();
+      });
+      catBar.append(cBtn);
+    });
+
+    const hideWrap = elem('label', 'ac-hide-wrap');
+    hideWrap.title = T('달성 완료한 과제를 목록에서 숨깁니다', 'Hide completed challenges');
+    const hideCb = document.createElement('input');
+    hideCb.type = 'checkbox';
+    hideCb.id = 'acHideDone';
+    hideCb.checked = !!achieveHideDone;
+    hideCb.addEventListener('change', (e) => {
+      achieveHideDone = !!e.target.checked;
+      store.set('ac_hide_done', achieveHideDone);
+      renderAchieveModal();
+    });
+    const hideTxt = elem('span', 'ac-hide-txt', T('완료한 업적 숨기기', 'Hide completed'));
+    hideWrap.append(hideCb, hideTxt);
+
+    toolbar.append(catBar, hideWrap);
+    secBadges.append(toolbar);
+
+    let filtered = achieveCurCat === 'all'
+      ? ALL_ACHIEVEMENTS
+      : ALL_ACHIEVEMENTS.filter((a) => a.cat === achieveCurCat);
+
+    if (achieveHideDone) {
+      filtered = filtered.filter((a) => !isAchieved(a, sessions));
+    }
+
+    const grid = elem('div', 'ac-grid');
+    if (filtered.length === 0) {
+      const empty = elem('div', 'ac-empty-msg');
+      empty.textContent = achieveHideDone
+        ? T('🎉 해당 항목의 모든 도전 과제를 달성했습니다! 멋진 성과입니다!', '🎉 All challenges in this category have been completed! Awesome!')
+        : T('도전 과제가 없습니다.', 'No challenges found.');
+      grid.append(empty);
+    } else {
+      for (const ach of filtered) {
+        const unlockedSessions = sessions.filter((s) => {
+          if (ach.check.length === 0) return ach.check();
+          return ach.check(s, getSessionStats(s));
+        });
+        const isUnlocked = isAchieved(ach, sessions);
+
+        const card = elem('div', `ac-card ${isUnlocked ? 'unlocked' : 'locked'}`);
+
+        const head = elem('div', 'ac-card-head');
+        const titleWrap = elem('div', 'ac-card-title-wrap');
+        const name = elem('span', 'ac-card-name', `${ach.icon} ${T(ach.name, ach.en)}`);
+        const catBadge = elem('span', 'ac-card-cat',
+          ach.cat === 'onboarding' ? T('🏢 기초 온보딩', '🏢 Onboarding') :
+          ach.cat === 'development' ? T('⚡ 실전 개발', '⚡ Development') :
+          T('👑 승진 마스터', '👑 Mastery')
+        );
+        titleWrap.append(name, catBadge);
+
+        const metaWrap = elem('div', 'ac-card-meta-wrap');
+        const expBadge = elem('span', 'ac-card-exp', `+${ach.exp} EXP`);
+        const status = elem(
+          'span',
+          'ac-card-status',
+          isUnlocked ? T('달성 완료 ✓', 'Completed ✓') : T('도전 중 🔒', 'Locked 🔒')
+        );
+        metaWrap.append(expBadge, status);
+        head.append(titleWrap, metaWrap);
+
+        const desc = elem('div', 'ac-card-desc', T(ach.desc, ach.enDesc));
+
+        const guideBox = elem('div', 'ac-card-guide');
+        const guideTxt = elem('span', 'ac-card-guide-txt', `💡 ${T('달성 방법: ', 'How to achieve: ')}${T(ach.guide, ach.enGuide)}`);
+        guideBox.append(guideTxt);
+
+        if (!isUnlocked && ach.action) {
+          const actBtn = elem('button', 'ac-card-action-btn', T('👉 바로가기', '👉 Go'));
+          actBtn.type = 'button';
+          actBtn.title = T('해당 기능으로 바로 이동하여 도전합니다', 'Jump directly to this feature');
+          actBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            ach.action();
+          });
+          guideBox.append(actBtn);
+        }
+
+        const who = elem('div', 'ac-card-who');
+        if (isUnlocked) {
+          if (unlockedSessions.length > 0) {
+            who.textContent = T(
+              `🎖️ 달성 직원: ${unlockedSessions.map((s) => displayName(s)).join(', ')}`,
+              `🎖️ Achieved by: ${unlockedSessions.map((s) => displayName(s)).join(', ')}`
+            );
+          } else {
+            who.textContent = T('🎖️ 도전 과제 달성 완료! (오피스 전체 적용)', '🎖️ Challenge Completed! (Applied team-wide)');
+          }
+        } else {
+          who.textContent = T(
+            '🔒 아직 달성하지 못한 과제입니다. 안내된 방법을 따라 도전해 보세요!',
+            '🔒 Not yet achieved. Follow the guide above to complete it!'
+          );
+        }
+
+        card.append(head, desc, guideBox, who);
+        grid.append(card);
+      }
+    }
+    secBadges.append(grid);
+  }
+
+  // 2. 직원 직급 랭킹 탭 (명예의 전당)
+  if (secRanks && achieveCurTab === 'ranks') {
+    secRanks.replaceChildren();
+    const list = elem('div', 'ac-lead-list');
+    const sorted = [...sessions].sort((a, b) => calcSessionExp(b) - calcSessionExp(a));
+
+    if (sorted.length === 0) {
+      const emp = elem('div', 'wb-empty');
+      emp.textContent = T('아직 출근한 직원이 없습니다.', 'No employees active yet.');
+      secRanks.append(emp);
+      return;
+    }
+
+    sorted.forEach((s, idx) => {
+      const rk = calcSessionRank(s);
+      const badges = calcSessionBadges(s).filter((b) => b.unlocked);
+
+      const item = elem('div', 'ac-lead-item');
+
+      const rankText = idx === 0 ? '🥇 1위' : idx === 1 ? '🥈 2위' : idx === 2 ? '🥉 3위' : `#${idx + 1}`;
+      const rankEl = elem('div', 'ac-lead-rank', rankText);
+
+      const info = elem('div', 'ac-lead-info');
+      const titleRow = elem('div', 'ac-lead-title-row');
+      const badge = elem('span', 'rank-badge', `Lv.${rk.lv}`);
+      const rTitle = elem('span', 'rank-title', rk.name);
+      const name = elem('span', 'ac-lead-name', displayName(s));
+      const team = s.team ? elem('span', 'team-tag', s.team) : null;
+      titleRow.append(badge, rTitle, name);
+      if (team) titleRow.append(team);
+
+      const barWrap = elem('div', 'ac-lead-bar-wrap');
+      const bar = elem('div', 'ac-lead-bar');
+      const fill = elem('div', 'ac-lead-bar-fill');
+      fill.style.width = `${rk.pct}%`;
+      bar.append(fill);
+      const expText = elem('span', 'ac-lead-exp', `${rk.exp} EXP`);
+      barWrap.append(bar, expText);
+
+      const badgeWrap = elem('div', 'ac-lead-badges');
+      if (badges.length > 0) {
+        for (const b of badges) {
+          const bPin = elem('span', 'rank-badge-item unlocked', `${b.icon} ${b.name}`);
+          bPin.title = b.tip;
+          badgeWrap.append(bPin);
+        }
+      } else {
+        const noBadge = elem('span', 'dim', T('(보유 업적 없음)', '(No badges yet)'));
+        noBadge.style.fontSize = '10.5px';
+        badgeWrap.append(noBadge);
+      }
+
+      info.append(titleRow, barWrap, badgeWrap);
+
+      const btn = elem('button', 'ac-lead-btn', T('👉 이동', '👉 Go'));
+      btn.title = T('이 직원의 상세 화면으로 이동합니다', 'Jump to this employee');
+      btn.addEventListener('click', () => {
+        closeAchieveModal();
+        selectSession(s.id);
+      });
+
+      item.append(rankEl, info, btn);
+      list.append(item);
+    });
+    secRanks.append(list);
+  }
+}
+
+function initAchieveModal() {
+  if (!achieveModalEl) return;
+  $('acClose')?.addEventListener('click', closeAchieveModal);
+  achieveModalEl.addEventListener('click', (e) => {
+    if (e.target === achieveModalEl) closeAchieveModal();
+  });
+  $('acTabBadges')?.addEventListener('click', () => {
+    achieveCurTab = 'badges';
+    renderAchieveModal();
+  });
+  $('acTabRanks')?.addEventListener('click', () => {
+    achieveCurTab = 'ranks';
+    renderAchieveModal();
+  });
+}
+
+function cancelQueuedSay(sid) {
+  if (!sid) return;
+  const msg = T('🗑️ 대기 중이던 지시를 취소했어요', '🗑️ Cancelled queued instruction');
+  if (DEMO) {
+    const r = remoteState?.s?.[sid];
+    if (r?.said?.state === 'queued') delete r.said;
+    petNote = { sid, at: Date.now(), text: msg };
+    remoteNote = { sid, at: Date.now(), text: msg };
+    renderPet();
+    if (selectedId) renderPanel();
+    return;
+  }
+  if (REMOTE) {
+    postInbox({ k: 'cancel', sid }).then((ok) => {
+      remoteNote = { sid, at: Date.now(), text: ok ? msg : lastPostError };
+      renderPanel();
+    });
+    return;
+  }
+  send({ cmd: 'pet-cancel-say', sid });
+  petNote = { sid, at: Date.now(), text: msg };
+  remoteNote = { sid, at: Date.now(), text: msg };
+  renderPet();
+  if (selectedId) renderPanel();
+}
+
+function sendPetSay() {
+  const s = resolvePetSession();
+  const text = petInputEl ? petInputEl.value.trim() : '';
+  if (!s || !text) return;
+  petInputEl.value = '';
+  if (text.startsWith('/')) {
+    wakeTerminal(s.id, text);
+    petNote = { sid: s.id, at: Date.now(), text: T(`📋 슬래시 명령(${text})은 터미널 전용입니다! 터미널로 이동됨 (Ctrl+V 후 Enter)`, `📋 Slash command (${text}) is terminal-only! Switched to terminal (Ctrl+V then Enter)`) };
+    renderPet();
+    return;
+  }
+  if (DEMO) {
+    if (!remoteState) remoteState = { installed: true, away: false, s: {} };
+    if (!remoteState.s) remoteState.s = {};
+    const cur = remoteState.s[s.id] || { listen: true };
+    cur.said = { text: text.slice(0, 1000), t: Date.now(), state: 'delivered' };
+    remoteState.s[s.id] = cur;
+    s.prompt = text.slice(0, 200);
+    petNote = { sid: s.id, at: Date.now(), text: T(`✅ "${text.slice(0, 28)}" 지시를 전했어요`, `✅ Sent "${text.slice(0, 28)}"`) };
+    renderPet();
+    if (selectedId) renderPanel();
+    return;
+  }
+  send({ cmd: 'pet-say', sid: s.id, text: text.slice(0, 1000) });
+  playRetroSound('send');
+  const r = remoteOf(s.id);
+  const listening = r && r.listen;
+  petNote = {
+    sid: s.id,
+    at: Date.now(),
+    text: listening
+      ? T('🚀 지시를 보냈어요…', '🚀 Instruction sent…')
+      : T('⏳ 최초 1회 연결 필요 — [🖥️ 터미널로] 클릭', '⏳ First connection needed — click [🖥️ Terminal]')
+  };
+  renderPet();
+  if (!listening && !store.get('skipConnectGuide', false)) {
+    openConnectGuide(s.id);
+  }
+}
+
+function renderPet() {
+  if (!PET_WINDOW && !(DEMO && petOn())) return;
+  ensurePetDom();
+
+  const pref = petSessionPref();
+  const s = resolvePetSession();
+  const compact = petCompactOn();
+  const noBg = petNoBgOn();
+
+  // 세션 선택 드롭다운 갱신: 바 안에는 깔끔하게 직원 이름만 넣고, 상태는 하단 상태 바에 표시
+  if (document.activeElement !== petSelEl) {
+    const autoLabel = s && !pref
+      ? T(`🌟 자동 · ${displayName(s)}`, `🌟 Auto · ${displayName(s)}`)
+      : T('🌟 자동 (확인 필요·최근 순)', '🌟 Auto (waiting / recent)');
+    const opts = [new Option(autoLabel, '')];
+    for (const item of data.sessions) {
+      const listening = remoteOf(item.id)?.listen;
+      opts.push(new Option(`${item.icon} ${displayName(item)}${listening ? ' · 📡' : ''}`, item.id));
+    }
+    petSelEl.replaceChildren(...opts);
+    petSelEl.value = pref && data.sessions.some((x) => x.id === pref) ? pref : '';
+  }
+
+  petBgBtn.classList.toggle('on', !noBg);
+  petBgBtn.title = noBg
+    ? T('배경 보이기 (구석 방·창문·화분·카펫 표시)', 'Show background (corner room, window, plant, rug)')
+    : T('배경 숨기기 (직원·의자·책상·컴퓨터만 보기)', 'Hide background (show only employee, chair, desk, and computer)');
+
+  petFoldBtn.classList.toggle('on', !compact);
+  petFoldBtn.title = compact ? T('지시·답변 칸 펼치기', 'Expand instruction & reply bar') : T('지시·답변 칸 접기(캐릭터만 작게 보기)', 'Collapse instruction & reply bar');
+
+  if (!s) {
+    petEl.classList.remove('compact', 'nobg');
+    petAlertEl.hidden = true;
+    petStageEl.hidden = true;
+    petAsksEl.replaceChildren();
+    petFeedEl.hidden = true;
+    petCmdWrap.hidden = true;
+    petEmptyEl.hidden = false;
+    petEmptyEl.textContent = T('🏢 아직 출근한 직원이 없어요.\nClaude Code에서 대화를 시작하면 여기에 나타납니다.',
+      '🏢 Nobody is at work yet.\nStart a conversation in Claude Code and they will appear here.');
+    syncPetHeight();
+    return;
+  }
+
+  petEmptyEl.hidden = true;
+  petStageEl.hidden = false;
+  const a = actOf(s);
+  if (petStopBtn) petStopBtn.hidden = !((a.busy || a.wait) && s.act !== 'away');
+  petStageEl.classList.toggle('wait', !!a.wait);
+  petStageEl.classList.toggle('nobg', noBg);
+  petEl.classList.toggle('nobg', noBg);
+
+  // 다른 직원이 승인·질문 답변을 기다리고 있으면 상단에 원클릭 전환 배지를 띄운다
+  const otherWaiting = data.sessions.filter((x) => x.id !== s.id && x.act !== 'away' && (actOf(x).wait || (remoteOf(x.id)?.asks?.length > 0)));
+  if (otherWaiting.length > 0) {
+    petAlertTargetId = otherWaiting[0].id;
+    petAlertEl.hidden = false;
+    const firstNm = displayName(otherWaiting[0]);
+    const extra = otherWaiting.length > 1 ? T(` 외 ${otherWaiting.length - 1}명`, ` +${otherWaiting.length - 1}`) : '';
+    petAlertEl.replaceChildren(
+      elem('span', '', T(`✋ ${firstNm}${extra} 확인 대기 중`, `✋ ${firstNm}${extra} waiting`)),
+      elem('span', 'go', T('전환 ▸', 'Switch ▸'))
+    );
+  } else {
+    petAlertTargetId = '';
+    petAlertEl.hidden = true;
+  }
+
+  const nmSpan = elem('span', 'nm-txt', `${s.icon} ${displayName(s)}`);
+  const teamSpan = elem('span', 'team-tag', teamLabel(s.team));
+  petBarNm.replaceChildren(nmSpan, teamSpan);
+  const dur = s.since ? ' · ' + fmtDur(now() - s.since) : '';
+  petBarSt.textContent = `${a.label}${dur}`;
+  petBarSt.style.color = a.tone;
+
+  // 승인 요청 카드 (접혀 있어도 승인 요청이 오면 바로 보여 준다)
+  const r = remoteOf(s.id) || {};
+  const asks = r.asks || [];
+  petEl.classList.toggle('compact', compact && asks.length === 0 && otherWaiting.length === 0);
+
+  const keep = new Set(asks.map((x) => x.id));
+  for (const [id, el] of petAskEls) if (!keep.has(id) || el.dataset.sid !== s.id) { el.remove(); petAskEls.delete(id); }
+  for (const ask of asks) {
+    let el = petAskEls.get(ask.id);
+    if (!el) { el = makePetAsk(s.id, ask); petAskEls.set(ask.id, el); }
+    petAsksEl.append(el);
+    el.querySelector('.age').textContent = ' · ' + fmtAgo(now() - ask.t);
+    for (const b of el.querySelectorAll('button')) b.disabled = petAnswered.has(ask.id);
+  }
+  for (const [id, at] of petAnswered) if (Date.now() - at > 120000) petAnswered.delete(id);
+
+  // 마지막 답변 또는 마지막 지시 요약
+  if (compact) {
+    petFeedEl.hidden = true;
+    petCmdWrap.hidden = true;
+  } else {
+    petCmdWrap.hidden = false;
+    const useStop = r.reply && r.reply.text && (!s.reply || (r.reply.t || 0) >= (s.last || 0));
+    if (useStop) {
+      petFeedEl.hidden = false;
+      petFeedHd.textContent = T(`💬 마지막 답 · ${fmtTime(r.reply.t)}`, `💬 Last answer · ${fmtTime(r.reply.t)}`);
+      petFeedTx.textContent = r.reply.text;
+    } else if (s.reply) {
+      petFeedEl.hidden = false;
+      petFeedHd.textContent = T(`💬 마지막 답 · ${fmtTime(s.last)}`, `💬 Last answer · ${fmtTime(s.last)}`);
+      petFeedTx.textContent = s.reply;
+    } else if (s.prompt) {
+      petFeedEl.hidden = false;
+      petFeedHd.textContent = T('📨 마지막 지시', '📨 Last prompt');
+      petFeedTx.textContent = s.prompt;
+    } else {
+      petFeedEl.hidden = true;
+    }
+
+    const connected = DEMO || claudeConnected();
+    petInputEl.disabled = !connected;
+    petSendBtn.disabled = !connected;
+    const isQueued = connected && r.said && r.said.state === 'queued';
+    petCancelBtn.hidden = !isQueued;
+    if (petWakeBtn) petWakeBtn.hidden = !(isQueued && !r.listen);
+    if (petGuideBtn) petGuideBtn.hidden = !(isQueued && !r.listen);
+    if (!connected) {
+      petNoteEl.textContent = T('🔕 지시·승인을 쓰려면 메인 설정(⚙️)에서 [Claude Code 연결]을 켜 주세요.',
+        '🔕 Connect to Claude Code in ⚙️ Settings to send instructions or approve.');
+    } else if (petNote && petNote.sid === s.id && Date.now() - petNote.at < 25000) {
+      if (r.said && r.said.t > petNote.at) petNote = null;
+      petNoteEl.textContent = petNote ? petNote.text : saidText(r.said, a.busy || asks.length > 0);
+    } else if (r.said) {
+      petNoteEl.textContent = saidText(r.said, a.busy || asks.length > 0);
+    } else {
+      petNoteEl.textContent = r.listen
+        ? T('📡 대기 중 — 바로 이 대화에 지시를 던질 수 있어요', '📡 Ready — send an instruction to continue this conversation')
+        : a.busy
+          ? T('💻 작업 중 — 보내면 지금 작업이 끝나는 대로 전달돼요', '💻 Working — delivered right after the current work ends')
+          : T('⏳ 대기 연결 전 — 터미널에서 한 번 응답을 마치면 바로 연결돼요', '⏳ Not listening yet — finishes connecting after next reply in terminal');
+    }
+  }
+
+  drawPetFrame(performance.now());
+  syncPetHeight();
+}
+
+function syncPetHeight() {
+  if (!PET_WINDOW) return;
+  const guideOpen = connectGuideEl && !connectGuideEl.hidden;
+  let h;
+  if (guideOpen) {
+    const box = connectGuideEl.querySelector('.cg-box');
+    h = box ? Math.ceil(box.getBoundingClientRect().height) + 16 : 460;
+  } else {
+    h = Math.ceil(petEl.getBoundingClientRect().height);
+  }
+  if (h > 40 && Math.abs(h - lastPetH) > 1) {
+    lastPetH = h;
+    send({ cmd: 'pet-size', height: Math.min(620, Math.max(h, 120)) });
+  }
+}
+
+/** 바탕화면 구석의 작은 방(또는 배경 숨김 시 직원·의자·책상·컴퓨터만)을 그린다. */
+function drawPetFrame(ts) {
+  if (!petCanvasEl || !petCtx) return;
+  const s = resolvePetSession();
+  if (!s) return;
+
+  const noBg = petNoBgOn();
+  const PW = 94, PH = noBg ? 50 : 64;   // 배경 숨김 시 윗 여백을 줄이고(50), 구석 방은 64로 직원 발밑부터 말풍선까지 균형 있게 배치
+  const dprNow = window.devicePixelRatio || 1;
+  const cssWidth = Math.max(220, petStageEl.clientWidth || 266);
+  const scale = cssWidth / PW;
+  const k = Math.max(2, Math.round(scale * dprNow));
+  const cssHeight = Math.round(PH * scale);
+
+  if (petArt.width !== PW || petArt.height !== PH) { petArt.width = PW; petArt.height = PH; }
+  if (petCanvasEl.width !== PW * k || petCanvasEl.height !== PH * k) {
+    petCanvasEl.width = PW * k;
+    petCanvasEl.height = PH * k;
+    petCanvasEl.style.height = cssHeight + 'px';
+    syncPetHeight();
+  }
+
+  if (art.width < PW || art.height < PH) { art.width = Math.max(art.width, PW); art.height = Math.max(art.height, PH); }
+  g.clearRect(0, 0, PW, PH);
+
+  let deskObj;
+  if (noBg) {
+    // 배경 숨김: drawDesk 안에서 모니터·머리가 y+18~19부터 시작하고 바닥 그림자가 y+53에 끝나므로,
+    // y = -7 로 올려 윗 여백(말풍선 자리)과 아랫 여백(의자·책상 다리 아래 4px)이 위아래 대칭이 되도록 배치
+    const hasInterns = (s.interns || []).length > 0;
+    deskObj = { s, x: hasInterns ? 20 : 14, y: -7 };
+    drawDesk(deskObj, ts);
+  } else {
+    // 구석 방 배경: 벽·창문·시계·화분·마루·팀 카펫 + 직원·의자·책상·컴퓨터
+    // desk.y = 8 로 두어 위쪽 말풍선 여백이 과하지 않으면서 책상 다리(y+53=61) 아래에도 바닥 여백(3px)을 확보
+    const wallH = 29;
+    R(0, 0, PW, wallH, PAL.wall);
+    for (let x = 0; x < PW; x += 10) R(x, 0, 1, wallH - 8, PAL.wallStripe);
+    R(0, wallH - 8, PW, 6, PAL.wainscot);
+    R(0, wallH - 8, PW, 1, PAL.wainscotHi);
+    R(0, wallH - 2, PW, 2, PAL.base);
+    R(0, 0, 4, PH, PAL.wainscot);
+    R(4, 0, 1, PH, PAL.wainscotHi);
+
+    R(5, wallH, PW - 5, PH - wallH, PAL.floorA);
+    for (let y = wallH, row = 0; y < PH; y += 7, row++) {
+      if (row % 2) R(5, y + 1, PW - 5, 6, PAL.floorB);
+      R(5, y, PW - 5, 1, PAL.floorLine);
+    }
+
+    const d = new Date();
+    const sky = skyAt(d.getHours() + d.getMinutes() / 60);
+    drawWindow(52, 2, sky, ts, 0);
+    drawClock(10, 3, d);
+    drawPlant(7, wallH - 12);
+
+    const rug = teamColor(s.team);
+    R(15, wallH + 3, 72, 29, shade(rug, 0.78));
+    R(16, wallH + 4, 70, 27, rug);
+
+    deskObj = { s, x: 20, y: 8 };
+    drawDesk(deskObj, ts);
+  }
+
+  // 메인 캔버스(petCanvasEl)로 정수 배율 복사
+  petCtx.setTransform(1, 0, 0, 1, 0, 0);
+  petCtx.imageSmoothingEnabled = false;
+  petCtx.clearRect(0, 0, petCanvasEl.width, petCanvasEl.height);
+  petCtx.drawImage(art, 0, 0, PW, PH, 0, 0, PW * k, PH * k);
+
+  // 말풍선(선명한 해상도로 위에 그리기, 꼬리가 직원 머리를 가리키도록)
+  const a = actOf(s);
+  if (a.bubble !== 'none') {
+    const h = headAnchor(deskObj, a.pose);
+    const cx = h.x * scale, ay = h.y * scale;
+    petCtx.setTransform((PW * k) / cssWidth, 0, 0, (PH * k) / cssHeight, 0, 0);
+    if (a.bubble === 'zzz') {
+      drawPetZzz(petCtx, cx, ay, ts);
+    } else {
+      let text = `${s.icon} ${s.text}`;
+      if (a.bubble === 'thought') text += '.'.repeat(1 + tick(ts, 450, 3));
+      drawPetBubble(petCtx, cx, ay, text, BUBBLE[a.bubble] || BUBBLE.normal, ts, cssWidth);
+    }
+  }
+}
+
+function drawPetBubble(c, cx, anchorY, text, st, t, maxW) {
+  const fb = 11.5;
+  c.font = `600 ${fb}px ${FONT}`;
+  c.textAlign = 'left';
+  c.textBaseline = 'middle';
+  const padX = 7, h = fb + 8;
+  let label = text;
+  if (c.measureText(label).width > maxW - 20) {
+    const chars = Array.from(label);
+    while (chars.length > 4 && c.measureText(chars.join('') + '…').width > maxW - 20) chars.pop();
+    label = chars.join('') + '…';
+  }
+  const w = Math.ceil(c.measureText(label).width) + padX * 2;
+  const lift = st.pulse ? Math.round(Math.abs(Math.sin(t / 220)) * 2) : 0;
+  const x = clamp(Math.round(cx - w / 2), 5, Math.max(5, maxW - w - 5));
+  const y = Math.max(2, Math.round(anchorY - h - 6 - lift));
+
+  c.lineWidth = 1.8;
+  c.strokeStyle = st.border;
+  c.fillStyle = st.bg;
+  c.beginPath();
+  c.roundRect(x, y, w, h, 6);
+  c.fill();
+  c.stroke();
+
+  // 말풍선 꼬리(생각 방울 또는 삼각형 꼬리)
+  const tx = clamp(Math.round(cx), x + 8, x + w - 8);
+  if (st.thought) {
+    c.beginPath();
+    c.arc(tx - 1, y + h + 3, 2.2, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+  } else {
+    c.beginPath();
+    c.moveTo(tx - 4, y + h - 1);
+    c.lineTo(tx, y + h + 5);
+    c.lineTo(tx + 4, y + h - 1);
+    c.closePath();
+    c.fill();
+    c.beginPath();
+    c.moveTo(tx - 4, y + h);
+    c.lineTo(tx, y + h + 5);
+    c.lineTo(tx + 4, y + h);
+    c.stroke();
+  }
+
+  c.fillStyle = st.fg;
+  c.fillText(label, x + padX, y + h / 2 + 0.5);
+}
+
+function drawPetZzz(c, cx, y, t) {
+  c.textAlign = 'left';
+  c.textBaseline = 'alphabetic';
+  for (let i = 0; i < 3; i++) {
+    const p = (t / 1500 + i / 3) % 1;
+    c.globalAlpha = 1 - p;
+    c.fillStyle = '#ddd8f2';
+    c.font = `800 ${10 + i * 2}px ${FONT}`;
+    c.fillText('z', cx + 3 + p * 8 + i * 4, y - 2 - p * 16 - i * 3);
+  }
+  c.globalAlpha = 1;
+}
+setInterval(() => {
+  if (widgetOn()) renderWidget();
+  else if (!selectedId || panelEl.hidden || drawerFolded) return;
+  else {
+    const s = data.sessions.find((x) => x.id === selectedId);
+    if (s) $('pLast').textContent = s.last ? `${fmtTime(s.last)} (${fmtAgo(now() - s.last)})` : '-';
+  }
+}, 5000);   // "N분 전" 갱신(감시기가 바뀐 게 없을 때는 스냅샷을 다시 안 보내므로)
 
 /** 책상이 하나도 없을 때 왜 비었는지 알려 준다. */
 function refreshEmpty(shown) {
@@ -1255,6 +3174,8 @@ function refreshEmpty(shown) {
     : data.sessions.length === 0 ? [T('🏢 아직 출근한 직원이 없어요', '🏢 Nobody has come to work yet'),
       T('Claude Code에서 대화를 시작하면 책상에 직원이 나타납니다.', 'Start a conversation in Claude Code and an employee appears at a desk.'),
       T(`최근 ${windowLabel()} 안에 대화한 세션을 봅니다(⚙️ 설정 → 표시 기간).`, `Shows sessions active in the last ${windowLabel()} (⚙️ Settings → Display period).`)]
+    : searchQuery.trim() ? [T(`🔍 '${searchQuery.trim()}' 검색 결과가 없어요`, `🔍 No matches for '${searchQuery.trim()}'`),
+      T('다른 검색어를 입력하거나 Esc를 눌러 검색을 닫아 보세요.', 'Try another keyword or press Esc to clear the search.'), '']
     : waitOnly ? [T('🙌 기다리는 직원이 없어요', '🙌 Nobody is waiting'), T('모두 알아서 일하거나 쉬는 중입니다.', 'Everyone is working or resting on their own.'),
       T("⚙️ 설정 → 직원 표시 → '✋ 기다리는 직원만 보기'를 끄면 모두 보입니다.", "Turn off ⚙️ Settings → Employees → '✋ Only show who's waiting' to see everyone.")]
     : pickMode === 'manual' && pickedCount() === 0 ? [T('🗂️ 보일 직원을 아직 고르지 않았어요', '🗂️ No employees picked yet'),
@@ -1288,6 +3209,7 @@ function setPinned(v) {
   send({ cmd: 'topmost', value: v });
   refreshButtons();
   refreshSettings();
+  if (v) markQuest('pin_window');
 }
 
 function setOfficeName(v) {
@@ -1295,6 +3217,7 @@ function setOfficeName(v) {
   store.set('officeName', officeName);
   refreshHud();   // 창 제목
   shareToApp();
+  if (officeName && officeName !== DEFAULT_OFFICE) markQuest('rename_company');
 }
 
 function setWindowHours(v) {
@@ -1347,6 +3270,7 @@ function togglePick(id, checked) {
 const toggleHooks = () => send({ cmd: 'hooks' });
 
 btnAway.addEventListener('click', () => setShowAway(!showAway));
+if (btnPet) btnPet.addEventListener('click', () => setPet(!petOn()));
 btnWidget.addEventListener('click', () => setWidget(!widgetOn()));
 btnToday.addEventListener('click', () => {   // 📊 오늘의 근무 일지 — 다시 누르면 닫기
   const open = selectedId === REPORT_ID && !panelEl.hidden;
@@ -1354,7 +3278,17 @@ btnToday.addEventListener('click', () => {   // 📊 오늘의 근무 일지 —
   selectedId = open ? null : REPORT_ID;
   drawerFolded = false;
   renderPanel();
+  if (!open) markQuest('view_worklog');
 });
+if (btnAchieve) {
+  btnAchieve.addEventListener('click', () => {
+    if (achieveModalEl && !achieveModalEl.hidden) {
+      closeAchieveModal();
+    } else {
+      openAchieveModal();
+    }
+  });
+}
 btnPin.addEventListener('click', () => setPinned(!pinned));
 btnHook.addEventListener('click', toggleHooks);
 
@@ -1391,6 +3325,7 @@ let cloudQrShown = false;      // QR에는 해독 키가 들어 있어 누를 �
 function onCloud(msg) {
   cloud = msg;
   refreshSettings();
+  if (msg && (msg.enabled || msg.state === 'on')) markQuest('mobile_register');
 }
 
 // 앱 쪽 설정(app.json·시작 프로그램 등록·알림·새 버전) — 앱이 {type:"app", ...} 로 알려 준다
@@ -1399,7 +3334,10 @@ let appSettings = null;
 function onApp(msg) {
   appSettings = msg;
   btnSettings.classList.toggle('dot', !!msg.update?.newer);   // 새 버전이 나오면 ⚙️ 에 점
-  if (!!msg.widget !== document.body.classList.contains('widget')) applyWidget();
+  if (!PET_WINDOW && !!msg.widget !== document.body.classList.contains('widget')) applyWidget();
+  applyPetState();
+  if (PET_WINDOW || (DEMO && petOn())) renderPet();
+  if (selectedId) renderPanel();
   refreshSettings();
 }
 
@@ -1467,20 +3405,20 @@ const SETTINGS = [
     // 위에서 아래로 거르는 순서: 표시 기간 → 퇴근 숨김 → 고르는 방식 → 보일 인원
     items: [
       { type: 'choice', name: T('표시 기간', 'Display period'), pcOnly: true,
-        desc: () => T(`마지막 대화가 ${windowLabel()} 안에 있는 세션만 사무실에 들입니다. 3시간 넘게 조용하면 퇴근(🚪)으로 보입니다.`,
-          `Only sessions whose last message is within ${windowLabel()} come to the office. After 3 quiet hours they go home (🚪).`),
+        desc: () => T(`마지막 대화가 ${windowLabel()} 안에 있는 세션만 사무실에 들입니다(파일 수정 시각이 아니라 실제 대화 시각 기준). 3시간 넘게 조용하면 퇴근(🚪)으로 보입니다.`,
+          `Only sessions whose last message is within ${windowLabel()} come to the office (by actual message time, not file edit time). After 3 quiet hours they go home (🚪).`),
         options: WINDOW_CHOICES, get: () => windowHours, set: setWindowHours },
-      { type: 'toggle', name: T('퇴근한 직원 보이기', 'Show employees who went home'), desc: T('퇴근(🚪)한 직원의 빈 책상도 사무실에 남겨 둡니다.', 'Keeps the empty desks of employees who went home (🚪).'),
+      { type: 'toggle', name: T('퇴근한 직원 보이기', 'Show employees who went home'), desc: T('퇴근(🚪)한 직원의 빈 책상도 사무실에 남겨 둡니다. 상단 🚪 버튼과 같습니다.', 'Keeps the empty desks of employees who went home (🚪). Same as the 🚪 button at the top.'),
         get: () => showAway, set: setShowAway },
       { type: 'toggle', name: T('✋ 기다리는 직원만 보기', "✋ Only show who's waiting"),
-        desc: T('승인·질문을 기다리는 직원만 책상에 앉힙니다. 직원이 많을 때 휴대폰으로 볼 때 좋아요.', 'Seats only employees waiting for an approval or an answer. Handy on a phone when there are many.'),
+        desc: T('승인·질문을 기다리는 직원만 책상에 앉힙니다. 직원이 많을 때 휴대폰에서 확인하기 좋습니다.', 'Seats only employees waiting for an approval or an answer. Handy on a phone when there are many.'),
         get: () => waitOnly, set: (v) => { waitOnly = v; store.set('waitOnly', v); layoutKey = ''; refreshHud(); refreshSettings(); } },
-      { type: 'number', name: T('보일 인원', 'Max employees'), desc: T('책상에 앉힐 최대 인원입니다.', 'The most employees seated at desks.'),
+      { type: 'number', name: T('보일 인원', 'Max employees'), desc: T('책상에 앉힐 최대 인원입니다. 넘쳐서 숨겨진 직원은 상단 요약에 🙈로 개수가 표시됩니다.', 'The most employees seated at desks. Any hidden beyond this are counted as 🙈 in the top bar.'),
         min: SHOWN_MIN, max: SHOWN_MAX, unit: T('명', ''), get: () => maxShown, set: setMaxShown },
       { type: 'choice', name: T('고르는 방식', 'How to pick'),
         desc: () => (pickMode === 'manual'
-          ? T('체크한 직원만 앉힙니다. 새로 출근한 직원은 체크해야 보입니다.', 'Seats only checked employees. New arrivals show up once you check them.')
-          : T(`최근에 일한 순서로 ${maxShown}명을 앉힙니다. 자리는 출근 순서대로 그대로입니다.`, `Seats the ${maxShown} most recently active. Seats stay in arrival order.`)),
+          ? T('체크한 직원만 앉힙니다. 새로 출근한 직원은 아래 목록에서 체크해야 보입니다.', 'Seats only checked employees. New arrivals show up once you check them below.')
+          : T(`최근에 일한 순서로 최대 ${maxShown}명을 앉힙니다. 책상 자리는 출근 순서대로 유지됩니다.`, `Seats up to ${maxShown} most recently active. Desk seats stay in arrival order.`)),
         options: [['recent', T('최근 사용순', 'Most recent')], ['manual', T('직접 고르기', 'Choose manually')]],
         get: () => pickMode, set: setPickMode },
       { type: 'picker', shown: () => pickMode === 'manual' },
@@ -1494,10 +3432,16 @@ const SETTINGS = [
         options: [[-2, T('더 작게', 'Smallest')], [-1, T('작게', 'Smaller')], [0, T('맞춤', 'Fit')], [1, T('크게', 'Larger')], [2, T('더 크게', 'Largest')]],
         get: () => zoom, set: (v) => { zoom = v; store.set('zoom', v); layoutKey = ''; refreshSettings(); } },
       { type: 'toggle', name: T('작게 보기(목록)', 'Compact view (list)'),
-        desc: () => (REMOTE ? T('사무실 그림 대신 직원·상태를 한 줄씩 보여 줍니다.', 'Shows one line per employee instead of the office picture.')
-          : T('창을 작게 줄이고 직원·상태만 한 줄씩 보여 줍니다(맨 위에 떠 있음). 상단 ▤ 버튼과 같습니다. 크기·위치는 따로 기억합니다.',
-            'Shrinks the window to one line per employee (stays on top). Same as the ▤ button. Its size and position are remembered separately.')),
+        desc: () => (REMOTE ? T('사무실 그림 대신 직원·상태를 한 줄씩 보여 줍니다. 상단 📋 버튼과 같습니다.', 'Shows one line per employee instead of the office picture. Same as the 📋 button.')
+          : T('창을 작게 줄이고 직원·상태만 한 줄씩 보여 줍니다(맨 위에 떠 있음). 상단 📋 버튼과 같고, 크기·위치는 보통 창과 따로 기억합니다.',
+            'Shrinks the window to one line per employee (stays on top). Same as the 📋 button, and its size and position are remembered separately.')),
         get: widgetOn, set: setWidget, enabled: () => LOCAL_WIDGET || appReady() },
+    ],
+  },
+  {
+    tab: 'office', title: T('바탕화면 미니펫', 'Desktop MiniPet'),
+    items: [
+      { type: 'petcfg', pcOnly: true, enabled: () => LOCAL_PET || appReady() },
     ],
   },
   {
@@ -1509,24 +3453,24 @@ const SETTINGS = [
   {
     tab: 'general', title: T('창', 'Window'),
     items: [
-      { type: 'toggle', name: T('항상 위에 표시', 'Always on top'), desc: T('다른 창에 가려지지 않게 맨 위에 띄웁니다.', 'Keeps the window above other windows.'), pcOnly: true,
+      { type: 'toggle', name: T('항상 위에 표시', 'Always on top'), desc: T('다른 창에 가려지지 않게 늘 맨 위에 띄웁니다. 상단 📌 버튼과 같습니다.', 'Keeps the window above other windows. Same as the 📌 button at the top.'), pcOnly: true,
         get: () => pinned, set: setPinned },
-      { type: 'toggle', name: T('프로그램 시작 시 작업표시줄로 이동', 'Start hidden in the tray'), pcOnly: true,
-        desc: T('켜 두면 다음 실행부터 창을 띄우지 않고 작업표시줄 오른쪽 알림 영역(🧑‍💻)에 숨긴 채로 켜집니다. 아이콘을 누르면 창이 열립니다. 감시와 휴대폰 보기는 그대로 돌아갑니다.',
+      { type: 'toggle', name: T('시작 시 알림 영역에 숨기기', 'Start hidden in the tray'), pcOnly: true,
+        desc: T('다음 실행부터 창을 바로 띄우지 않고 작업표시줄 오른쪽 알림 영역(🧑‍💻)에 숨긴 채 시작합니다. 아이콘을 누르면 창이 열리고, 숨어 있는 동안에도 감시와 휴대폰 연결은 계속 돌아갑니다.',
           'From the next launch, starts hidden in the notification area (🧑‍💻) without opening the window. Click the icon to open it. Monitoring and the phone connection keep running.'),
         get: () => !!appSettings?.startMinimized,
         set: (v) => setAppSetting('startMinimized', v),
         enabled: () => !DEMO && !!appSettings },
-      { type: 'toggle', name: T('닫기(✕)를 눌러도 끄지 않고 숨기기', 'Close (✕) hides instead of quitting'), pcOnly: true,
-        desc: T('✕는 창만 숨기고 알림 영역(🧑‍💻)에서 계속 돌아갑니다(휴대폰 연결도 계속). 완전히 끝내려면 🧑‍💻 아이콘 오른쪽 클릭 → 끝내기.',
+      { type: 'toggle', name: T('닫기(✕)를 눌러도 숨기기', 'Close (✕) hides instead of quitting'), pcOnly: true,
+        desc: T('창 오른쪽 위 ✕를 눌러도 끄지 않고 알림 영역(🧑‍💻)으로 숨깁니다(휴대폰 연결도 유지). 완전히 끝내려면 🧑‍💻 아이콘을 오른쪽 클릭해 [끝내기]를 누르세요.',
           '✕ only hides the window and the app keeps running in the notification area (🧑‍💻), phone connection too. To quit, right-click the 🧑‍💻 icon → Exit.'),
         get: () => !!appSettings?.closeToTray,
         set: (v) => setAppSetting('closeToTray', v),
         enabled: () => !DEMO && !!appSettings },
       { type: 'toggle', name: T('Windows 시작할 때 자동 실행', 'Run at Windows startup'), pcOnly: true,
-        desc: () => T('PC에 로그인하면 알림 영역(🧑‍💻)에 숨긴 채로 자동으로 켜집니다(이 사용자 계정의 시작 프로그램에 등록).',
+        desc: () => T('Windows에 로그인할 때 알림 영역(🧑‍💻)에 숨긴 채로 저절로 켜집니다(이 계정의 시작 프로그램에 등록).',
           "Starts hidden in the notification area (🧑‍💻) when you sign in to Windows (registered in this user's startup apps).")
-          + (appSettings?.autoStartElsewhere ? T(' ⚠️ 지금은 다른 위치의 Claude Office가 등록돼 있어요 — 껐다 켜면 이 프로그램으로 바뀝니다.',
+          + (appSettings?.autoStartElsewhere ? T(' ⚠️ 지금은 다른 폴더의 Claude Office가 등록돼 있어요 — 껐다 켜면 이 위치로 바뀝니다.',
             ' ⚠️ A Claude Office in another folder is registered now — turn this off and on to switch to this one.') : ''),
         get: () => !!appSettings?.autoStart,
         set: (v) => setAppSetting('autoStart', v),
@@ -1538,25 +3482,29 @@ const SETTINGS = [
     // 창을 숨겨 둬도 알아야 하므로 앱(C#)이 판단해 Windows 알림으로 띄운다. 창을 보고 있을 때는 띄우지 않는다
     items: [
       { type: 'toggle', name: T('✋ 기다릴 때 알림', '✋ Notify when waiting'), pcOnly: true,
-        desc: T('직원이 승인·질문을 기다리기 시작하면 Windows 알림을 띄웁니다. 창을 보고 있을 때는 띄우지 않고, 알림을 누르면 그 직원이 열립니다.',
+        desc: T('직원이 승인이나 질문을 기다리기 시작하면 Windows 알림을 띄웁니다. 이 창을 보고 있을 때는 띄우지 않고, 알림을 누르면 해당 직원이 바로 열립니다.',
           "Shows a Windows notification when an employee starts waiting for an approval or an answer. Not while you're looking at the window; clicking it opens that employee."),
         get: () => !!appSettings?.notifyWaiting, set: (v) => setAppSetting('notifyWaiting', v), enabled: appReady },
       { type: 'toggle', name: T('오래 걸린 일이 끝나면 알림', 'Notify when a long task ends'), pcOnly: true,
-        desc: () => T(`${doneLabel()} 넘게 일하던 직원이 일을 마치고 쉬기 시작하면 알립니다.`, `Notifies when an employee who worked over ${doneLabel()} finishes and starts resting.`),
+        desc: () => T(`${doneLabel()} 넘게 일하던 직원이 응답을 마치고 쉬기 시작하면 알립니다.`, `Notifies when an employee who worked over ${doneLabel()} finishes and starts resting.`),
         get: () => !!appSettings?.notifyDone, set: (v) => setAppSetting('notifyDone', v), enabled: appReady },
       { type: 'choice', name: T('오래 걸린 일 기준', 'What counts as long'), pcOnly: true, shown: () => !!appSettings?.notifyDone,
+        desc: T('지시를 받은 뒤 응답을 마칠 때까지 이 시간 이상 걸렸을 때만 완료 알림을 띄웁니다.', 'Only notifies when a task took at least this long from prompt to finish.'),
         options: DONE_CHOICES, get: () => appSettings?.notifyDoneMinutes, set: (v) => setAppSetting('notifyDoneMinutes', v) },
-      { type: 'toggle', name: T('알림음', 'Sound'), pcOnly: true, desc: T('끄면 소리 없이 알림만 띄웁니다.', 'Off = silent notifications.'),
+      { type: 'toggle', name: T('레트로 알림음', 'Retro sound'), pcOnly: true, desc: T('승인 요청이나 작업 완료 시 귀여운 8비트 차임벨을 재생합니다.', 'Plays a cute 8-bit retro chime on approvals and completions.'),
         get: () => !!appSettings?.notifySound, set: (v) => setAppSetting('notifySound', v), enabled: appReady },
+      { type: 'action', name: T('효과음 미리듣기', 'Preview sound'), pcOnly: true, shown: () => !!appSettings?.notifySound,
+        desc: T('승인 요청·작업 완료 시 재생되는 8비트 효과음을 들어봅니다.', 'Listen to the 8-bit sound effects for approvals and finished work.'),
+        label: () => T('▶ 들어보기', '▶ Play'), run: () => playRetroSound('test', true), enabled: appReady },
       { type: 'toggle', name: T('방해 금지 시간대', 'Quiet hours'), pcOnly: true,
         desc: () => (appSettings?.quietEnabled
-          ? T(`${appSettings.quietStart}시부터 ${appSettings.quietEnd}시까지는 알림을 띄우지 않습니다.`, `No notifications from ${appSettings.quietStart}:00 to ${appSettings.quietEnd}:00.`)
-          : T('정한 시간에는 알림을 띄우지 않습니다(예: 밤).', 'No notifications during the hours you set (e.g. at night).')),
+          ? T(`${appSettings.quietStart}시부터 ${appSettings.quietEnd}시까지는 PC 알림을 띄우지 않습니다.`, `No notifications from ${appSettings.quietStart}:00 to ${appSettings.quietEnd}:00.`)
+          : T('정한 시간대(예: 밤~아침)에는 PC 알림을 띄우지 않습니다.', 'No notifications during the hours you set (e.g. at night).')),
         get: () => !!appSettings?.quietEnabled, set: (v) => setAppSetting('quietEnabled', v), enabled: appReady },
       { type: 'hours', pcOnly: true, shown: () => !!appSettings?.quietEnabled,
         getStart: () => appSettings?.quietStart ?? 22, setStart: (v) => setAppSetting('quietStart', v),
         getEnd: () => appSettings?.quietEnd ?? 8, setEnd: (v) => setAppSetting('quietEnd', v), enabled: appReady },
-      { type: 'action', name: T('알림 시험', 'Test notification'), pcOnly: true, desc: T('지금 알림을 하나 띄워 봅니다(창을 보고 있어도).', 'Shows a notification now (even while the window is open).'),
+      { type: 'action', name: T('알림 시험', 'Test notification'), pcOnly: true, desc: T('지금 샘플 알림을 하나 띄워 봅니다(창을 보고 있어도 표시됨).', 'Shows a sample notification now (even while the window is open).'),
         label: () => T('띄워 보기', 'Try it'), run: () => send({ cmd: 'notify-test' }), enabled: () => appReady() && !!appSettings.tray },
     ],
   },
@@ -1564,7 +3512,7 @@ const SETTINGS = [
     tab: 'general', title: T('Claude Code 연결', 'Claude Code connection'),
     items: [
       { type: 'action', name: T('Claude Code 연결', 'Connect to Claude Code'), pcOnly: true,
-        desc: T('Claude가 승인을 기다리거나 질문하면 직원이 바로 손을 들고, 세션을 닫으면 바로 퇴근합니다. 휴대폰 지시·승인도 이 연결로 받아요. Claude Code 설정 파일에 몇 줄을 넣으므로 확인 창이 먼저 뜹니다(끊으면 그 줄만 뺍니다).',
+        desc: T('Claude가 승인을 기다리거나 질문하면 직원이 즉시 손을 들고, 세션을 닫으면 바로 퇴근합니다. 휴대폰 지시·승인도 이 연결을 통해 동작합니다. Claude Code 설정(~/.claude/settings.json)에 연결 줄을 추가하므로 확인 창이 먼저 뜹니다(끊으면 추가한 줄만 제거).',
           'Employees raise a hand the moment Claude waits for an approval or asks a question, and go home as soon as a session closes. Phone instructions and approvals come through this too. It adds a few lines to the Claude Code settings file, so you confirm first (disconnecting removes only those lines).'),
         label: () => (claudeConnected() ? T('연결 끊기', 'Disconnect') : data.hooks && data.hooks.state !== 'off' ? T('다시 연결', 'Reconnect') : T('연결하기', 'Connect')),
         enabled: () => !DEMO && !!data.hooks,   // 견본 화면에서는 바꿀 수 없다(앱이 --demo 면 알림을 받지도 않는다)
@@ -1575,7 +3523,7 @@ const SETTINGS = [
     tab: 'phone',
     items: [
       { type: 'action', name: T('휴대폰 연결', 'Phone connection'), pcOnly: true,
-        desc: T('휴대폰으로 사무실을 보고, 자리를 비웠을 때 지시·승인도 합니다. 켜고 QR만 찍으면 끝 — 로그인도 설정도 없어요. 🔒 무료 서버(화면: GitHub · 전달: Google Firebase)를 거치지만 내 PC와 내 휴대폰만 가진 열쇠로 잠가 보내서 서버도 다른 사람도 내용을 볼 수 없어요. 대화 원본은 보내지 않아요.',
+        desc: T('밖에서도 휴대폰으로 사무실을 보고, 자리를 비웠을 때 승인하거나 다음 지시를 보냅니다. [켜기] 후 QR만 한 번 찍으면 되며 로그인·계정이 필요 없습니다. 🔒 무료 서버(화면: GitHub · 전달: Google Firebase)를 거치지만 내 PC와 내 휴대폰만 아는 열쇠로 암호화해 서버도 다른 사람도 볼 수 없고, 대화 원본은 전송하지 않습니다.',
           "See the office on your phone, and instruct and approve while you're away. Turn it on and scan the QR — no sign-in, no setup. 🔒 It goes through a free server (page: GitHub · delivery: Google Firebase), but it's locked with a key only your PC and your phone have, so neither the server nor anyone else can read it. Conversations are never sent."),
         label: () => (cloud?.enabled ? T('끄기', 'Turn off') : T('켜기', 'Turn on')),
         enabled: () => !DEMO && !!cloud?.configured,   // 견본 화면에서는 쓸 수 없다
@@ -1589,15 +3537,15 @@ const SETTINGS = [
     tab: 'phone', title: T('자리를 비웠을 때', "While you're away"),
     items: [
       { type: 'action', name: T('Claude Code 연결이 필요해요', 'Connect to Claude Code first'), pcOnly: true, shown: () => !DEMO && !!remoteState && !remoteState.installed,
-        desc: T('휴대폰에서 지시·승인을 하려면 Claude Code와 연결해야 해요(⚙️ → 🖥️ 일반과 같은 버튼).', 'To instruct and approve from the phone, connect to Claude Code (same button as ⚙️ → 🖥️ General).'),
+        desc: T('자리를 비운 동안 휴대폰에서 지시·승인을 하려면 먼저 Claude Code와 연결해야 합니다(⚙️ → 🖥️ 일반의 연결과 같음).', 'To instruct and approve from the phone, connect to Claude Code (same button as ⚙️ → 🖥️ General).'),
         label: () => T('연결하기', 'Connect'), enabled: () => !DEMO && !!data.hooks, run: toggleHooks },
       { type: 'choice', name: T('입력이 없으면 자리 비움', 'Away when idle'), pcOnly: true, shown: () => !!remoteState?.installed,
-        desc: T('자리 비움일 때 휴대폰의 지시·승인을 받습니다. 마우스·키보드를 이만큼 안 쓰면 켜지고, 돌아와 움직이면 꺼집니다(작업표시줄에 숨겨 둬도). 이 시간 전이라도 PC를 30초 넘게 안 쓰는 동안 휴대폰 화면을 열거나 지시를 보내면 켜져요.',
+        desc: T('자리 비움(🏃) 중일 때 승인 요청과 지시를 휴대폰으로 주고받습니다. 마우스·키보드를 이 시간 동안 안 쓰면 저절로 켜지고, 돌아와 움직이면 꺼집니다. 이 시간이 되기 전이라도 PC를 30초 넘게 안 쓰는 동안 휴대폰 화면을 열거나 지시를 보내면 바로 켜집니다.',
           "While Away, the phone's instructions and approvals are taken. It turns on after this long without mouse or keyboard input and off when you're back (even while hidden in the tray). Even sooner, once the PC has been idle for 30 s, opening the phone page or sending from the phone turns it on."),
         options: [[0, T('끔', 'Off')], [1, T('1분', '1 min')], [3, T('3분', '3 min')], [5, T('5분', '5 min')], [10, T('10분', '10 min')]],
         get: () => appSettings?.remoteAwayIdleMinutes ?? 3, set: (v) => setAppSetting('remoteAwayIdleMinutes', v), status: remoteStatus },
       { type: 'toggle', name: T('화면을 잠그면 자리 비움', 'Away while the screen is locked'), pcOnly: true, shown: () => !!remoteState?.installed,
-        desc: T('Windows 화면을 잠그면(⊞+L) 바로 자리 비움을 켜고, 잠금을 풀면 끕니다. 자리를 뜨자마자 오는 승인 요청까지 휴대폰으로 받고 싶을 때.',
+        desc: T('Windows 화면을 잠그면(⊞+L) 대기 시간 없이 즉시 자리 비움을 켜고, 잠금을 풀면 끕니다. 자리를 뜨자마자 오는 승인 요청도 놓치지 않고 휴대폰으로 받고 싶을 때 유용합니다.',
           'Locking Windows (⊞+L) turns Away on right away, and unlocking turns it off — for when even approval requests right after you leave should go to the phone.'),
         get: () => !!appSettings?.remoteAwayOnLock, set: (v) => setAppSetting('remoteAwayOnLock', v), enabled: appReady },
     ],
@@ -1606,7 +3554,7 @@ const SETTINGS = [
     tab: 'phone', title: T('고급', 'Advanced'),
     items: [
       { type: 'toggle', name: T('휴대폰에서 별명·메모 고치기', 'Edit nicknames & memos on the phone'), pcOnly: true, shown: () => !DEMO && !!cloud?.configured,
-        desc: T('휴대폰의 직원 상세에서 고친 별명·메모를 PC가 몇 초 안에 받아 반영합니다(같은 열쇠로 잠가서).', "Nicknames and memos edited in the phone's employee details reach the PC within seconds (locked with the same key)."),
+        desc: T('휴대폰의 직원 상세 화면에서 별명이나 메모를 고치면 몇 초 안에 PC에도 그대로 반영됩니다(같은 열쇠로 암호화).', "Nicknames and memos edited in the phone's employee details reach the PC within seconds (locked with the same key)."),
         get: () => !!cloud?.phoneEdit, set: (v) => send({ cmd: 'cloud-phone-edit', value: v }), enabled: () => !DEMO && !!cloud },
     ],
   },
@@ -1614,15 +3562,15 @@ const SETTINGS = [
     tab: 'about',
     items: [
       { type: 'action', name: T('버전', 'Version'), pcOnly: true,
-        desc: () => T(`지금 버전 ${appSettings?.version || '?'} — 새 버전이 나오면 [업데이트]로 받아 바로 바꿉니다(GitHub 릴리스, SHA-256 확인).`,
-          `Current version ${appSettings?.version || '?'} — when a new version is out, [Update] downloads and installs it (GitHub Releases, SHA-256 checked).`),
+        desc: () => T(`현재 버전 v${appSettings?.version || '?'} — 새 버전이 나오면 [업데이트] 버튼으로 앱 안에서 바로 받아 설치합니다(GitHub 릴리스, SHA-256 무결성 확인).`,
+          `Current version v${appSettings?.version || '?'} — when a new version is out, [Update] downloads and installs it (GitHub Releases, SHA-256 checked).`),
         label: () => (appSettings?.update?.newer ? (appSettings.update.canInstall ? T('업데이트', 'Update') : T('받으러 가기', 'Download')) : T('지금 확인', 'Check now')),
         run: () => (!appSettings.update?.newer ? send({ cmd: 'update-check' })
           : appSettings.update.canInstall ? send({ cmd: 'update-install' })   // 앱이 "업데이트할까요?" 확인 창을 띄운다
           : openUrl(appSettings.update.url)),
         enabled: () => appReady() && !['downloading', 'installing'].includes(appSettings.update?.install?.state), status: updateStatus },
       { type: 'toggle', name: T('새 버전 알림', 'New version alerts'), pcOnly: true,
-        desc: T('하루 두 번(그리고 설정을 열 때) GitHub에 새 버전이 나왔는지 물어보고, 나왔으면 한 번 알려 드립니다(보내는 것은 프로그램 버전뿐).',
+        desc: T('하루 두 번(그리고 설정을 열 때) GitHub에 새 릴리스가 있는지 확인하고, 새 버전당 한 번 알려 드립니다(전송 정보: 앱 버전뿐).',
           'Asks GitHub twice a day (and when you open Settings) whether a new version is out and tells you once (only the app version is sent).'),
         get: () => !!appSettings?.updateCheck, set: (v) => setAppSetting('updateCheck', v), enabled: appReady },
     ],
@@ -1631,13 +3579,13 @@ const SETTINGS = [
     tab: 'about', title: T('백업·초기화', 'Backup & reset'),
     items: [
       { type: 'action', name: T('별명·메모 내보내기', 'Export nicknames & memos'), pcOnly: true,
-        desc: T('별명·메모·사무실 이름을 파일 하나로 저장합니다(다른 PC로 옮기거나 백업할 때).', 'Saves nicknames, memos and the office name to one file (to move to another PC or back up).'),
+        desc: T('직원에 붙여 둔 별명·메모와 사무실 이름을 JSON 파일 하나로 백업합니다(다른 PC로 옮길 때도 사용).', 'Saves nicknames, memos and the office name to one file (to move to another PC or back up).'),
         label: () => T('내보내기', 'Export'), run: () => send({ cmd: 'share-export' }), enabled: appReady },
       { type: 'action', name: T('별명·메모 가져오기', 'Import nicknames & memos'), pcOnly: true,
-        desc: T('내보낸 파일을 읽어 합칩니다. 이 PC에 없거나 파일 쪽을 더 나중에 고친 것만 반영합니다.', 'Reads an exported file and merges it. Only entries missing here or edited later in the file are applied.'),
+        desc: T('백업해 둔 JSON 파일을 읽어 지금 목록과 합칩니다. 이 PC에 없거나 파일 쪽이 더 최근에 수정된 항목만 반영됩니다.', 'Reads an exported file and merges it. Only entries missing here or edited later in the file are applied.'),
         label: () => T('가져오기', 'Import'), run: () => send({ cmd: 'share-import' }), enabled: appReady },
       { type: 'action', name: T('설정 초기화', 'Reset settings'), pcOnly: true,
-        desc: T('직원 표시·창·알림 설정을 처음 값으로 되돌립니다. 별명·메모·사무실 이름·팀 이름·화면 언어·휴대폰 연결·Claude Code 연결·자동 실행은 그대로입니다.',
+        desc: T('직원 표시·창·알림 설정을 기본값으로 되돌립니다. 직접 적은 별명·메모·사무실 이름·팀 설정과 화면 언어, 휴대폰·Claude Code 연결, 자동 실행은 유지됩니다.',
           'Restores employee display, window and notification settings to defaults. Nicknames, memos, office and team names, language, phone connection, Claude Code connection and startup stay.'),
         label: () => T('초기화', 'Reset'), run: () => send({ cmd: 'reset-settings' }), enabled: appReady },
     ],
@@ -1646,12 +3594,12 @@ const SETTINGS = [
     tab: 'about', title: T('문제 해결', 'Troubleshooting'),
     items: [
       { type: 'action', name: T('문제 보고', 'Report a problem'), pcOnly: true,
-        desc: T('GitHub 이슈 작성 화면을 엽니다. 버전·Windows·WebView2 정보만 미리 채웁니다(대화 내용은 보내지 않음).',
+        desc: T('GitHub 이슈 작성 페이지를 엽니다. 앱 버전·Windows·WebView2 버전만 양식에 채워지며 대화 기록은 일절 포함되지 않습니다.',
           'Opens a new GitHub issue with only version, Windows and WebView2 info filled in (no conversation content).'),
         label: () => T('GitHub에 쓰기', 'Write on GitHub'), run: () => send({ cmd: 'report-issue' }), enabled: () => !DEMO },
       { type: 'action', name: T('데이터 폴더', 'Data folder'), pcOnly: true,
-        desc: T('설정과 별명·메모 사본(share.json), 휴대폰 연결 열쇠(cloud.json)가 있는 곳입니다. 다른 PC로 옮길 때는 share.json 을 그 PC의 같은 폴더에 복사하세요. cloud.json 은 남에게 주지 마세요.',
-          'Holds the settings, a copy of nicknames & memos (share.json) and the phone-view key (cloud.json). To move to another PC, copy share.json into the same folder there. Never give cloud.json to anyone.'),
+        desc: T('설정(app.json), 별명·메모 사본(share.json), 휴대폰 연결 열쇠(cloud.json), 동작 기록(*.log)이 저장된 폴더를 탐색기로 엽니다. ⚠️ cloud.json 에는 암호 키가 들어 있으니 외부에 공유하지 마세요.',
+          'Opens the folder with settings (app.json), nicknames & memos (share.json), phone key (cloud.json) and logs (*.log). ⚠️ Never share cloud.json with anyone.'),
         label: () => T('열기', 'Open'), run: () => send({ cmd: 'open-data-dir' }), enabled: appReady },
     ],
   },
@@ -1816,6 +3764,66 @@ const RENDER = {
     };
   },
 
+  petcfg(it, row) {
+    row.classList.add('stack');
+    const top = elem('div', 'petcfg-top');
+    const txt = elem('div', 'txt');
+    txt.append(
+      elem('div', 'name', T('바탕화면 미니펫', 'Desktop MiniPet')),
+      elem('div', 'desc', T('대표 직원 한 명을 바탕화면 구석(기본: 오른쪽 아래, 드래그로 이동 가능)에 꺼내 둡니다. 메인 창을 닫아 알림 영역에 숨겨 두어도 바탕화면에 남아 지시·승인·거절·직원 전환을 바로 할 수 있습니다(상단 🐾 버튼과 같음).',
+        'Places one representative employee in the corner of your desktop (bottom-right by default, draggable). Stays on your desktop even when the main window is hidden to the tray (same as the 🐾 button).'))
+    );
+    const swOn = elem('button', 'switch');
+    swOn.setAttribute('role', 'switch');
+    swOn.setAttribute('aria-label', T('바탕화면 미니펫 켜기', 'Enable Desktop MiniPet'));
+    swOn.addEventListener('click', () => setPet(!petOn()));
+    top.append(txt, swOn);
+
+    const sub = elem('div', 'petcfg-sub');
+
+    const linePick = elem('div', 'petcfg-line');
+    const lblPick = elem('span', 'lbl', T('대표 직원', 'Representative'));
+    const sel = elem('select', 'field');
+    sel.addEventListener('change', () => setPetSession(sel.value));
+    linePick.append(lblPick, sel);
+
+    const lineBg = elem('div', 'petcfg-line');
+    const bgLeft = elem('div', '');
+    bgLeft.append(
+      elem('div', 'lbl', T('배경 숨기기', 'Hide background')),
+      elem('div', 'subdesc', T('구석 방 배경(벽·창문·화분·카펫)을 빼고 직원·의자·책상·컴퓨터만 보여 줍니다 (미니펫 상단 🖼️ 버튼과 같음).',
+        'Hides the room background (wall, window, plant, rug) and shows only the employee, chair, desk, and computer (same as the 🖼️ button).'))
+    );
+    const swBg = elem('button', 'switch');
+    swBg.setAttribute('role', 'switch');
+    swBg.setAttribute('aria-label', T('배경 숨기기', 'Hide background'));
+    swBg.addEventListener('click', () => setPetNoBg(!petNoBgOn()));
+    lineBg.append(bgLeft, swBg);
+
+    sub.append(linePick, lineBg);
+    row.append(top, sub);
+
+    return (locked) => {
+      swOn.disabled = swBg.disabled = sel.disabled = locked;
+      swOn.setAttribute('aria-checked', String(!!petOn()));
+      swBg.setAttribute('aria-checked', String(!!petNoBgOn()));
+      if (document.activeElement !== sel) {
+        const pref = petSessionPref();
+        const cur = resolvePetSession();
+        const autoLabel = cur && !pref
+          ? T(`🌟 자동 (확인 필요·최근 순 — 지금: ${displayName(cur)})`, `🌟 Auto (waiting / recent — now: ${displayName(cur)})`)
+          : T('🌟 자동 (확인 필요·최근 순)', '🌟 Auto (waiting / recent)');
+        const opts = [new Option(autoLabel, '')];
+        for (const s of data.sessions) {
+          const a = actOf(s);
+          opts.push(new Option(`${s.icon} ${displayName(s)} (${teamLabel(s.team)} · ${a.label})`, s.id));
+        }
+        sel.replaceChildren(...opts);
+        sel.value = pref && data.sessions.some((s) => s.id === pref) ? pref : '';
+      }
+    };
+  },
+
   // 휴대폰 연결: QR(해독 키가 들어 있어 누를 때만 보인다)과 주소 복사·키 새로 만들기
   cloudqr(it, row) {
     row.classList.add('stack');
@@ -1825,8 +3833,8 @@ const RENDER = {
     bar.append(showBtn, copyBtn, rekeyBtn);
     const box = elem('div', 'qrbox'), qrEl = elem('div', 'qr'), urlEl = elem('div', 'qrurl mono');
     box.append(qrEl, urlEl, elem('div', 'desc',
-      T('휴대폰 카메라로 찍어 여세요(홈 화면에 추가하면 앱처럼 쓸 수 있어요). 주소에 해독 키가 들어 있으니 남에게 보이지 않게 하고, 보였다면 "키 새로 만들기".',
-        'Scan it with your phone camera (add it to the home screen to use it like an app). The link contains the decryption key, so keep it private; if someone saw it, use "New key".')));
+      T('휴대폰 카메라로 찍어 여세요(홈 화면에 추가하면 앱처럼 쓸 수 있어요). 주소에 해독 키가 들어 있으니 남에게 보이지 않게 주의하고, 노출됐다면 [키 새로 만들기]를 누르세요.',
+        'Scan it with your phone camera (add it to the home screen to use it like an app). The link contains the decryption key, so keep it private; if someone saw it, click [New key].')));
     row.append(bar, box);
 
     showBtn.addEventListener('click', () => { cloudQrShown = !cloudQrShown; refreshSettings(); });
@@ -2084,7 +4092,7 @@ function syncDrawers() {
   drawerTab.hidden = !open;
   if (!open) return;
   const s = data.sessions.find((x) => x.id === selectedId);
-  drawerTab.querySelector('.arrow').textContent = drawerFolded ? '‹' : '›';
+  drawerTab.querySelector('.arrow').textContent = drawerFolded ? '◀' : '▶';
   drawerTab.querySelector('.lbl').textContent = drawerFolded ? (s ? displayName(s) : selectedId === REPORT_ID ? T('근무 일지', 'Work log') : '') : '';
   drawerTab.title = drawerFolded ? T('펼치기', 'Expand') : T('접기 — 사무실을 넓게 보기', 'Fold — see more of the office');
 }
@@ -2100,7 +4108,29 @@ function hitTest(px, py) {
   return desks.find((d) => lx >= d.x && lx < d.x + CELL_W && ly >= d.y && ly < d.y + CELL_H) || null;
 }
 
+function hitWhiteboard(px, py) {
+  if (!curWhiteboardBox) return false;
+  const lx = px / U, ly = py / U;
+  return lx >= curWhiteboardBox.x - 1 && lx <= curWhiteboardBox.x + curWhiteboardBox.w + 1 &&
+         ly >= curWhiteboardBox.y - 1 && ly <= curWhiteboardBox.y + curWhiteboardBox.h + 1;
+}
+
 canvas.addEventListener('mousemove', (e) => {
+  const hitWb = hitWhiteboard(e.offsetX, e.offsetY);
+  if (hitWb) {
+    hoverId = null;
+    canvas.style.cursor = 'pointer';
+    tooltipEl.replaceChildren();
+    const add = (tag, text, cls) => { const el = document.createElement(tag); el.textContent = text; if (cls) el.className = cls; tooltipEl.append(el); };
+    add('b', T('📋 전사 화이트보드 (Todo 칸반)', '📋 Team Whiteboard (Todo Kanban)'));
+    add('div', T('모든 세션의 진행 중인 할 일 목록을 한눈에 확인합니다.', 'View active to-dos across all sessions at a glance.'));
+    add('div', T('클릭하여 열기', 'Click to open'), 'dim');
+    tooltipEl.hidden = false;
+    const r = tooltipEl.getBoundingClientRect();
+    tooltipEl.style.left = clamp(e.clientX + 14, 4, viewW() - r.width - 4) + 'px';
+    tooltipEl.style.top = clamp(e.clientY + 14, 4, innerHeight - r.height - 4) + 'px';
+    return;
+  }
   const hit = hitTest(e.offsetX, e.offsetY);
   hoverId = hit ? hit.s.id : null;
   canvas.style.cursor = hit ? 'pointer' : 'default';
@@ -2114,6 +4144,7 @@ canvas.addEventListener('mousemove', (e) => {
   if (note.nick) add('div', T(`세션 이름: ${s.name}`, `Session name: ${s.name}`), 'dim');
   add('div', `${s.icon} ${a.label} — ${s.text}`);
   if (note.memo) add('div', '📝 ' + clip(note.memo.replace(/\s+/g, ' ').trim(), 90));
+  if (s.reply && s.act === 'idle') add('div', '💬 ' + clip(s.reply, 90));
   if (s.prompt) add('div', '📨 ' + clip(s.prompt, 90), 'dim');
   (s.interns || []).forEach((it) => add('div', `${it.icon} ${it.name}: ${it.text}`, 'dim'));   // 이름이 이미 "탐색 인턴" 꼴
   add('div', T('클릭하면 자세히 보기', 'Click for details'), 'dim');
@@ -2126,6 +4157,10 @@ canvas.addEventListener('mousemove', (e) => {
 canvas.addEventListener('mouseleave', () => { hoverId = null; tooltipEl.hidden = true; });
 
 canvas.addEventListener('click', (e) => {
+  if (hitWhiteboard(e.offsetX, e.offsetY)) {
+    openWhiteboardModal();
+    return;
+  }
   const hit = hitTest(e.offsetX, e.offsetY);
   if (hit && hit.s.id === selectedId && !panelEl.hidden) {   // 같은 직원을 다시 누르면 접기·펼치기
     setDrawerFolded(!drawerFolded);
@@ -2138,21 +4173,156 @@ canvas.addEventListener('click', (e) => {
 });
 
 $('pClose').addEventListener('click', () => { selectedId = null; renderPanel(); });
-$('pSeatL').addEventListener('click', () => { if (selectedId) moveSeat(selectedId, -1); });
-$('pSeatR').addEventListener('click', () => { if (selectedId) moveSeat(selectedId, 1); });
+if ($('pPet')) {
+  $('pPet').addEventListener('click', () => {
+    if (!selectedId) return;
+    const active = petOn() && petSessionPref() === selectedId;
+    if (active) {
+      setPetSession('');
+    } else {
+      setPetSession(selectedId);
+      if (!petOn()) setPet(true);
+    }
+  });
+}
+$('pSeatL').addEventListener('click', () => { if (selectedId) { moveSeat(selectedId, -1); markQuest('move_seat'); } });
+$('pSeatR').addEventListener('click', () => { if (selectedId) { moveSeat(selectedId, 1); markQuest('move_seat'); } });
 // 작업 폴더를 탐색기로 — 경로는 앱이 자기 스냅샷에서 찾는다(화면이 보낸 경로를 그대로 열지 않음)
 $('pOpenDir').addEventListener('click', () => { if (selectedId) send({ cmd: 'open-folder', id: selectedId }); });
+if ($('pFocusWin')) {
+  $('pFocusWin').addEventListener('click', () => { if (selectedId) send({ cmd: 'focus-session', id: selectedId }); });
+}
+
+// 빠른 직원 검색(HUD 🔍 버튼 및 / 단축키)
+const btnSearch = $('btnSearch'), searchWrapEl = $('searchWrap'), hudSearchEl = $('hudSearch'), hudSearchClearEl = $('hudSearchClear');
+
+function setSearchOpen(open, clear = false) {
+  if (!searchWrapEl || !hudSearchEl) return;
+  if (open) markQuest('try_search');
+  if (clear || !open) {
+    searchQuery = '';
+    hudSearchEl.value = '';
+    layoutKey = '';
+  }
+  searchWrapEl.hidden = !open;
+  if (btnSearch) btnSearch.classList.toggle('on', open);
+  refreshHud();
+  if (open) hudSearchEl.focus();
+}
+
+if (btnSearch) btnSearch.addEventListener('click', () => setSearchOpen(searchWrapEl.hidden));
+if (hudSearchClearEl) hudSearchClearEl.addEventListener('click', () => setSearchOpen(false, true));
+if (hudSearchEl) {
+  hudSearchEl.addEventListener('input', () => {
+    searchQuery = hudSearchEl.value;
+    layoutKey = '';
+    refreshHud();
+  });
+  hudSearchEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      setSearchOpen(false, true);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const first = visibleSessions()[0];
+      if (first) selectSession(first.id);
+    }
+  });
+}
+
+// 키보드 단축키: Esc(닫기), /(직원 검색), 1~9(책상 직원 선택), M(미니펫), W(작게 보기), R(근무 일지), A(업적 도감)
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape') return;
-  if (e.target instanceof Element && e.target.matches('input, textarea')) { e.target.blur(); return; }   // 쓰던 칸에서는 Esc가 칸만 빠져나온다
-  if (!settingsEl.hidden) { setSettingsOpen(false); return; }   // 설정 팝업이 떠 있으면 그것만 닫는다
-  selectedId = null;
-  renderPanel();
+  if (e.key === 'Escape') {
+    if (connectGuideEl && !connectGuideEl.hidden) { closeConnectGuide(); return; }
+    if (whiteboardModalEl && !whiteboardModalEl.hidden) { closeWhiteboardModal(); return; }
+    if (achieveModalEl && !achieveModalEl.hidden) { closeAchieveModal(); return; }
+    if (PET_WINDOW) return;
+    const inInput = e.target instanceof Element && e.target.matches('input, textarea, select');
+    if (inInput) { e.target.blur(); return; }
+    if (searchWrapEl && !searchWrapEl.hidden) { setSearchOpen(false, true); return; }
+    if (!settingsEl.hidden) { setSettingsOpen(false); return; }
+    selectedId = null;
+    renderPanel();
+    return;
+  }
+  if (PET_WINDOW) return;
+  const inInput = e.target instanceof Element && e.target.matches('input, textarea, select');
+  if (inInput || e.ctrlKey || e.altKey || e.metaKey) return;
+  if (e.key === '/') {
+    e.preventDefault();
+    setSearchOpen(true);
+    return;
+  }
+  if (e.key >= '1' && e.key <= '9' && settingsEl.hidden) {
+    const idx = Number(e.key) - 1;
+    const list = visibleSessions();
+    if (list[idx]) selectSession(list[idx].id);
+    return;
+  }
+  const k = e.key.toLowerCase();
+  if (k === 'm' && !REMOTE) {
+    e.preventDefault();
+    setPet(!petOn());
+  } else if (k === 'w') {
+    e.preventDefault();
+    setWidget(!widgetOn());
+  } else if (k === 'r') {
+    e.preventDefault();
+    btnToday.click();
+  } else if (k === 'a') {
+    e.preventDefault();
+    if (btnAchieve) btnAchieve.click();
+  }
 });
 
-// 상세 패널의 별명·메모 칸. 글자를 칠 때마다 바로 저장한다(따로 저장 버튼 없음)
-const nickEl = $('pNick'), memoEl = $('pMemo');
+// 상세 패널의 별명·메모·캐릭터 꾸미기 칸. 글자를 칠 때마다 바로 저장한다(따로 저장 버튼 없음)
+const nickEl = $('pNick'), memoEl = $('pMemo'), lookBarEl = $('pLookBar');
 let noteFor = null;   // 입력칸이 지금 어느 세션 것인지
+
+const DECO_ITEMS = [
+  [0, '☕', T('머그컵', 'Mug')],
+  [1, '🪴', T('화분', 'Plant')],
+  [2, '📚', T('책', 'Books')],
+  [3, '🖼️', T('액자', 'Frame')],
+];
+
+function renderLookBar(s) {
+  if (!lookBarEl || REMOTE) return;
+  const n = noteOf(s.id);
+  const L = looks(s.id);
+  const roll = elem('button', 'mini', T('🎲 모습 바꾸기', '🎲 Change look'));
+  roll.title = T('직원의 헤어·안경·옷 색상을 다른 조합으로 바꿉니다', 'Change hair, glasses, and outfit colors');
+  roll.addEventListener('click', () => {
+    setNote(s.id, { look: ((noteOf(s.id).look || 0) % 99) + 1 });
+    renderLookBar(s);
+    if (petOn()) renderPet();
+    markQuest('decorate_desk');
+  });
+  const decos = DECO_ITEMS.map(([idx, ic, label]) => {
+    const b = elem('button', 'mini' + (L.deco === idx ? ' on' : ''), ic);
+    b.title = T(`책상 소품: ${label}`, `Desk item: ${label}`);
+    b.addEventListener('click', () => {
+      setNote(s.id, { deco: idx });
+      renderLookBar(s);
+      if (petOn()) renderPet();
+      markQuest('decorate_desk');
+    });
+    return b;
+  });
+  const children = [roll, ...decos];
+  if (n.look || n.deco !== undefined) {
+    const rst = elem('button', 'mini', '↺');
+    rst.title = T('원래 기본 모습·소품으로 되돌리기', 'Restore default look & item');
+    rst.addEventListener('click', () => {
+      setNote(s.id, { look: 0, deco: -1 });
+      renderLookBar(s);
+      if (petOn()) renderPet();
+    });
+    children.push(rst);
+  }
+  lookBarEl.replaceChildren(...children);
+}
 
 nickEl.addEventListener('input', () => {
   if (!noteFor) return;
@@ -2160,11 +4330,13 @@ nickEl.addEventListener('input', () => {
   setNote(noteFor, { nick: nickEl.value.trim() });
   renderPanel();
   refreshSettings();   // 체크 목록의 이름도
+  if (nickEl.value.trim()) markQuest('set_nickname');
 });
 memoEl.addEventListener('input', () => {
   if (!noteFor) return;
   if (REMOTE) queuePhoneEdit(noteFor);
   else setNote(noteFor, { memo: memoEl.value });
+  if (memoEl.value.trim()) markQuest('write_memo');
 });
 
 function listItem(icon, text, time) {
@@ -2177,10 +4349,11 @@ function listItem(icon, text, time) {
   return li;
 }
 
-// ───────────────────────────── 오늘의 근무 일지 ─────────────────────────────
-// 앱이 세션마다 보내는 today: {work(ms), prompts, in, out, cacheRead, cacheWrite, tools:[{n, c}]} — 인턴 몫 포함, 이 PC 날짜 기준
+// ───────────────────────────── 오늘의 근무 일지 · 비용 · 문맥 ─────────────────────────────
+// 앱이 세션마다 보내는 today / yesterday / week: {work(ms), prompts, in, out, cacheRead, cacheWrite, tools:[{n, c}]} — 인턴 몫 포함
 
 const REPORT_ID = '@today';
+let reportRange = 'today';   // 'today' | 'yesterday' | 'week'
 
 function fmtTok(n) {
   if (!n) return '0';
@@ -2191,50 +4364,169 @@ function fmtTok(n) {
 const tokIn = (t) => (t.in || 0) + (t.cacheRead || 0) + (t.cacheWrite || 0);   // 모델이 읽은 전체(캐시 포함)
 const fmtWork = (ms) => (ms >= 60000 ? fmtDur(ms) : ms > 0 ? T('1분 미만', 'under 1m') : T('0분', '0m'));
 
-function todayLines(t) {
-  if (!t) return [elem('div', 'dimline', T('오늘 기록이 없어요', 'Nothing recorded today'))];
+/** 모델별 100만 토큰당 단가($)로 예상 API 비용과 캐시 절약액을 계산한다. */
+function calcTokenCost(t, model) {
+  if (!t) return { cost: 0, saved: 0 };
+  const m = String(model || '').toLowerCase();
+  let p = { in: 3, out: 15, cw: 3.75, cr: 0.30 };   // 기본: Sonnet 4 / 3.7
+  if (m.includes('haiku')) p = { in: 0.80, out: 4, cw: 1.00, cr: 0.08 };
+  else if (m.includes('opus-4-5') || m.includes('opus-4-6') || m.includes('opus-5')) p = { in: 5, out: 25, cw: 6.25, cr: 0.50 };
+  else if (m.includes('opus')) p = { in: 15, out: 75, cw: 18.75, cr: 1.50 };
+
+  const ti = t.in || 0, to = t.out || 0, cr = t.cacheRead || 0, cw = t.cacheWrite || 0;
+  const cost = (ti * p.in + to * p.out + cw * p.cw + cr * p.cr) / 1e6;
+  const fullInCost = ((ti + cr + cw) * p.in + to * p.out) / 1e6;
+  const saved = Math.max(0, fullInCost - cost);
+  return { cost, saved };
+}
+
+function fmtUsd(v) {
+  if (!v || v < 0.005) return '$0.00';
+  if (v < 10) return '$' + v.toFixed(2);
+  return '$' + v.toFixed(1);
+}
+
+const MAX_CTX_TOKENS = 200000;
+
+function makeCtxBox(ctx) {
+  if (!ctx || ctx <= 0) return null;
+  const pct = Math.min(100, Math.round((ctx / MAX_CTX_TOKENS) * 100));
+  const wrap = elem('div', 'ctx-wrap');
+  const warnHint = pct >= 80 ? T(' · /compact 권장', ' · /compact recommended') : '';
+  wrap.append(elem('div', '', T(`📐 대화 문맥 ${fmtTok(ctx)} / 200K (${pct}%)${warnHint}`, `📐 Context ${fmtTok(ctx)} / 200K (${pct}%)${warnHint}`)));
+  const bar = elem('div', 'ctx-bar' + (pct >= 80 ? ' high' : pct >= 60 ? ' warn' : ''));
+  const fill = elem('i');
+  fill.style.width = `${pct}%`;
+  bar.append(fill);
+  wrap.append(bar);
+  return wrap;
+}
+
+function todayLines(t, s) {
+  const lines = [];
+  const ctxBox = s ? makeCtxBox(s.ctx) : null;
+  if (ctxBox) lines.push(ctxBox);
+  if (!t) {
+    lines.push(elem('div', 'dimline', T('오늘 기록이 없어요', 'Nothing recorded today')));
+    return lines;
+  }
+  const { cost, saved } = calcTokenCost(t, s?.model);
   const tools = (t.tools || []).slice(0, 4).map((x) => `${x.n} ${x.c}`).join(' · ');
-  return [
+  lines.push(
     elem('div', '', T(`⏱️ 일한 시간 ${fmtWork(t.work)} · 💬 지시 ${t.prompts}번`, `⏱️ Worked ${fmtWork(t.work)} · 💬 ${t.prompts} prompts`)),
     elem('div', '', T(`🪙 토큰 입력 ${fmtTok(tokIn(t))} (캐시 읽기 ${fmtTok(t.cacheRead)}) · 출력 ${fmtTok(t.out)}`,
       `🪙 Tokens in ${fmtTok(tokIn(t))} (cache read ${fmtTok(t.cacheRead)}) · out ${fmtTok(t.out)}`)),
-    ...(tools ? [elem('div', 'dimline', `🔧 ${tools}`)] : []),
-  ];
+    elem('div', '', T(`💵 API 환산 약 ${fmtUsd(cost)}` + (saved >= 0.01 ? ` (캐시로 ${fmtUsd(saved)} 절약)` : ''),
+      `💵 Est. API ${fmtUsd(cost)}` + (saved >= 0.01 ? ` (saved ${fmtUsd(saved)} via cache)` : '')))
+  );
+  if (tools) lines.push(elem('div', 'dimline', `🔧 ${tools}`));
+  return lines;
 }
 
 function renderReport() {
-  const rows = data.sessions.filter((s) => s.today).sort((a, b) => b.today.work - a.today.work);
-  const sum = (f) => rows.reduce((n, s) => n + f(s.today), 0);
-  const maxWork = Math.max(1, ...rows.map((s) => s.today.work));
+  const getStat = (s) => (reportRange === 'yesterday' ? s.yesterday : reportRange === 'week' ? (s.week || s.today) : s.today);
+  const rows = data.sessions.filter((s) => getStat(s)).sort((a, b) => getStat(b).work - getStat(a).work);
+  const sum = (f) => rows.reduce((n, s) => n + f(getStat(s), s), 0);
+  const maxWork = Math.max(1, ...rows.map((s) => getStat(s).work));
   const d = new Date();
-  const head = [elem('h2', '', T('📊 오늘의 근무 일지', "📊 Today's work log")),
-    elem('div', 'dim', T(`${d.getMonth() + 1}월 ${d.getDate()}일 · 직원 ${rows.length}명 · 인턴 몫 포함`,
-      `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${rows.length} employees · interns included`))];
+  const rangeTitle = reportRange === 'yesterday'
+    ? T('어제', 'Yesterday')
+    : reportRange === 'week'
+      ? T('최근 7일', 'Last 7 days')
+      : T(`${d.getMonth() + 1}월 ${d.getDate()}일(오늘)`, `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (Today)`);
+
+  const tabs = elem('div', 'rtabs');
+  for (const [id, label] of [['today', T('오늘', 'Today')], ['yesterday', T('어제', 'Yesterday')], ['week', T('최근 7일', 'Last 7 days')]]) {
+    const b = elem('button', reportRange === id ? 'on' : '', label);
+    b.addEventListener('click', () => { reportRange = id; renderReport(); });
+    tabs.append(b);
+  }
+
+  const totalCost = sum((t, s) => calcTokenCost(t, s.model).cost);
+  const totalSaved = sum((t, s) => calcTokenCost(t, s.model).saved);
+
+  const copyBtn = elem('button', 'btn-copy-md', T('📋 일지 복사', '📋 Copy Markdown'));
+  copyBtn.title = T('근무 일지를 마크다운 형식으로 클립보드에 복사합니다', 'Copy work log as Markdown to clipboard');
+  copyBtn.addEventListener('click', () => {
+    let md = `# 📊 Claude Office ${T('근무 일지', 'Work Log')} (${rangeTitle})\n\n`;
+    md += `### ⏱️ ${T('전체 요약', 'Summary')}\n`;
+    md += `- **${T('일한 시간', 'Work time')}**: ${fmtWork(sum((t) => t.work))}\n`;
+    md += `- **${T('지시', 'Prompts')}**: ${sum((t) => t.prompts)}` + T('번\n', '\n');
+    md += `- **${T('토큰 (입력+출력)', 'Tokens (in+out)')}**: ${fmtTok(sum((t) => tokIn(t) + t.out))} (${T('입력', 'in')} ${fmtTok(sum((t) => tokIn(t)))}, ${T('출력', 'out')} ${fmtTok(sum((t) => t.out))})\n`;
+    md += `- **${T('API 환산 비용', 'Est. API cost')}**: ${fmtUsd(totalCost)}` + (totalSaved >= 0.01 ? ` (${T('캐시 절약', 'saved')} ${fmtUsd(totalSaved)})\n` : '\n');
+    md += `\n### 👥 ${T('직원별 근무 내역', 'Employee Details')}\n`;
+    for (const s of rows) {
+      const t = getStat(s);
+      const { cost } = calcTokenCost(t, s.model);
+      const tools = (t.tools || []).map((x) => `${x.n} (${x.c})`).join(', ');
+      md += `- **${displayName(s)}** (${s.model || 'Claude'}): ${fmtWork(t.work)} · ${t.prompts}${T('번 지시', ' prompts')} · ${T('토큰', 'tokens')} ${fmtTok(tokIn(t))}/${fmtTok(t.out)} · ${fmtUsd(cost)}\n`;
+      if (tools) md += `  - ${T('주요 도구', 'Top tools')}: ${tools}\n`;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(md).then(() => {
+        copyBtn.textContent = T('✅ 복사 완료!', '✅ Copied!');
+        setTimeout(() => { copyBtn.textContent = T('📋 일지 복사', '📋 Copy Markdown'); }, 2000);
+      }).catch(() => {});
+    }
+  });
+
+  const tabRow = elem('div', 'rrow');
+  tabRow.append(tabs, copyBtn);
+
+  const head = [
+    elem('h2', '', T('📊 근무 일지', '📊 Work log')),
+    elem('div', 'dim', T(`${rangeTitle} · 직원 ${rows.length}명 · 인턴 몫 포함`, `${rangeTitle} · ${rows.length} employees · interns included`)),
+    tabRow,
+  ];
+
   const tot = elem('div', 'rtot');
-  for (const [label, value] of [[T('일한 시간', 'Work time'), fmtWork(sum((t) => t.work))], [T('지시', 'Prompts'), T(`${sum((t) => t.prompts)}번`, `${sum((t) => t.prompts)}`)],
-    [T('토큰(입력+출력)', 'Tokens (in+out)'), fmtTok(sum((t) => tokIn(t) + t.out))]]) {
+  for (const [label, value, sub] of [
+    [T('일한 시간', 'Work time'), fmtWork(sum((t) => t.work)), ''],
+    [T('지시', 'Prompts'), T(`${sum((t) => t.prompts)}번`, `${sum((t) => t.prompts)}`), ''],
+    [T('토큰(입력+출력)', 'Tokens (in+out)'), fmtTok(sum((t) => tokIn(t) + t.out)), ''],
+    [T('API 환산 비용', 'Est. API cost'), fmtUsd(totalCost), totalSaved >= 0.01 ? T(`캐시 절약 ${fmtUsd(totalSaved)}`, `Saved ${fmtUsd(totalSaved)}`) : ''],
+  ]) {
     const box = elem('div', '', label);
     box.append(elem('b', '', value));
+    if (sub) box.append(elem('span', 'sub', sub));
     tot.append(box);
   }
+
   const list = rows.map((s) => {
-    const t = s.today;
+    const t = getStat(s);
+    const { cost } = calcTokenCost(t, s.model);
     const row = elem('div', 'rrow');
     const h = elem('div', 'rh');
-    h.append(elem('span', '', `${s.icon} ${displayName(s)}`), elem('span', '', fmtWork(t.work)));
+    h.append(elem('span', '', `${s.icon} ${displayName(s)}`), elem('span', '', `${fmtWork(t.work)} · ${fmtUsd(cost)}`));
     const bar = elem('div', 'bar'), fill = elem('i');
     fill.style.width = `${Math.round((t.work / maxWork) * 100)}%`;
     bar.append(fill);
     const tools = (t.tools || []).slice(0, 3).map((x) => `${x.n} ${x.c}`).join(' · ');
-    row.append(h, bar, elem('div', 'rd', T(`지시 ${t.prompts}번 · 토큰 ${fmtTok(tokIn(t))}/${fmtTok(t.out)}`, `${t.prompts} prompts · tokens ${fmtTok(tokIn(t))}/${fmtTok(t.out)}`)
-      + (tools ? ' · ' + tools : '')));
+    const ctxPct = s.ctx ? ` · ${T('문맥', 'ctx')} ${Math.min(100, Math.round((s.ctx / MAX_CTX_TOKENS) * 100))}%` : '';
+    row.append(h, bar, elem('div', 'rd', T(`지시 ${t.prompts}번 · 토큰 ${fmtTok(tokIn(t))}/${fmtTok(t.out)}${ctxPct}`,
+      `${t.prompts} prompts · tokens ${fmtTok(tokIn(t))}/${fmtTok(t.out)}${ctxPct}`) + (tools ? ' · ' + tools : '')));
     row.title = T('누르면 이 직원 보기', 'Click to view this employee');
     row.addEventListener('click', () => selectSession(s.id));
     return row;
   });
-  $('pReport').replaceChildren(...head, tot, ...(list.length ? list : [elem('div', 'dim', T('오늘은 아직 일한 직원이 없어요.', 'Nobody has worked today yet.'))]),
-    elem('p', 'rnote', T('일한 시간: 지시를 받은 뒤 답을 마칠 때까지(승인 기다림·명령 실행 포함, 30분 넘게 조용한 틈은 뺌). 토큰 입력은 캐시에서 읽은 것을 포함합니다.',
-      'Work time: from receiving a prompt until the answer is finished (approval waits and running commands included, quiet gaps over 30 min left out). Input tokens include cache reads.')));
+
+  const emptyMsg = reportRange === 'yesterday'
+    ? T('어제 기록된 근무 내역이 없어요.', 'No work recorded yesterday.')
+    : reportRange === 'week'
+      ? T('최근 7일 동안 기록된 근무 내역이 없어요.', 'No work recorded in the last 7 days.')
+      : T('오늘은 아직 일한 직원이 없어요.', 'Nobody has worked today yet.');
+
+  const acBanner = elem('button', 'rank-open-btn', T('🏆 전사 업적 도감 & 명예의 전당 보기', '🏆 View Achievements & Hall of Fame'));
+  acBanner.style.width = '100%';
+  acBanner.style.padding = '6px 10px';
+  acBanner.style.margin = '4px 0 8px';
+  acBanner.style.textAlign = 'center';
+  acBanner.style.fontSize = '12px';
+  acBanner.addEventListener('click', () => openAchieveModal());
+
+  $('pReport').replaceChildren(...head, acBanner, tot, ...(list.length ? list : [elem('div', 'dim', emptyMsg)]),
+    elem('p', 'rnote', T('일한 시간: 지시를 받은 뒤 답을 마칠 때까지(승인 대기·명령 실행 포함, 30분 넘게 조용한 틈 제외). 비용은 모델별 API 표준 단가 환산 추정치입니다.',
+      'Work time: from receiving a prompt until the answer finishes (approval waits and running commands included, quiet gaps over 30 min excluded). Cost is an API rate estimate.')));
 }
 
 function renderPanel() {
@@ -2258,6 +4550,11 @@ function renderPanel() {
   $('pName').textContent = displayName(s);
   // 별명을 붙였으면 원래 세션 이름(/rename 이름·자동 제목)을 아래에 남겨 둔다
   $('pTitle').textContent = note.nick ? T('세션 이름: ', 'Session name: ') + `${s.name}${s.title ? ' · ' + s.title : ''}` : (s.title || '');
+
+  // 세션 클릭 시에는 업적/직급 카드를 표시하지 않고 기존 서랍 내용을 깔끔하게 유지
+  const oldRankCard = $('pRankCard');
+  if (oldRankCard) oldRankCard.remove();
+
   // 입력칸은 다른 직원으로 바꿨을 때만 채운다(스냅샷마다 채우면 쓰는 도중 글자가 되돌아간다)
   if (noteFor !== s.id) {
     noteFor = s.id;
@@ -2266,19 +4563,118 @@ function renderPanel() {
     nickEl.placeholder = T(`별명 (비우면 "${s.name}")`, `Nickname (empty = "${s.name}")`);
     memoEl.value = note.memo || '';
   }
+  renderLookBar(s);
   const st = $('pState');
   st.textContent = `${s.icon} ${a.label} — ${s.text}`;
   st.style.color = a.tone;
+
+  let secretEl = $('pSecretAlert');
+  if (!secretEl) {
+    secretEl = elem('div', 'secret-alert');
+    secretEl.id = 'pSecretAlert';
+    $('pState').insertAdjacentElement('afterend', secretEl);
+  }
+  secretEl.hidden = !s.secret;
+  if (s.secret) {
+    secretEl.innerHTML = T(
+      '🛡️ <strong>시크릿 노출 주의:</strong> API 키 또는 인증 토큰 패턴이 감지되었습니다. 키 재발급 및 환경변수(env) 분리를 권장합니다.',
+      '🛡️ <strong>Secret Exposure Alert:</strong> API key or token pattern detected. Rotating the key and using environment variables is recommended.'
+    );
+  }
+
+  // 🛑 긴급 작업 중단 (Ctrl+C) 버튼
+  let stopBtn = $('pStopBtn');
+  if (!stopBtn) {
+    stopBtn = elem('button', 'mini btn-stop', T('🛑 작업 중단', '🛑 Stop task'));
+    stopBtn.id = 'pStopBtn';
+    stopBtn.title = T('현재 실행 중인 명령/작업에 긴급 중단(Ctrl+C) 신호를 보냅니다', 'Send emergency stop (Ctrl+C) to this session');
+    stopBtn.addEventListener('click', async () => {
+      if (selectedId) {
+        stopBtn.disabled = true;
+        stopBtn.textContent = T('🛑 신호 전송 중…', '🛑 Sending stop…');
+        await stopSession(selectedId);
+        stopBtn.textContent = T('🛑 중단 전송됨', '🛑 Stop Sent');
+        setTimeout(() => {
+          if (stopBtn) {
+            stopBtn.textContent = T('🛑 작업 중단', '🛑 Stop task');
+            stopBtn.disabled = false;
+          }
+        }, 2000);
+        markQuest('emergency_stop');
+      }
+    });
+    if ($('pPet')) $('pPet').insertAdjacentElement('beforebegin', stopBtn);
+  }
+  const isBusy = (a.busy || a.wait) && s.act !== 'away';
+  if (stopBtn) stopBtn.hidden = !isBusy;
+
+  if ($('pPet')) {
+    const isRep = petOn() && resolvePetSession()?.id === s.id;
+    const pinnedRep = petOn() && petSessionPref() === s.id;
+    $('pPet').textContent = pinnedRep ? T('🐾 대표 직원 중', '🐾 Pinned MiniPet')
+      : isRep ? T('🐾 미니펫 고정', '🐾 Pin MiniPet')
+      : T('🐾 미니펫', '🐾 MiniPet');
+    $('pPet').style.borderColor = isRep ? 'var(--accent)' : '';
+  }
   renderRemote(s);
   $('pCwd').textContent = s.cwd || s.team;
   $('pOpenDir').hidden = DEMO || !s.cwd;
+  if ($('pFocusWin')) $('pFocusWin').hidden = REMOTE || !s.cwd;
   $('pTeam').textContent = teamLabel(s.team);
   $('pEntry').textContent = entryName(s.entry);
   $('pModel').textContent = s.model || '-';
   $('pBranch').textContent = s.branch || '-';
   $('pLast').textContent = s.last ? `${fmtTime(s.last)} (${fmtAgo(now() - s.last)})` : '-';
   $('pPrompt').textContent = s.prompt || T('(없음)', '(none)');
-  $('pToday').replaceChildren(...todayLines(s.today));
+
+  let thinkEl = $('pThinking');
+  if (!thinkEl) {
+    thinkEl = elem('details', 'thinking-accordion');
+    thinkEl.id = 'pThinking';
+    const sum = elem('summary', '', T('🧠 Claude 생각 엿보기', "🧠 Peek at Claude's Thinking"));
+    const body = elem('div', 'thinking-body');
+    thinkEl.append(sum, body);
+    $('pPrompt').insertAdjacentElement('afterend', thinkEl);
+  }
+  thinkEl.hidden = !s.thinking;
+  if (s.thinking) {
+    thinkEl.querySelector('.thinking-body').textContent = s.thinking;
+  }
+
+  if ($('pReplyWrap')) {
+    const showFallbackReply = $('pRemote').hidden && !!s.reply;
+    $('pReplyWrap').hidden = !showFallbackReply;
+    if (showFallbackReply) $('pReply').textContent = s.reply;
+  }
+
+  let todoCard = $('pWhiteboardCard');
+  if (!todoCard) {
+    todoCard = elem('div', 'whiteboard-card');
+    todoCard.id = 'pWhiteboardCard';
+    $('pToday').insertAdjacentElement('beforebegin', todoCard);
+  }
+  const todos = s.todos || [];
+  todoCard.hidden = todos.length === 0;
+  if (todos.length > 0) {
+    const doneCount = todos.filter((t) => t.status === 'completed').length;
+    const head = elem('div', 'whiteboard-head');
+    head.append(
+      elem('span', '', T('📋 화이트보드 할 일', '📋 Whiteboard To-dos')),
+      elem('span', 'dim', `${doneCount}/${todos.length} ` + T('완료', 'done'))
+    );
+    const ul = elem('ul', 'todo-list');
+    for (const t of todos) {
+      const isDone = t.status === 'completed', isProg = t.status === 'in_progress';
+      const icon = isDone ? '✅' : isProg ? '⏳' : '⬜';
+      const cls = isDone ? 'completed' : isProg ? 'in_progress' : 'pending';
+      const li = elem('li', `todo-item ${cls}`);
+      li.append(elem('span', 'todo-icon', icon), elem('span', 'todo-text', t.content));
+      ul.append(li);
+    }
+    todoCard.replaceChildren(head, ul);
+  }
+
+  $('pToday').replaceChildren(...todayLines(s.today, s));
   const interns = s.interns || [];
   $('pInternsWrap').hidden = interns.length === 0;
   $('pInterns').replaceChildren(...interns.map((it) => listItem(it.icon, `${it.name}${it.desc ? ' · ' + it.desc : ''} — ${it.text}`)));
@@ -2360,9 +4756,10 @@ async function postInbox(msg) {
     const n = Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => x.toString(16).padStart(2, '0')).join('');
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const plain = new TextEncoder().encode(JSON.stringify({ ...msg, t: Date.now(), n }));
-    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, remoteKey, plain));
+    const additionalData = new TextEncoder().encode('inbox:' + remoteLink.u);
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData }, remoteKey, plain));
     const res = await fetch(`${remoteLink.db.replace(/\/+$/, '')}/inbox/${encodeURIComponent(remoteLink.u)}.json`,
-      { method: 'POST', body: JSON.stringify({ v: 1, iv: bytesToB64(iv), ct: bytesToB64(ct) }) });
+      { method: 'POST', body: JSON.stringify({ v: 2, iv: bytesToB64(iv), ct: bytesToB64(ct) }) });
     lastPostError = res.ok ? '' : T(`⚠️ 보내지 못했어요(${res.status}) — 잠시 뒤 다시 보내 주세요`, `⚠️ Couldn't send (${res.status}) — try again in a moment`);
     return res.ok;
   } catch {
@@ -2384,13 +4781,30 @@ const rAsksEl = $('rAsks'), sayEl = $('rSay');
 let sayFor = null;               // 지시 칸이 어느 세션 것인지
 let remoteNote = null;           // 방금 보낸 것의 안내 {sid, at, text}
 
+let prevAskIds = null;
+
 /** PC 앱 화면: 앱이 원격 상태를 알려 줬다. */
 function onRemote(st) {
+  if (st?.s) {
+    const curAskIds = new Set();
+    for (const sid of Object.keys(st.s)) {
+      const asks = st.s[sid]?.asks;
+      if (asks) for (const a of asks) curAskIds.add(a.id);
+    }
+    if (prevAskIds !== null) {
+      let hasNew = false;
+      for (const id of curAskIds) if (!prevAskIds.has(id)) { hasNew = true; break; }
+      if (hasNew) playRetroSound('ask');
+    }
+    prevAskIds = curAskIds;
+  }
   remoteState = st || null;
+  if (PET_WINDOW) { renderPet(); return; }
   refreshHookButton();
   refreshHud();
   renderPanel();
   refreshSettings();
+  if (DEMO && petOn()) renderPet();
 }
 
 function remoteStatus() {
@@ -2403,27 +4817,64 @@ function remoteStatus() {
     + (st.away ? T(` · 🏃 자리 비움 ${fmtTime(st.since)}부터`, ` · 🏃 Away since ${fmtTime(st.since)}`) : ''), tone: '#7dffa0' };
 }
 
+let rCancelBtn = null, rWakeBtn = null, rGuideBtn = null;
+
 /**
- * 상세 패널의 원격 칸 — 휴대폰 화면(과 견본)에서만, 원격 훅을 연결했을 때. PC 앱에는 띄우지 않는다(1.2.1):
- * PC를 만지는 순간 자리 비움이 꺼져 휴대폰을 기다리던 승인은 저절로 PC 승인 창으로 가므로, PC에서는 할 일 없이 설명만 되풀이했다.
+ * 상세 패널의 지시·승인 칸 — 휴대폰 화면뿐 아니라 PC 본창 상세 패널에서도(Claude Code 와 연결했을 때) 바로 지시를 보내고 승인·거절·질문 선택을 할 수 있다.
  */
 function renderRemote(s) {
   const r = remoteOf(s.id);
-  $('pRemote').hidden = !r || !(REMOTE || DEMO);
+  const canShow = DEMO || (REMOTE ? !!r : claudeConnected() && s.act !== 'away');
+  $('pRemote').hidden = !r || !canShow;
   if ($('pRemote').hidden) return;
+  const h3 = $('pRemote').querySelector('h3');
+  if (h3) h3.textContent = REMOTE ? T('📱 휴대폰 지시·승인', '📱 Instruct & approve from the phone') : T('💬 지시 · 승인', '💬 Instruct & approve');
+
   const away = !!remoteState.away, idle = !!remoteState.idle;
   const asks = r.asks || [];
-  $('rStatus').textContent =
-    !away ? (idle ? T('💤 PC를 안 쓰고 있어요 — 지금부터 여기서 지시·승인할 수 있어요.', '💤 Nobody is using the PC — you can instruct and approve here from now on.')
+  $('rStatus').textContent = !REMOTE
+    ? (asks.length ? T(`✋ 지금 확인·답변을 기다리는 요청이 ${asks.length}건 있어요.`, `✋ ${asks.length} request(s) waiting for your approval or answer.`)
+      : actOf(s).busy ? T('💻 일하는 중 — 보낸 지시는 지금 작업이 끝나는 대로 이어서 전달됩니다.',
+        '💻 Working — an instruction will be delivered right after the current work ends.')
+      : r.listen ? T('📡 대기 중 — 보내면 바로 이 대화에서 이어서 일합니다.', '📡 Ready — an instruction continues this conversation right away.')
+      : T('⏳ 이 세션이 한 번 응답을 마치거나 새로 열리면 연결되어 지시가 전달됩니다.',
+        "⏳ Connects after this session's next answer or when reopened; instructions are delivered then."))
+    : !away ? (idle ? T('💤 PC를 안 쓰고 있어요 — 지금부터 여기서 지시·승인할 수 있어요.', '💤 Nobody is using the PC — you can instruct and approve here from now on.')
       : T('🖥️ PC를 쓰는 중이에요 — 자리를 뜨면 30초쯤 뒤부터 여기서 지시·승인할 수 있어요.',
         '🖥️ Someone is using the PC — about 30 s after you leave it, you can instruct and approve here.'))
-    : actOf(s).busy || asks.length ? T('⚙️ 일하는 중 — 보낸 지시는 이 대화에 이어서(지금 일 중간이나 끝나는 대로) 전합니다.',
-      '⚙️ Working — an instruction joins this conversation (during the current work or right after it).')
+    : actOf(s).busy || asks.length ? T('💻 일하는 중 — 보낸 지시는 이 대화에 이어서(지금 일 중간이나 끝나는 대로) 전합니다.',
+      '💻 Working — an instruction joins this conversation (during the current work or right after it).')
     : r.listen ? T('📡 연결됨 — 보내면 바로 이 대화에서 이어서 일합니다.', '📡 Connected — an instruction continues this conversation right away.')
     : T('⏳ 아직 연결 전 — 이 세션이 한 번 더 답을 마치거나 새로 열면 연결돼요. 보낸 지시는 그때 전합니다.',
       "⏳ Not connected yet — it connects after this session's next answer or when it is reopened. Instructions are delivered then.");
 
-  // 승인 요청: 칸은 요청마다 한 번만 만든다
+  // 🛑 긴급 작업 중단 버튼 (일하는 중일 때 상시 노출)
+  let rStopBtn = $('rStopBtn');
+  if (!rStopBtn) {
+    rStopBtn = elem('button', 'btn-stop-remote', T('🛑 긴급 작업 중단 (PC에 Ctrl+C 전송)', '🛑 Emergency Stop (Send Ctrl+C to PC)'));
+    rStopBtn.id = 'rStopBtn';
+    rStopBtn.title = T('현재 실행 중인 작업에 즉시 Ctrl+C 신호를 보냅니다', 'Send Ctrl+C to interrupt current task');
+    rStopBtn.addEventListener('click', async () => {
+      if (selectedId) {
+        rStopBtn.disabled = true;
+        rStopBtn.textContent = T('🛑 비상정지 신호 전송 중…', '🛑 Sending stop…');
+        await stopSession(selectedId);
+        rStopBtn.textContent = T('🛑 비상정지 신호 전송됨', '🛑 Stop Signal Sent');
+        setTimeout(() => {
+          if (rStopBtn) {
+            rStopBtn.textContent = T('🛑 긴급 작업 중단 (PC에 Ctrl+C 전송)', '🛑 Emergency Stop (Send Ctrl+C to PC)');
+            rStopBtn.disabled = false;
+          }
+        }, 2200);
+        markQuest('emergency_stop');
+      }
+    });
+    $('rStatus').insertAdjacentElement('afterend', rStopBtn);
+  }
+  const isWorking = (actOf(s).busy || asks.length > 0) && s.act !== 'away';
+  rStopBtn.hidden = !isWorking;
+
+  // 승인·질문 요청: 칸은 요청마다 한 번만 만든다
   const keep = new Set(asks.map((a) => a.id));
   for (const [id, el] of askEls) if (!keep.has(id) || el.dataset.sid !== s.id) { el.remove(); askEls.delete(id); }
   for (const a of asks) {
@@ -2435,18 +4886,44 @@ function renderRemote(s) {
   }
   for (const [id, at] of answered) if (Date.now() - at > 120000) answered.delete(id);
 
-  // 지시 보내기(휴대폰에서, 자리 비움이거나 PC를 아무도 안 쓸 때 — 보내면 PC가 자리 비움을 켠다)
-  $('rSayWrap').hidden = !REMOTE || !(away || idle);
+  // 지시 보내기: PC 본창에서는 늘 보이고, 휴대폰에서는 자리 비움이거나 PC를 아무도 안 쓸 때 보인다
+  $('rSayWrap').hidden = REMOTE && !(away || idle);
   if (sayFor !== s.id) { sayFor = s.id; sayEl.value = ''; }
-  if (remoteNote && r.said && r.said.t >= remoteNote.at - 5000 && remoteNote.sid === s.id) remoteNote = null;   // PC가 처리했다
+  $('rQuickChips')?.remove();
+  if (remoteNote && r.said && r.said.t > remoteNote.at && remoteNote.sid === s.id) remoteNote = null;   // PC가 처리했다
   $('rSaid').textContent = remoteNote && remoteNote.sid === s.id && Date.now() - remoteNote.at < 30000 ? remoteNote.text
     : saidText(r.said, actOf(s).busy || asks.length > 0);
+  if (!rCancelBtn) {
+    const rSaidEl = $('rSaid');
+    rCancelBtn = elem('button', 'cancel-q', T('취소', 'Cancel'));
+    rCancelBtn.title = T('아직 전달되지 않은 대기 중 지시를 취소합니다', 'Cancel the queued instruction');
+    rCancelBtn.addEventListener('click', () => { if (selectedId) cancelQueuedSay(selectedId); });
+    rWakeBtn = elem('button', 'wake-term', T('🖥️ 터미널로', '🖥️ Terminal'));
+    rWakeBtn.title = T('터미널 창으로 이동 후 Ctrl+V로 붙여넣고 Enter를 누르세요 (지시가 복사됨)', 'Focus terminal & press Ctrl+V then Enter (copied)');
+    rWakeBtn.addEventListener('click', () => {
+      if (selectedId) onWakeTerminal(selectedId);
+    });
+    rGuideBtn = elem('button', 'guide-link', T('ℹ️ 연결 안내', 'ℹ️ Guide'));
+    rGuideBtn.title = T('세션 최초 연결 방법 안내 보기', 'View first-time connection guide');
+    rGuideBtn.addEventListener('click', () => {
+      if (selectedId) openConnectGuide(selectedId);
+    });
+    const wrap = elem('span', 'said-wrap');
+    rSaidEl.replaceWith(wrap);
+    wrap.append(rSaidEl, rCancelBtn, rWakeBtn, rGuideBtn);
+  }
+  const isQueued = r.said && r.said.state === 'queued';
+  rCancelBtn.hidden = !isQueued;
+  if (rWakeBtn) rWakeBtn.hidden = !(isQueued && !r.listen);
+  if (rGuideBtn) rGuideBtn.hidden = !(isQueued && !r.listen);
 
-  // Claude 의 마지막 답(Stop 훅이 알려 준 것)
-  $('rReplyWrap').hidden = !r.reply;
-  if (r.reply) {
-    $('rReplyHead').textContent = T(`💬 마지막 답 · ${fmtTime(r.reply.t)}`, `💬 Last answer · ${fmtTime(r.reply.t)}`);
-    if ($('rReply').textContent !== r.reply.text) $('rReply').textContent = r.reply.text;   // 같으면 그대로(읽던 위치가 튀지 않게)
+  // Claude 의 마지막 답(Stop 훅이 알려 준 것 또는 대화 기록의 마지막 답변 요약 중 더 최신인 것)
+  const useStopReply = r.reply && r.reply.text && (!s.reply || (r.reply.t || 0) >= (s.last || 0));
+  const replyObj = useStopReply ? r.reply : (s.reply ? { text: s.reply, t: s.last } : r.reply);
+  $('rReplyWrap').hidden = !replyObj;
+  if (replyObj) {
+    $('rReplyHead').textContent = T(`💬 마지막 답 · ${fmtTime(replyObj.t)}`, `💬 Last answer · ${fmtTime(replyObj.t)}`);
+    if ($('rReply').textContent !== replyObj.text) $('rReply').textContent = replyObj.text;   // 같으면 그대로(읽던 위치가 튀지 않게)
   }
 }
 
@@ -2454,11 +4931,11 @@ function renderRemote(s) {
 function saidText(d, working) {
   if (!d) return '';
   const when = fmtTime(d.t);
-  return d.state === 'delivered' ? T(`✅ 전했어요 · ${when}`, `✅ Delivered · ${when}`)
+  return d.state === 'delivered' ? T(`✅ 지시 전달 완료 · ${when}`, `✅ Delivered · ${when}`)
     : d.state === 'queued' ? (working
-      ? T(`⏳ 기다리는 중 · ${when} — 일을 마치면 바로 전해요`, `⏳ Waiting · ${when} — delivered when the current work ends`)
-      : T(`⏳ 아직 못 전했어요 · ${when} — 이 세션이 연결되는 대로 전해요(위 안내)`, `⏳ Not delivered yet · ${when} — sent as soon as this session connects (see above)`))
-    : T(`⚠️ 전하지 못했어요 · ${when} — PC를 쓰는 중이었어요`, `⚠️ Not delivered · ${when} — someone was using the PC`);
+      ? T(`⏳ 대기열 등록됨 · ${when} (작업 완료 후 자동 전달)`, `⏳ Queued · ${when} (delivered after current task)`)
+      : T(`⏳ 최초 1회 연결 필요 · ${when} — [🖥️ 터미널로] 클릭`, `⏳ First-time connection needed · ${when} — click [🖥️ Terminal]`))
+    : T(`⚠️ 전하지 못했어요 · ${when} (PC 작업 중)`, `⚠️ Not delivered · ${when} (PC in use)`);
 }
 
 /**
@@ -2477,40 +4954,142 @@ function askAwayWhileWatching() {
 if (REMOTE) document.addEventListener('visibilitychange', askAwayWhileWatching);
 
 function makeAsk(sid, a) {
+  const isQuestion = a.kind === 'question' || (Array.isArray(a.options) && a.options.length > 0);
   const el = elem('div', 'rask');
   el.dataset.sid = sid;
   const head = elem('div', '');
-  head.append(elem('span', 'what', T('✋ 승인 요청: ', '✋ Approve: ') + a.text), elem('span', 'dim age'));
+  head.append(
+    elem('span', 'what', (isQuestion ? T('❓ 질문: ', '❓ Question: ') : T('✋ 승인 요청: ', '✋ Approve: ')) + a.text),
+    elem('span', 'dim age')
+  );
   el.append(head);
-  if (a.detail) el.append(elem('div', 'cmd', a.detail));
+  if (a.detail) el.append(elem('div', isQuestion ? 'qtxt' : 'cmd', a.detail));
+
   const btns = elem('div', 'btns');
   const why = elem('input', 'field');
   why.type = 'text';
   why.maxLength = 1000;
+
+  if (isQuestion) {
+    if (Array.isArray(a.options) && a.options.length > 0) {
+      const opts = elem('div', 'opts');
+      for (const opt of a.options) {
+        const ob = elem('button', 'opt-btn', `👉 ${opt}`);
+        ob.addEventListener('click', () => answerAsk(sid, a.id, true, opt, true));
+        opts.append(ob);
+      }
+      el.append(opts);
+    }
+    why.placeholder = T('직접 답 입력 (선택)', 'Type a custom answer (optional)');
+    const sendAns = () => {
+      const val = why.value.trim() || (Array.isArray(a.options) && a.options[0]) || '';
+      if (val) answerAsk(sid, a.id, true, val, true);
+    };
+    why.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendAns(); } });
+    btns.append(why);
+    if (!REMOTE) {
+      const term = elem('button', 'mini rbtn', T('🖥️ 터미널에서', '🖥️ In terminal'));
+      term.addEventListener('click', () => answerAsk(sid, a.id, null, '', true));
+      btns.append(term);
+    }
+    const ok = elem('button', 'mini rbtn ok', T('💬 답 보내기', '💬 Send answer'));
+    ok.addEventListener('click', sendAns);
+    btns.append(ok);
+    el.append(btns);
+    return el;
+  }
+
   why.placeholder = T('대신 할 일 (선택)', 'Do instead (optional)');
   why.title = T('거절할 때 Claude 에게 대신 시킬 일 — 거절한 뒤 지시로 따로 전합니다', 'What Claude should do instead when you deny — sent as a separate instruction after the denial');
+  btns.append(why);
+  if (!REMOTE) {
+    const term = elem('button', 'mini rbtn', T('🖥️ 터미널에서', '🖥️ In terminal'));
+    term.addEventListener('click', () => answerAsk(sid, a.id, null, '', false));
+    btns.append(term);
+  }
   const no = elem('button', 'mini rbtn no', T('거절', 'Deny'));
   const ok = elem('button', 'mini rbtn ok', T('승인', 'Approve'));
-  no.addEventListener('click', () => answerAsk(sid, a.id, false, why.value));
-  ok.addEventListener('click', () => answerAsk(sid, a.id, true, ''));
-  btns.append(why, no, ok);
+  no.addEventListener('click', () => answerAsk(sid, a.id, false, why.value, false));
+  ok.addEventListener('click', () => answerAsk(sid, a.id, true, '', false));
+  btns.append(no, ok);
   el.append(btns);
   return el;
 }
 
-async function answerAsk(sid, id, allow, why) {
+async function answerAsk(sid, id, allow, why, isQuestion = false) {
+  if (!REMOTE) {
+    answerPetAsk(sid, id, allow, why, isQuestion);
+    return;
+  }
   if (!remoteKey) return;
   answered.set(id, Date.now());
   renderPanel();
-  const ok = await postInbox({ k: allow ? 'ok' : 'no', sid, req: id, text: allow ? '' : why.trim().slice(0, 1000) });
-  remoteNote = { sid, at: Date.now(), text: ok ? (allow ? T('👍 승인을 보냈어요', '👍 Approval sent') : T('🚫 거절을 보냈어요', '🚫 Denial sent')) : lastPostError };
+  const text = (why || '').trim().slice(0, 1000);
+  const ok = await postInbox({ k: allow ? 'ok' : 'no', sid, req: id, text: allow && !isQuestion ? '' : text });
+  const doneMsg = allow
+    ? (isQuestion && text ? T(`💬 "${text.slice(0, 22)}" 답을 보냈어요`, `💬 Answered "${text.slice(0, 22)}"`) : T('👍 승인을 보냈어요', '👍 Approval sent'))
+    : T('🚫 거절을 보냈어요', '🚫 Denial sent');
+  remoteNote = { sid, at: Date.now(), text: ok ? doneMsg : lastPostError };
   if (!ok) answered.delete(id);
   renderPanel();
 }
 
 async function sendSay() {
   const sid = selectedId, text = sayEl.value.trim();
-  if (!sid || !text || !remoteKey) return;
+  if (!sid || !text) return;
+  if (text.startsWith('/')) {
+    sayEl.value = '';
+    wakeTerminal(sid, text);
+    remoteNote = { sid, at: Date.now(), text: T(`📋 슬래시 명령(${text})은 터미널 전용입니다! 터미널로 이동됨 (Ctrl+V 후 Enter)`, `📋 Slash command (${text}) is terminal-only! Switched to terminal (Ctrl+V then Enter)`) };
+    renderPanel();
+    return;
+  }
+  if (!REMOTE) {
+    sayEl.value = '';
+    if (DEMO) {
+      if (!remoteState) remoteState = { installed: true, away: false, s: {} };
+      if (!remoteState.s) remoteState.s = {};
+      const cur = remoteState.s[sid] || { listen: true };
+      const s = data.sessions.find((x) => x.id === sid);
+      const busy = s ? actOf(s).busy : false;
+      const isQueued = busy || !cur.listen;
+      cur.said = { text: text.slice(0, 1000), t: Date.now(), state: isQueued ? 'queued' : 'delivered' };
+      remoteState.s[sid] = cur;
+      if (s && !busy && cur.listen) s.prompt = text.slice(0, 200);
+      remoteNote = {
+        sid,
+        at: Date.now(),
+        text: busy
+          ? T('⏳ 작업이 끝나는 대로 전달하도록 대기열에 넣었어요', '⏳ Queued for delivery when current work ends')
+          : (!cur.listen
+            ? T('⏳ 최초 1회 연결 필요 — [🖥️ 터미널로] 클릭', '⏳ First connection needed — click [🖥️ Terminal]')
+            : T(`✅ "${text.slice(0, 28)}" 지시를 전했어요`, `✅ Sent "${text.slice(0, 28)}"`))
+      };
+      renderPanel();
+      if (petOn()) renderPet();
+      if (!cur.listen && !store.get('skipConnectGuide', false)) {
+        openConnectGuide(sid);
+      }
+      return;
+    }
+    send({ cmd: 'pet-say', sid, text: text.slice(0, 1000) });
+    playRetroSound('send');
+    const r = remoteOf(sid);
+    const listening = r && r.listen;
+    remoteNote = {
+      sid,
+      at: Date.now(),
+      text: listening
+        ? T('🚀 지시를 보냈어요…', '🚀 Instruction sent…')
+        : T('⏳ 최초 1회 연결 필요 — [🖥️ 터미널로] 클릭', '⏳ First connection needed — click [🖥️ Terminal]')
+    };
+    renderPanel();
+    if (!listening && !store.get('skipConnectGuide', false)) {
+      openConnectGuide(sid);
+    }
+    return;
+  }
+  if (!remoteKey) return;
   $('rSend').disabled = true;
   const ok = await postInbox({ k: 'say', sid, text: text.slice(0, 1000) });
   $('rSend').disabled = false;
@@ -2519,7 +5098,12 @@ async function sendSay() {
   renderPanel();
 }
 $('rSend').addEventListener('click', sendSay);
-sayEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendSay(); } });
+sayEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || (!REMOTE && !e.shiftKey))) {
+    e.preventDefault();
+    sendSay();
+  }
+});
 
 const RECONNECTING = T('연결이 끊겨 다시 잇는 중…', 'Disconnected, reconnecting…');
 
@@ -2570,7 +5154,10 @@ async function startRemote() {
     }
     try {
       const p = remoteNode;
-      const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(p.iv) }, key, b64ToBytes(p.ct)));
+      const params = p.v >= 2
+        ? { name: 'AES-GCM', iv: b64ToBytes(p.iv), additionalData: new TextEncoder().encode('office:' + remoteLink.u) }
+        : { name: 'AES-GCM', iv: b64ToBytes(p.iv) };
+      const plain = new Uint8Array(await crypto.subtle.decrypt(params, key, b64ToBytes(p.ct)));
       const obj = JSON.parse(new TextDecoder().decode(p.z ? await gunzip(plain) : plain));
       if (followPcLanguage(obj.lang)) return;
       remoteShare = obj.share || {};
@@ -2646,6 +5233,19 @@ function startDemo() {
           last: t - 1500,
           started: base - (people.length - i) * 600000,
           prompt: T('결제 실패 시 재시도 로직을 점검하고, 실패한 요청은 로그에 남겨줘', 'Check the retry logic for failed payments and log the failed requests'),
+          reply: T('장바구니 수량 계산과 결제 재시도 로직을 점검하고 단위 테스트 12개를 통과했습니다.', 'Checked the cart quantity and payment retry logic; all 12 unit tests pass.'),
+          thinking: p.id === 'demo-a1' ? T('결제 실패 재시도 정책을 분석 중입니다. PaymentClient에서 네트워크 예외를 잡아서 재시도 큐에 넣고 지수 백오프(exponential backoff)를 적용할 예정입니다.',
+            'Analyzing payment retry policy. Catching network exceptions in PaymentClient, placing them in retry queue, and applying exponential backoff.') : null,
+          todos: p.id === 'demo-a1' ? [
+            { content: T('장바구니 수량 계산 버그 수정', 'Fix cart quantity calculation bug'), status: 'completed' },
+            { content: T('결제 재시도 로직 단위 테스트 작성', 'Write unit tests for retry logic'), status: 'in_progress' },
+            { content: T('오류 로깅 모듈 추가', 'Add error logging module'), status: 'pending' },
+          ] : p.id === 'demo-b1' ? [
+            { content: T('보안 토큰 환경변수 분리 리팩토링', 'Refactor auth token to env vars'), status: 'in_progress' },
+            { content: T('CI/CD 파이프라인 시크릿 스캔 연동', 'Integrate secret scan into CI/CD'), status: 'pending' },
+          ] : null,
+          secret: p.id === 'demo-b1',
+          ctx: p.id === 'demo-c2' ? null : (p.id === 'demo-a1' ? 168000 : 58000 + i * 24000),
           recent: [
             { t: t - 4000, icon, text },
             { t: t - 9000, icon: '📄', text: T('Program.cs 읽는 중', 'Reading Program.cs') },
@@ -2662,14 +5262,28 @@ function startDemo() {
             cacheRead: 3200000 - i * 400000, cacheWrite: 180000 - i * 20000,
             tools: [{ n: 'Bash', c: 34 - i * 3 }, { n: 'Read', c: 22 - i }, { n: 'Edit', c: 12 - i }, { n: 'Grep', c: 9 }],
           },
+          yesterday: {
+            work: (110 - i * 12) * 60000, prompts: 18 - i, in: 52000 + i * 2000, out: 64000 - i * 5000,
+            cacheRead: 3900000 - i * 350000, cacheWrite: 210000 - i * 18000,
+            tools: [{ n: 'Read', c: 28 - i * 2 }, { n: 'Edit', c: 19 - i }, { n: 'Bash', c: 15 }],
+          },
+          week: {
+            work: (420 - i * 45) * 60000, prompts: 68 - i * 5, in: 210000 + i * 10000, out: 250000 - i * 20000,
+            cacheRead: 14500000 - i * 1200000, cacheWrite: 780000 - i * 60000,
+            tools: [{ n: 'Bash', c: 120 - i * 10 }, { n: 'Read', c: 95 - i * 6 }, { n: 'Edit', c: 54 - i * 4 }, { n: 'Grep', c: 38 }],
+          },
         };
       }),
     };
   }
 
-  // 자리 비움 원격 견본: 한 직원은 휴대폰 승인을 기다리고, 한 직원은 휴대폰 지시를 받아 답했다
+  // 자리 비움 원격 견본: 한 직원은 명령 승인을 기다리고, 한 직원은 객관식 질문을 묻고, 한 직원은 지시를 받아 답했다
   remoteState = { installed: true, away: true, since: base - 600000, s: {
-    'demo-b1': { listen: false, asks: [{ id: 'demo-ask', text: T('빌드하는 중', 'Building'), detail: 'dotnet build -c Release', t: base - 40000 }] },
+    'demo-b1': { listen: false, asks: [{ id: 'demo-ask', kind: 'tool', text: T('빌드하는 중', 'Building'), detail: 'dotnet build -c Release', t: base - 40000 }] },
+    'demo-a2': { listen: false, asks: [{ id: 'demo-q1', kind: 'question', text: T('질문에 답해주세요!', 'Got a question!'),
+      detail: T('버튼 강조 색상을 어떤 톤으로 통일할까요?', 'Which accent tone should we use for buttons?'),
+      options: [T('보라색 (#7c6be0 · 기본)', 'Purple (#7c6be0 · default)'), T('민트색 (#3ccf91)', 'Mint (#3ccf91)'), T('앰버 골드 (#ffb347)', 'Amber gold (#ffb347)')],
+      t: base - 25000 }] },
     'demo-a1': { listen: true, said: { text: T('장바구니 테스트도 돌려줘', 'Run the cart tests too'), t: base - 120000, state: 'delivered' },
       reply: { text: T('장바구니 수량 버그를 고치고 테스트 12개를 모두 통과했어요. 바뀐 파일은 CartService.cs 하나입니다.',
         'Fixed the cart quantity bug and all 12 tests pass. Only CartService.cs changed.'), t: base - 30000 } },
@@ -2682,9 +5296,14 @@ function startDemo() {
 // ───────────────────────────── 시작 ─────────────────────────────
 
 buildSettings();
+initConnectGuide();
+initWhiteboardModal();
+initAchieveModal();
 refreshButtons();
+applyPetState();
 refreshHud();
 if (selectedId === 'settings') setSettingsOpen(true, params.get('tab'));   // 화면 점검용: ?select=settings&tab=phone
+if (selectedId === 'pet') selectedId = null;   // ?select=pet 은 바탕화면 미니펫 미리보기를 켠다
 window.addEventListener('resize', () => { layoutKey = ''; });
 
 if (REMOTE) {
@@ -2709,6 +5328,8 @@ if (REMOTE) {
     else if (m?.type === 'remote') onRemote(m.data);
     else if (m?.type === 'select') selectSession(m.id);
     else if (m?.type === 'reset') resetScreenSettings();
+    else if (m?.type === 'visible') windowHidden = !m.value;
+    else if (m?.type === 'sound') playRetroSound(m.kind);
     else onSnapshot(m);
   });
   send({ cmd: 'ready' });   // 앱이 저장해 둔 별명·메모(share)를 돌려주면 합쳐서 다시 보낸다(onSavedShare)

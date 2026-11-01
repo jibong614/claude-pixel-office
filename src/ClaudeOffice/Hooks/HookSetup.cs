@@ -1,4 +1,5 @@
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -51,11 +52,60 @@ internal static class HookSetup
     private static readonly object CacheLock = new();
     private static DateTime _cachedWriteUtc;
     private static (bool Monitor, bool Remote) _cached;
+    private static string? _token;
+    private static string? _tokenDir;
 
     public static string SettingsPath => Path.Combine(TranscriptWatcher.ConfigDir(), "settings.json");
 
+    /// <summary>
+    /// 같은 PC의 다른 프로그램이 훅 포트(127.0.0.1)로 가짜 이벤트나 지시 대기를 보내지 못하게 하는 로컬 인증 토큰.
+    /// Claude 설정 폴더(.claude/.claudeoffice-token)에 두고 훅 명령 헤더(X-ClaudeOffice-Token)와 수신기(HookServer)가 대조한다.
+    /// </summary>
+    public static string Token
+    {
+        get
+        {
+            var dir = TranscriptWatcher.ConfigDir();
+            lock (CacheLock)
+            {
+                if (_token != null && _tokenDir == dir) return _token;
+                var path = Path.Combine(dir, ".claudeoffice-token");
+                try
+                {
+                    if (File.Exists(path))
+                    {
+                        var saved = File.ReadAllText(path).Trim();
+                        if (saved.Length == 32 && saved.All(Uri.IsHexDigit))
+                        {
+                            _tokenDir = dir;
+                            return _token = saved;
+                        }
+                    }
+                    Directory.CreateDirectory(dir);
+                    var created = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+                    File.WriteAllText(path, created, new UTF8Encoding(false));
+                    _tokenDir = dir;
+                    return _token = created;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _tokenDir = dir;
+                    return _token ??= Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+                }
+            }
+        }
+    }
+
+    public static bool ValidToken(string? candidate)
+    {
+        if (string.IsNullOrEmpty(candidate)) return false;
+        var expected = Encoding.ASCII.GetBytes(Token);
+        var actual = Encoding.UTF8.GetBytes(candidate);
+        return CryptographicOperations.FixedTimeEquals(expected, actual);
+    }
+
     public static string Command =>
-        $"curl -s -o /dev/null -m 1 -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{HookServer.Port}/hook 2>/dev/null; exit 0 {Marker}";
+        $"curl -s -o /dev/null -m 1 -H \"Content-Type: application/json\" -H \"X-ClaudeOffice-Token: {Token}\" --data-binary @- http://127.0.0.1:{HookServer.Port}/hook 2>/dev/null; exit 0 {Marker}";
 
     /// <summary>
     /// Git Bash 가 없는 PC용. 표준 입력을 바이트 그대로 보낸다(Windows PowerShell 은 표준 입력을 시스템 코드 페이지로 읽어 한글이 깨지므로 글자로 읽지 않는다).
@@ -63,12 +113,12 @@ internal static class HookSetup
     /// </summary>
     public static string PowerShellCommand =>
         "try { $m = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($m); " +
-        $"Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/hook -ContentType 'application/json' -Body $m.ToArray() -TimeoutSec 2 | Out-Null " +
+        $"Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/hook -ContentType 'application/json' -Headers @{{'X-ClaudeOffice-Token'='{Token}'}} -Body $m.ToArray() -TimeoutSec 2 | Out-Null " +
         $"}} catch {{}}; exit 0 {Marker}";
 
     /// <summary>원격 승인(bash): 응답(결정 JSON 이나 빈 것)을 그대로 표준 출력으로. 꺼져 있으면 아무것도 안 나와 평소 승인 창.</summary>
     private static string RemoteApproveBash =>
-        $"curl -s -m {ApproveTimeout - 10} -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{HookServer.Port}/remote/approve 2>/dev/null; exit 0 {RemoteMarker}";
+        $"curl -s -m {ApproveTimeout - 10} -H \"Content-Type: application/json\" -H \"X-ClaudeOffice-Token: {Token}\" --data-binary @- http://127.0.0.1:{HookServer.Port}/remote/approve 2>/dev/null; exit 0 {RemoteMarker}";
 
     /// <summary>
     /// 원격 지시 대기(bash): 지시가 오면 stderr 로 내보내고 종료 코드 2(asyncRewake → 세션이 깨어 그 글을 받음). 빈 답이면 조용히 끝.
@@ -80,7 +130,7 @@ internal static class HookSetup
         "in=$(cat); sid=$(printf '%s' \"$in\" | grep -o '\"session_id\" *: *\"[0-9A-Za-z_-]*\"' | head -n 1 | tr -d '\" ' | cut -d: -f2); [ -n \"$sid\" ] || sid=x$$; " +
         "f=\"${TMPDIR:-/tmp}/claudeoffice-listen-$sid\"; me=\"$$.$RANDOM\"; printf '%s' \"$me\" > \"$f\" 2>/dev/null; " +
         "trap '[ \"$(cat \"$f\" 2>/dev/null)\" = \"$me\" ] && rm -f \"$f\"' EXIT; while :; do " +
-        $"out=$(printf '%s' \"$in\" | curl -s -m {ListenTimeout - 400} -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{HookServer.Port}/remote/listen 2>/dev/null); " +
+        $"out=$(printf '%s' \"$in\" | curl -sf -m {ListenTimeout - 400} -H \"Content-Type: application/json\" -H \"X-ClaudeOffice-Token: {Token}\" --data-binary @- http://127.0.0.1:{HookServer.Port}/remote/listen 2>/dev/null); " +
         "if [ $? -eq 0 ]; then [ -n \"$out\" ] && { printf '%s' \"$out\" >&2; exit 2; }; exit 0; fi; " +
         "sleep 15; [ \"$(cat \"$f\" 2>/dev/null)\" = \"$me\" ] || exit 0; done; " +
         $"exit 0 {RemoteMarker}";
@@ -88,21 +138,21 @@ internal static class HookSetup
     /// <summary>원격 승인(PowerShell). 결정 JSON 은 ASCII 라 콘솔 코드 페이지와 상관없다.</summary>
     private static string RemoteApprovePowerShell =>
         "try { $m = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($m); " +
-        $"$r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/remote/approve -ContentType 'application/json' -Body $m.ToArray() -TimeoutSec {ApproveTimeout - 10}; " +
+        $"$r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/remote/approve -ContentType 'application/json' -Headers @{{'X-ClaudeOffice-Token'='{Token}'}} -Body $m.ToArray() -TimeoutSec {ApproveTimeout - 10}; " +
         $"if ($r.Content) {{ [Console]::Out.Write($r.Content) }} }} catch {{}}; exit 0 {RemoteMarker}";
 
     /// <summary>
     /// 원격 지시 대기(PowerShell). 지시 글은 받은 바이트(UTF-8) 그대로 stderr 에 쓴다(글자로 바꾸면 한글이 깨진다).
-    /// 다시 붙기·밀려나면 끝내기는 bash 와 같다. HTTP 오류 답(예전 버전 등)이면 끝.
+    /// 다시 붙기·밀려나면 끝내기는 bash 와 같다.
     /// </summary>
     private static string RemoteListenPowerShell =>
         "$m = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($m); $b = $m.ToArray(); " +
         "$sid = if ([Text.Encoding]::UTF8.GetString($b) -match '\"session_id\"\\s*:\\s*\"([0-9A-Za-z_-]+)\"') { $Matches[1] } else { \"x$PID\" }; " +
         "$f = Join-Path $env:TEMP \"claudeoffice-listen-$sid\"; $me = \"$PID.$(Get-Random)\"; try { [IO.File]::WriteAllText($f, $me) } catch {}; " +
         "$mine = { try { [IO.File]::ReadAllText($f) -eq $me } catch { $false } }; try { while ($true) { try { " +
-        $"$r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/remote/listen -ContentType 'application/json' -Body $b -TimeoutSec {ListenTimeout - 400}; " +
+        $"$r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/remote/listen -ContentType 'application/json' -Headers @{{'X-ClaudeOffice-Token'='{Token}'}} -Body $b -TimeoutSec {ListenTimeout - 400}; " +
         "$o = $r.RawContentStream.ToArray(); if ($o.Length -gt 0) { $e = [Console]::OpenStandardError(); $e.Write($o, 0, $o.Length); $e.Flush(); exit 2 }; exit 0 " +
-        "} catch { if ($_.Exception.Response) { exit 0 }; Start-Sleep -Seconds 15; if (-not (& $mine)) { exit 0 } } } } " +
+        "} catch { Start-Sleep -Seconds 15; if (-not (& $mine)) { exit 0 } } } } " +
         "finally { if (& $mine) { Remove-Item -LiteralPath $f -ErrorAction SilentlyContinue } }; " +
         $"exit 0 {RemoteMarker}";
 
@@ -171,7 +221,12 @@ internal static class HookSetup
     public static void Install()
     {
         var (root, fmt) = Load();
-        var hooks = HooksOf(root);
+        InstallMonitorCore(HooksOf(root));
+        Save(root, fmt);
+    }
+
+    private static void InstallMonitorCore(JsonObject hooks)
+    {
         Remove(hooks, IsMonitor);
         bool bash = FindGitBash() != null;
         foreach (var (ev, isAsync) in Events)
@@ -182,15 +237,14 @@ internal static class HookSetup
             if (isAsync) handler["async"] = true;
             Add(hooks, ev, handler);
         }
-        Save(root, fmt);
     }
 
-    /// <summary>자리 비움 원격 훅을 넣는다. 세션 종료로 정리하는 데 알림 훅도 쓰므로 함께 넣는다.</summary>
+    /// <summary>자리 비움 원격 훅을 넣는다. 세션 종료로 정리하는 데 알림 훅도 쓰므로 함께 넣는다(한 번에 저장해 원본 .bak 보존).</summary>
     public static void InstallRemote()
     {
-        if (!IsInstalled()) Install();
         var (root, fmt) = Load();
         var hooks = HooksOf(root);
+        InstallMonitorCore(hooks);
         Remove(hooks, IsRemote);
         bool bash = FindGitBash() != null;
         foreach (var (ev, kind) in RemoteEvents)
@@ -216,21 +270,22 @@ internal static class HookSetup
     }
 
     /// <summary>
-    /// 예전 버전이 넣은 원격 훅 명령을 지금 것으로 바꾼다(앱을 켤 때). 사용자가 이미 연결해 둔 우리 줄만 고치므로 따로 묻지 않는다.
+    /// 예전 버전이 넣은 훅 명령(원격·알림)을 지금 것으로 바꾼다(앱을 켤 때). 사용자가 이미 연결해 둔 우리 줄만 고치므로 따로 묻지 않는다.
     /// 이 포트를 쓰는 훅일 때만 — 점검용 포트(CLAUDEOFFICE_HOOK_PORT)로 켠 시험 앱이 실제 연결을 바꾸지 않게. 바꿨으면 true.
     /// </summary>
     public static bool UpgradeRemote()
     {
-        if (!IsRemoteInstalled()) return false;
+        var (mon, rem) = Status();
+        if (!mon && !rem) return false;
         var (root, _) = Load();
         if (root["hooks"] is not JsonObject hooks) return false;
         var commands = hooks.Select(kv => kv.Value).OfType<JsonArray>()
             .SelectMany(groups => groups.OfType<JsonObject>()).Select(g => g["hooks"]).OfType<JsonArray>()
-            .SelectMany(handlers => handlers).Where(IsRemote).Select(CommandOf).ToList();
-        var current = new[] { RemoteListenBash, RemoteApproveBash, RemoteListenPowerShell, RemoteApprovePowerShell };
+            .SelectMany(handlers => handlers).Where(IsOurs).Select(CommandOf).ToList();
+        var current = new[] { Command, PowerShellCommand, RemoteListenBash, RemoteApproveBash, RemoteListenPowerShell, RemoteApprovePowerShell };
         var port = $"127.0.0.1:{HookServer.Port}/";
         if (commands.All(c => current.Contains(c)) || !commands.All(c => c?.Contains(port, StringComparison.Ordinal) == true)) return false;
-        InstallRemote();
+        if (rem) InstallRemote(); else Install();
         return true;
     }
 

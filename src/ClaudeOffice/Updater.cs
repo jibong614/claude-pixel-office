@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using ClaudeOffice.Monitoring;
 
 namespace ClaudeOffice;
@@ -56,6 +57,13 @@ internal sealed class Updater
     public async Task<bool> RunAsync(string version, string zipUrl, string shaUrl, IEnumerable<string> extraArgs)
     {
         if (State is "downloading" or "installing") return false;
+        const string ReleasePrefix = $"https://github.com/{UpdateChecker.Repo}/releases/download/";
+        if (!Version.TryParse(version, out _) || version.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+            || !zipUrl.StartsWith(ReleasePrefix, StringComparison.Ordinal) || !shaUrl.StartsWith(ReleasePrefix, StringComparison.Ordinal))
+        {
+            Set("error", 0, L.T("업데이트 주소나 버전 형식이 올바르지 않습니다", "Invalid update URL or version format"));
+            return false;
+        }
         var staging = Path.Combine(AppDir, StagingPrefix + version);
         try
         {
@@ -76,14 +84,23 @@ internal sealed class Updater
             if (actual != expected)
                 throw new InvalidDataException(L.T("받은 파일이 릴리스와 다릅니다(SHA-256 불일치) — 바꾸지 않았습니다", "Downloaded file doesn't match the release (SHA-256) — nothing changed"));
 
+            // 압축 폭탄(Zip Bomb)·비정상 항목 방어: 풀기 전에 항목 수와 압축 해제 크기를 먼저 확인한다
+            using (var archive = ZipFile.OpenRead(zip))
+            {
+                if (archive.Entries.Count == 0 || archive.Entries.Count > 200 || archive.Entries.Sum(e => e.Length) > 300L * 1024 * 1024)
+                    throw new InvalidDataException(L.T("릴리스 zip 의 크기나 항목 수가 비정상적입니다", "The release zip size or entry count is abnormal"));
+            }
+
             var files = Path.Combine(staging, "files");
             ZipFile.ExtractToDirectory(zip, files);   // 폴더 밖으로 나가는 항목은 .NET 이 막는다
             var newExe = Path.Combine(files, "ClaudeOffice.exe");
             if (!File.Exists(newExe) || !File.Exists(Path.Combine(files, "wwwroot", "index.html")))
                 throw new InvalidDataException(L.T("릴리스 zip 에 프로그램 파일이 없습니다", "The release zip has no program files"));
-            var newVer = FileVersionInfo.GetVersionInfo(newExe).ProductVersion ?? "";
-            if (!newVer.StartsWith(version, StringComparison.Ordinal))
+            var info = FileVersionInfo.GetVersionInfo(newExe);
+            var newVer = info.ProductVersion ?? "";
+            if (!newVer.StartsWith(version, StringComparison.Ordinal) || info.ProductName != "Claude Office")
                 throw new InvalidDataException(L.T($"zip 안의 버전({newVer})이 {version} 이 아닙니다", $"The zip contains version {newVer}, not {version}"));
+            VerifySignatureContinuity(newExe);
 
             Swap(files);
             var args = new List<string> { "--updated", $"--wait={Environment.ProcessId}" };
@@ -162,6 +179,26 @@ internal sealed class Updater
             await Task.Delay(3000);
         }
     });
+
+    /// <summary>지금 실행 파일에 코드 서명이 있으면 새 실행 파일도 같은 발급 주체의 서명이 있는지 확인한다.</summary>
+    private static void VerifySignatureContinuity(string newExe)
+    {
+        if (Environment.ProcessPath is not { } currentExe) return;
+        X509Certificate? currentCert;
+        try { currentCert = X509Certificate.CreateFromSignedFile(currentExe); }
+        catch (CryptographicException) { return; }   // 서명 없는 빌드
+        try
+        {
+            using var c1 = new X509Certificate2(currentCert);
+            using var c2 = new X509Certificate2(X509Certificate.CreateFromSignedFile(newExe));
+            if (!string.Equals(c1.Subject, c2.Subject, StringComparison.Ordinal) || !c2.Verify())
+                throw new InvalidDataException(L.T("새 실행 파일의 디지털 서명이 현재 버전과 다릅니다", "The new executable's digital signature does not match"));
+        }
+        catch (CryptographicException)
+        {
+            throw new InvalidDataException(L.T("새 실행 파일에 디지털 서명이 없습니다", "The new executable is not digitally signed"));
+        }
+    }
 
     private static void DeletePath(string p)
     {

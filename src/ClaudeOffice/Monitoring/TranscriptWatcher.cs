@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
@@ -46,6 +47,7 @@ public sealed class TranscriptWatcher : IDisposable
     private volatile bool _reparseNow;
     private CancellationTokenSource? _cts;
     private volatile string? _lastSnapshot;
+    private string? _lastBody;
 
     public TranscriptWatcher(string root) => _root = root;
 
@@ -130,8 +132,11 @@ public sealed class TranscriptWatcher : IDisposable
                 ApplyHooks(now);   // 기록 파일을 읽은 뒤에 해야 승인 요청을 그 도구 호출과 짝지을 수 있다
 
                 var json = SnapshotBuilder.Build(_states.Values, now, Window, HookStatus());
-                if (!string.Equals(json, _lastSnapshot, StringComparison.Ordinal))
+                var comma = json.IndexOf(',');
+                var body = comma >= 0 ? json[comma..] : json;   // 맨 앞 "now" 시각만 바뀐 것은 내용이 바뀐 게 아니다
+                if (!string.Equals(body, _lastBody, StringComparison.Ordinal))
                 {
+                    _lastBody = body;
                     _lastSnapshot = json;
                     SnapshotChanged?.Invoke(json);
                 }
@@ -194,16 +199,16 @@ public sealed class TranscriptWatcher : IDisposable
         var cutoff = DateTime.UtcNow - Window;
 
         foreach (var projDir in SafeDirs(_root))
-            foreach (var file in SafeFiles(projDir, "*.jsonl"))
-                Track(file, null, cutoff);
+            foreach (var fi in SafeFileInfos(projDir, "*.jsonl"))
+                Track(fi, null, cutoff);
 
         // 인턴(서브에이전트)은 사무실에 있는 세션 것만 찾는다: <프로젝트>\<세션ID>\subagents\agent-*.jsonl
         foreach (var s in _states.Values.Where(x => x.ParentId == null).ToList())
         {
             var subDir = Path.Combine(Path.GetDirectoryName(s.FilePath)!, s.Id, "subagents");
             if (!Directory.Exists(subDir)) continue;
-            foreach (var file in SafeFiles(subDir, "agent-*.jsonl"))
-                Track(file, s.Id, cutoff);
+            foreach (var fi in SafeFileInfos(subDir, "agent-*.jsonl"))
+                Track(fi, s.Id, cutoff);
         }
 
         // 지워졌거나 오래된 파일, 소속 세션이 사라진 인턴은 정리
@@ -217,12 +222,11 @@ public sealed class TranscriptWatcher : IDisposable
         foreach (var key in stale) _states.Remove(key);
     }
 
-    private void Track(string file, string? parentId, DateTime cutoff)
+    private void Track(FileInfo fi, string? parentId, DateTime cutoff)
     {
+        var file = fi.FullName;
         if (_states.ContainsKey(file)) return;
-
-        var fi = new FileInfo(file);
-        if (!fi.Exists || fi.LastWriteTimeUtc < cutoff) return;
+        if (fi.LastWriteTimeUtc < cutoff) return;
 
         var name = Path.GetFileNameWithoutExtension(file);
         var id = parentId != null && name.StartsWith("agent-", StringComparison.OrdinalIgnoreCase) ? name["agent-".Length..] : name;
@@ -316,43 +320,48 @@ public sealed class TranscriptWatcher : IDisposable
             catch (IOException) { }
         }
 
-        var buf = new byte[len - start];
-        using (var fs = new FileStream(s.FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        int byteLen = (int)(len - start);
+        var buf = ArrayPool<byte>.Shared.Rent(byteLen);
+        try
         {
-            fs.Seek(start, SeekOrigin.Begin);
-            fs.ReadExactly(buf);
-        }
-
-        int lastNl = Array.LastIndexOf(buf, (byte)'\n');
-        if (lastNl < 0)
-        {
-            // 아직 줄이 끝나지 않았다. 처음 읽는데 줄바꿈이 하나도 없으면(초대형 한 줄) 그냥 넘어간다.
-            if (!s.Initialized)
+            using (var fs = new FileStream(s.FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
             {
-                s.Offset = len;
-                s.Initialized = true;
+                fs.Seek(start, SeekOrigin.Begin);
+                fs.ReadExactly(buf.AsSpan(0, byteLen));
             }
-            return;
-        }
 
-        int pos = 0;
-        if (skipFirstLine) pos = Array.IndexOf(buf, (byte)'\n') + 1;
-
-        while (pos <= lastNl)
-        {
-            int nl = Array.IndexOf(buf, (byte)'\n', pos, lastNl - pos + 1);
-            int lineLen = nl - pos;
-            if (lineLen > 0 && buf[pos + lineLen - 1] == (byte)'\r') lineLen--;
-            if (lineLen > 0)
+            int lastNl = Array.LastIndexOf(buf, (byte)'\n', byteLen - 1, byteLen);
+            if (lastNl < 0)
             {
-                try { TranscriptParser.Apply(s, new ReadOnlyMemory<byte>(buf, pos, lineLen)); }
-                catch (JsonException) { /* 깨진 줄은 건너뛴다 */ }
+                // 아직 줄이 끝나지 않았다. 처음 읽는데도 이미 큰 구간(InitialTailBytes 이상)에 줄바꿈이 하나도 없으면(초대형 한 줄) 건너뛴다.
+                if (!s.Initialized && (start > 0 || len >= InitialTailBytes))
+                {
+                    s.Offset = len;
+                    s.Initialized = true;
+                }
+                return;
             }
-            pos = nl + 1;
-        }
 
-        s.Offset = start + lastNl + 1;   // 끝나지 않은 마지막 줄은 다음에 다시 읽는다
-        s.Initialized = true;
+            int pos = 0;
+            if (skipFirstLine) pos = Array.IndexOf(buf, (byte)'\n', 0, byteLen) + 1;
+
+            while (pos <= lastNl)
+            {
+                int nl = Array.IndexOf(buf, (byte)'\n', pos, lastNl - pos + 1);
+                int lineLen = nl - pos;
+                if (lineLen > 0 && buf[pos + lineLen - 1] == (byte)'\r') lineLen--;
+                if (lineLen > 0)
+                {
+                    try { TranscriptParser.Apply(s, new ReadOnlyMemory<byte>(buf, pos, lineLen)); }
+                    catch (Exception ex) when (ex is JsonException or InvalidOperationException) { /* 깨진 줄이나 예상과 다른 모양은 건너뛴다 */ }
+                }
+                pos = nl + 1;
+            }
+
+            s.Offset = start + lastNl + 1;   // 끝나지 않은 마지막 줄은 다음에 다시 읽는다
+            s.Initialized = true;
+        }
+        finally { ArrayPool<byte>.Shared.Return(buf); }
     }
 
     private static IEnumerable<string> SafeDirs(string path)
@@ -361,9 +370,9 @@ public sealed class TranscriptWatcher : IDisposable
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return Array.Empty<string>(); }
     }
 
-    private static IEnumerable<string> SafeFiles(string path, string pattern)
+    private static IEnumerable<FileInfo> SafeFileInfos(string path, string pattern)
     {
-        try { return Directory.EnumerateFiles(path, pattern).ToList(); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return Array.Empty<string>(); }
+        try { return new DirectoryInfo(path).EnumerateFiles(pattern).ToList(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return Array.Empty<FileInfo>(); }
     }
 }

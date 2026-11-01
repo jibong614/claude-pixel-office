@@ -27,9 +27,18 @@ internal sealed record EmployeeDto(
     long Last,
     long Started,
     string? Prompt,
+    string? Reply,
+    long? Ctx,
     List<LogDto> Recent,
     List<InternDto> Interns,
-    DayDto? Today);
+    DayDto? Today,
+    DayDto? Yesterday,
+    DayDto? Week,
+    string? Thinking = null,
+    List<TodoDto>? Todos = null,
+    bool Secret = false);
+
+internal sealed record TodoDto(string Content, string Status);
 
 /// <summary>오늘의 근무 일지(인턴 몫 포함). Work: 일한 시간(ms), In·Out·CacheRead·CacheWrite: 토큰, Tools: 많이 쓴 도구 [이름, 횟수].</summary>
 internal sealed record DayDto(long Work, int Prompts, long In, long Out, long CacheRead, long CacheWrite, List<ToolCountDto> Tools);
@@ -101,6 +110,9 @@ internal static class SnapshotBuilder
         if (internWaitSince is { } iws && act is not (Activity.Asking or Activity.Waiting or Activity.Away))
             (act, icon, text, since) = (Activity.Waiting, "✋", L.T("인턴 일에 승인해 주세요", "Intern needs approval"), iws);
 
+        var internList = interns.ToList();
+        var today = now.ToLocalTime().Date;
+
         return new EmployeeDto(
             Id: s.Id,
             Name: name,
@@ -117,10 +129,17 @@ internal static class SnapshotBuilder
             Last: Ms(s.LastActivityUtc),
             Started: Ms(s.StartedUtc),
             Prompt: s.LastPrompt != null ? ToolCatalog.Clip(s.LastPrompt, 300) : null,
+            Reply: s.LastReply != null ? ToolCatalog.Clip(s.LastReply, 240) : null,
+            Ctx: s.Today.LastContextTokens > 0 ? s.Today.LastContextTokens : null,
             Recent: s.Recent.AsEnumerable().Reverse().Take(RecentToSend)
                      .Select(x => new LogDto(Ms(x.Utc), x.Icon, x.Text)).ToList(),
             Interns: internDtos,
-            Today: Day(s, interns, now));
+            Today: RangeDay(s, internList, today, today),
+            Yesterday: RangeDay(s, internList, today.AddDays(-1), today.AddDays(-1)),
+            Week: RangeDay(s, internList, today.AddDays(-6), today),
+            Thinking: s.LastThinking,
+            Todos: s.Todos?.Select(t => new TodoDto(t.Content, t.Status)).ToList(),
+            Secret: s.HasSecret);
     }
 
     /// <summary>지금 보여 줄 행동·아이콘·말풍선 문구·그 상태가 시작된 시각.</summary>
@@ -180,20 +199,34 @@ internal static class SnapshotBuilder
         return (act, icon, text, since);
     }
 
-    /// <summary>세션과 그 인턴들의 오늘 기록을 합친다(일한 시간·지시는 세션 것만, 도구·토큰은 인턴 몫까지). 오늘 기록이 없으면 null.</summary>
-    private static DayDto? Day(TranscriptState s, IEnumerable<TranscriptState> interns, DateTime now)
+    /// <summary>세션과 그 인턴들의 지정 기간 기록을 합친다(일한 시간·지시는 세션 것만, 도구·토큰은 인턴 몫까지). 기록이 없으면 null.</summary>
+    private static DayDto? RangeDay(TranscriptState s, IReadOnlyList<TranscriptState> interns, DateTime fromLocalDate, DateTime toLocalDate)
     {
-        var all = new[] { s }.Concat(interns).Where(x => x.Today.IsToday(now)).ToList();
-        if (all.Count == 0) return null;
+        long work = 0;
+        int prompts = 0;
         long tin = 0, tout = 0, cr = 0, cw = 0;
         var tools = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var x in all)
+        bool any = false;
+
+        foreach (var b in s.Today.GetRange(fromLocalDate, toLocalDate))
         {
-            foreach (var u in x.Today.Messages.Values) { tin += u.In; tout += u.Out; cr += u.CacheRead; cw += u.CacheWrite; }
-            foreach (var (name, c) in x.Today.Tools) tools[name] = tools.GetValueOrDefault(name) + c;
+            any = true;
+            work += b.WorkMs;
+            prompts += b.Prompts;
+            foreach (var u in b.Messages.Values) { tin += u.In; tout += u.Out; cr += u.CacheRead; cw += u.CacheWrite; }
+            foreach (var (name, c) in b.Tools) tools[name] = tools.GetValueOrDefault(name) + c;
         }
-        var mine = s.Today.IsToday(now) ? s.Today : null;
-        return new DayDto(mine?.WorkMs ?? 0, mine?.Prompts ?? 0, tin, tout, cr, cw,
+        foreach (var it in interns)
+        {
+            foreach (var b in it.Today.GetRange(fromLocalDate, toLocalDate))
+            {
+                any = true;
+                foreach (var u in b.Messages.Values) { tin += u.In; tout += u.Out; cr += u.CacheRead; cw += u.CacheWrite; }
+                foreach (var (name, c) in b.Tools) tools[name] = tools.GetValueOrDefault(name) + c;
+            }
+        }
+        if (!any) return null;
+        return new DayDto(work, prompts, tin, tout, cr, cw,
             tools.OrderByDescending(kv => kv.Value).Take(6).Select(kv => new ToolCountDto(kv.Key, kv.Value)).ToList());
     }
 

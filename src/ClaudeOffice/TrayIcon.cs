@@ -1,3 +1,5 @@
+using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -8,27 +10,47 @@ namespace ClaudeOffice;
 
 /// <summary>
 /// 작업표시줄 오른쪽 알림 영역의 🧑‍💻 아이콘. 창을 숨겨도(✕·시작 시 숨기기·자동 실행) 프로그램이 돌고 있음을 보여 주고,
-/// 누르면 창을 열고 오른쪽 클릭 메뉴로 완전히 끝낸다.
-/// WPF 에는 알림 영역 아이콘이 없어 WinForms NotifyIcon 을 쓴다(WPF 디스패처가 메시지를 돌려 주므로 그대로 동작).
+/// 누르면 창을 열고 오른쪽 클릭 메뉴로 빠른 이동·완전 종료를 지원한다.
+/// 승인을 기다리는 직원이 있으면 아이콘 오른쪽 위에 주황색 알림 점을 표시한다.
 /// </summary>
 internal sealed class TrayIcon : IDisposable
 {
     private readonly Forms.NotifyIcon _icon;
-    private readonly Forms.ToolStripItem _openItem, _exitItem;
+    private readonly Icon _normalIcon;
+    private readonly Icon _waitingIcon;
+    private readonly Forms.ToolStripItem _openItem, _reportItem, _exitItem;
+    private readonly Forms.ToolStripMenuItem _waitItem, _petItem, _widgetItem;
+    private string? _waitingSid;
+    private int _waitingCount;
+    private string? _waitingName;
     private bool _hintShown;
 
-    public TrayIcon(Action open, Action exit)
+    public TrayIcon(Action open, Action<string> openSession, Action togglePet, Action toggleWidget, Action exit)
     {
+        _normalIcon = LoadIcon();
+        _waitingIcon = MakeWaitingIcon(_normalIcon);
+
         var menu = new Forms.ContextMenuStrip();
         _openItem = menu.Items.Add("", null, (_, _) => open());
-        _openItem.Font = new System.Drawing.Font(_openItem.Font, System.Drawing.FontStyle.Bold);   // 기본 동작
+        _openItem.Font = new Font(_openItem.Font, System.Drawing.FontStyle.Bold);   // 기본 동작
+        _waitItem = new Forms.ToolStripMenuItem("", null, (_, _) =>
+        {
+            if (_waitingSid != null) openSession(_waitingSid);
+            else open();
+        }) { Visible = false };
+        menu.Items.Add(_waitItem);
+        _reportItem = menu.Items.Add("", null, (_, _) => openSession("@today"));
+        _petItem = new Forms.ToolStripMenuItem("", null, (_, _) => togglePet());
+        menu.Items.Add(_petItem);
+        _widgetItem = new Forms.ToolStripMenuItem("", null, (_, _) => toggleWidget());
+        menu.Items.Add(_widgetItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
         _exitItem = menu.Items.Add("", null, (_, _) => exit());
         ApplyLanguage();
 
         _icon = new Forms.NotifyIcon
         {
-            Icon = LoadIcon(),
+            Icon = _normalIcon,
             Text = "Claude Office",
             ContextMenuStrip = menu,
             Visible = true,
@@ -41,7 +63,42 @@ internal sealed class TrayIcon : IDisposable
     public void ApplyLanguage()
     {
         _openItem.Text = L.T("열기", "Open");
+        _reportItem.Text = L.T("📊 오늘의 근무 일지", "📊 Today's work log");
+        _petItem.Text = L.T("🐾 바탕화면 미니펫", "🐾 Desktop MiniPet");
+        _widgetItem.Text = L.T("📋 작게 보기(목록)", "📋 Compact view (list)");
         _exitItem.Text = L.T("끝내기", "Exit");
+        RefreshWaitingLabel();
+    }
+
+    public void SetPetChecked(bool on) => _petItem.Checked = on;
+
+    public void SetWidgetChecked(bool on) => _widgetItem.Checked = on;
+
+    /// <summary>승인·질문 대기 상태에 따라 트레이 아이콘의 주황색 점과 빠른 열기 메뉴를 갱신한다.</summary>
+    public void SetWaiting(int count, string? firstId, string? firstName)
+    {
+        bool hadDot = _waitingCount > 0;
+        bool hasDot = count > 0;
+        _waitingCount = count;
+        _waitingSid = firstId;
+        _waitingName = firstName;
+        if (hadDot != hasDot)
+            _icon.Icon = hasDot ? _waitingIcon : _normalIcon;
+        RefreshWaitingLabel();
+    }
+
+    private void RefreshWaitingLabel()
+    {
+        if (_waitingCount <= 0 || string.IsNullOrEmpty(_waitingSid))
+        {
+            _waitItem.Visible = false;
+            return;
+        }
+        var label = string.IsNullOrWhiteSpace(_waitingName) ? L.T("직원", "Employee") : _waitingName;
+        _waitItem.Text = _waitingCount > 1
+            ? L.T($"✋ {label} 외 {_waitingCount - 1}명 확인 대기", $"✋ {label} +{_waitingCount - 1} waiting")
+            : L.T($"✋ {label} 확인 대기 열기", $"✋ Open {label} (waiting)");
+        _waitItem.Visible = true;
     }
 
     /// <summary>마우스를 올렸을 때 보일 글(창 제목과 같게 — "(✋2) 우리 팀 사무실 v1.0.6"). 63자 제한.</summary>
@@ -122,17 +179,56 @@ internal sealed class TrayIcon : IDisposable
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern bool Shell_NotifyIconW(uint message, ref NotifyIconData data);
 
+    [DllImport("user32.dll")]
+    private static extern bool DestroyIcon(IntPtr hIcon);
+
     public void Dispose()
     {
         _icon.Visible = false;   // 끝난 뒤에도 아이콘이 남아 보이지 않게
         _icon.Dispose();
+        _normalIcon.Dispose();
+        _waitingIcon.Dispose();
     }
 
-    private static System.Drawing.Icon LoadIcon()
+    private static Icon LoadIcon()
     {
         var res = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/office.ico"));
-        if (res is null) return System.Drawing.SystemIcons.Application;
+        if (res is null) return (Icon)SystemIcons.Application.Clone();
         using var s = res.Stream;
-        return new System.Drawing.Icon(s, Forms.SystemInformation.SmallIconSize);   // 화면 배율에 맞는 작은 아이콘
+        return new Icon(s, Forms.SystemInformation.SmallIconSize);   // 화면 배율에 맞는 작은 아이콘
+    }
+
+    /// <summary>기본 아이콘 우측 상단에 주황색 알림 점(#ffb347)을 그린 아이콘을 만든다.</summary>
+    private static Icon MakeWaitingIcon(Icon baseIcon)
+    {
+        try
+        {
+            using var bmp = baseIcon.ToBitmap();
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                float d = Math.Max(6f, bmp.Width * 0.38f);
+                float x = bmp.Width - d - 0.5f;
+                float y = 0.5f;
+                using var border = new SolidBrush(Color.FromArgb(240, 24, 20, 38));
+                using var fill = new SolidBrush(Color.FromArgb(255, 255, 179, 71));
+                g.FillEllipse(border, x - 1f, y - 1f, d + 2f, d + 2f);
+                g.FillEllipse(fill, x, y, d, d);
+            }
+            var hIcon = bmp.GetHicon();
+            try
+            {
+                using var tmp = Icon.FromHandle(hIcon);
+                return (Icon)tmp.Clone();
+            }
+            finally
+            {
+                DestroyIcon(hIcon);
+            }
+        }
+        catch
+        {
+            return (Icon)baseIcon.Clone();
+        }
     }
 }

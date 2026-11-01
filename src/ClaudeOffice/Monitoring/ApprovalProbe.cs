@@ -38,16 +38,13 @@ internal static partial class ApprovalProbe
         if (tokens.Length == 0) return false;
         int need = Math.Min(2, tokens.Length);
         int self = Environment.ProcessId;
+        var minStart = sinceUtc.AddSeconds(-1);
         foreach (var p in Process.GetProcesses())
         {
             using (p)
             {
                 if (p.Id == self) continue;
-                DateTime started;
-                try { started = p.StartTime.ToUniversalTime(); }
-                catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException) { continue; }
-                if (started < sinceUtc.AddSeconds(-1)) continue;
-                var line = CommandLine(p.Id);
+                var line = CommandLineIfStartedAfter(p.Id, minStart);
                 if (line is null) continue;
                 if (tokens.Count(t => line.Contains(t, StringComparison.OrdinalIgnoreCase)) >= need) return true;
             }
@@ -55,27 +52,43 @@ internal static partial class ApprovalProbe
         return false;
     }
 
-    /// <summary>다른 프로세스의 명령줄(같은 사용자의 프로세스만 읽힌다). Windows 8.1+ ProcessCommandLineInformation.</summary>
-    internal static string? CommandLine(int pid)
+    /// <summary>minStartUtc 이상에 시작한 프로세스면 명령줄을, 아니거나 읽을 수 없으면 null(예외 없이 핸들 하나로 확인).</summary>
+    private static string? CommandLineIfStartedAfter(int pid, DateTime minStartUtc)
     {
         var h = OpenProcess(ProcessQueryLimitedInformation, false, pid);
         if (h == IntPtr.Zero) return null;
         try
         {
-            NtQueryInformationProcess(h, ProcessCommandLineInformation, IntPtr.Zero, 0, out int len);
-            if (len <= 0 || len > 1 << 20) return null;
-            var buf = Marshal.AllocHGlobal(len);
-            try
-            {
-                if (NtQueryInformationProcess(h, ProcessCommandLineInformation, buf, len, out _) != 0) return null;
-                // UNICODE_STRING { USHORT Length; USHORT MaximumLength; PWSTR Buffer } — 글자는 같은 버퍼 뒤쪽에 있다
-                int bytes = (ushort)Marshal.ReadInt16(buf);
-                var text = Marshal.ReadIntPtr(buf, IntPtr.Size);
-                return text == IntPtr.Zero ? null : Marshal.PtrToStringUni(text, bytes / 2);
-            }
-            finally { Marshal.FreeHGlobal(buf); }
+            if (!GetProcessTimes(h, out long created, out _, out _, out _) || DateTime.FromFileTimeUtc(created) < minStartUtc)
+                return null;
+            return ReadCommandLine(h);
         }
         finally { CloseHandle(h); }
+    }
+
+    /// <summary>다른 프로세스의 명령줄(같은 사용자의 프로세스만 읽힌다). Windows 8.1+ ProcessCommandLineInformation.</summary>
+    internal static string? CommandLine(int pid)
+    {
+        var h = OpenProcess(ProcessQueryLimitedInformation, false, pid);
+        if (h == IntPtr.Zero) return null;
+        try { return ReadCommandLine(h); }
+        finally { CloseHandle(h); }
+    }
+
+    private static string? ReadCommandLine(IntPtr h)
+    {
+        NtQueryInformationProcess(h, ProcessCommandLineInformation, IntPtr.Zero, 0, out int len);
+        if (len <= 0 || len > 1 << 20) return null;
+        var buf = Marshal.AllocHGlobal(len);
+        try
+        {
+            if (NtQueryInformationProcess(h, ProcessCommandLineInformation, buf, len, out _) != 0) return null;
+            // UNICODE_STRING { USHORT Length; USHORT MaximumLength; PWSTR Buffer } — 글자는 같은 버퍼 뒤쪽에 있다
+            int bytes = (ushort)Marshal.ReadInt16(buf);
+            var text = Marshal.ReadIntPtr(buf, IntPtr.Size);
+            return text == IntPtr.Zero ? null : Marshal.PtrToStringUni(text, bytes / 2);
+        }
+        finally { Marshal.FreeHGlobal(buf); }
     }
 
     private const uint ProcessQueryLimitedInformation = 0x1000;
@@ -86,6 +99,9 @@ internal static partial class ApprovalProbe
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetProcessTimes(IntPtr process, out long creationTime, out long exitTime, out long kernelTime, out long userTime);
 
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr handle);

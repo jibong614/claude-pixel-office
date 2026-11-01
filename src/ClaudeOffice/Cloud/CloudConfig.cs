@@ -20,9 +20,11 @@ internal sealed partial class CloudConfig
     public string? DatabaseUrl { get; set; }   // 무료 서버(RelayDatabaseUrl) 또는 시험 서버 http://127.0.0.1:…
     public string? ProjectId { get; set; }
     public string? PageUrl { get; set; }       // 휴대폰 화면 주소: 공용 페이지(PublicPageUrl) 또는 시험 서버
-    public string? Key { get; set; }           // AES-256 키(base64url)
+    [JsonConverter(typeof(DpapiStringConverter))]
+    public string? Key { get; set; }           // AES-256 키(base64url, 디스크에는 DPAPI 로 암호화해 저장)
     public string? Uid { get; set; }           // 익명 로그인 사용자 ID = 데이터 경로 offices/<Uid>
-    public string? RefreshToken { get; set; }
+    [JsonConverter(typeof(DpapiStringConverter))]
+    public string? RefreshToken { get; set; }  // 디스크에는 DPAPI 로 암호화해 저장
 
     /// <summary>휴대폰에서 별명·메모 고치기 허용 — 휴대폰이 같은 키로 암호화한 변경을 inbox/&lt;Uid&gt; 에 남기면 PC가 가져가 반영한다.</summary>
     public bool PhoneEdit { get; set; } = true;
@@ -58,21 +60,53 @@ internal sealed partial class CloudConfig
     public static CloudConfig Load(string path)
     {
         CloudConfig? c = null;
+        bool needsResave = false;
         try
         {
-            if (File.Exists(path)) c = JsonSerializer.Deserialize<CloudConfig>(File.ReadAllText(path));
+            if (File.Exists(path))
+            {
+                var raw = File.ReadAllText(path);
+                c = JsonSerializer.Deserialize<CloudConfig>(raw);
+                // 예전 평문 Key·RefreshToken 이면 읽은 뒤 바로 DPAPI 로 암호화해 다시 저장한다
+                if (c is { Key.Length: > 0 } && !raw.Contains("\"dpapi:", StringComparison.Ordinal))
+                    needsResave = true;
+            }
         }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or CryptographicException)
         {
             // 깨진 설정은 새로 시작(키가 바뀌므로 휴대폰은 QR을 다시 찍어야 함)
         }
         c ??= new CloudConfig();
-        if (c.UseRelay())
+        if (c.UseRelay() || needsResave)
         {
             try { c.Save(path); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }   // 다음에 고칠 때 다시 저장한다
         }
         return c;
+    }
+
+    /// <summary>
+    /// cloud.json 의 민감한 값(Key·RefreshToken)을 현재 Windows 계정(DPAPI CurrentUser)으로 암호화해 저장한다.
+    /// 파일이 외부로 유출되어도 다른 PC·계정에서는 풀지 못하며, 예전 평문 값도 호환해 읽는다.
+    /// </summary>
+    private sealed class DpapiStringConverter : JsonConverter<string?>
+    {
+        private const string Prefix = "dpapi:";
+
+        public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var s = reader.GetString();
+            if (string.IsNullOrEmpty(s) || !s.StartsWith(Prefix, StringComparison.Ordinal)) return s;
+            var plain = ProtectedData.Unprotect(Convert.FromBase64String(s[Prefix.Length..]), null, DataProtectionScope.CurrentUser);
+            return Encoding.UTF8.GetString(plain);
+        }
+
+        public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+        {
+            if (string.IsNullOrEmpty(value)) { writer.WriteNullValue(); return; }
+            var enc = ProtectedData.Protect(Encoding.UTF8.GetBytes(value), null, DataProtectionScope.CurrentUser);
+            writer.WriteStringValue(Prefix + Convert.ToBase64String(enc));
+        }
     }
 
     /// <summary>

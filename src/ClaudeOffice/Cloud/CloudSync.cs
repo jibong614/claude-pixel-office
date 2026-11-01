@@ -48,6 +48,7 @@ internal sealed partial class CloudSync : IDisposable
     private string? _idToken;
     private DateTime _idTokenExpiresUtc;
     private volatile bool _clearPending;   // 껐을 때 클라우드에 남은 요약을 지워야 함
+    private volatile bool _clearInboxPending;   // 키를 새로 만들었을 때 남은 inbox 를 비움
 
     // 화면에 알릴 상태
     private volatile string _state = "off";   // off | setup | starting | on | error
@@ -165,6 +166,7 @@ internal sealed partial class CloudSync : IDisposable
     {
         Update(c => c.Key = CloudConfig.NewKey());
         _lastSentKey = null;
+        _clearInboxPending = true;   // 옛 키로 남은 inbox 항목도 함께 비운다
         Publish();
         Wake();
     }
@@ -296,12 +298,19 @@ internal sealed partial class CloudSync : IDisposable
                 using var del = await _http.DeleteAsync(OfficeUrl(cfg, clearToken), ct);
                 if (!del.IsSuccessStatusCode) throw new CloudException(L.T($"끄면서 클라우드의 요약을 지우지 못했습니다({(int)del.StatusCode}) — 30초 뒤 다시 시도",
                                                                            $"Couldn't delete the summary from the cloud while turning off ({(int)del.StatusCode}) — retrying in 30 s"));
-                _clearPending = false;
+                using var delInbox = await _http.DeleteAsync(InboxUrl(cfg, clearToken), ct);
+                _clearPending = _clearInboxPending = false;
             }
             SetState("off", null);
             return;
         }
         if (now < _nextTryUtc) return;
+        if (_clearInboxPending && cfg.Uid != null)
+        {
+            var clearToken = await GetTokenAsync(ct);
+            using var delInbox = await _http.DeleteAsync(InboxUrl(cfg, clearToken), ct);
+            _clearInboxPending = false;
+        }
         if ((cfg.PhoneEdit || _remoteInstalled) && cfg.Uid != null && now >= _nextInboxUtc)
         {
             _nextInboxUtc = now + (_remoteAway ? InboxEveryAway : InboxEvery);
@@ -346,7 +355,7 @@ internal sealed partial class CloudSync : IDisposable
 
     // ───────────────────────── 휴대폰 → PC: 별명·메모 고친 것, 원격 지시·승인 ─────────────────────────
 
-    private static readonly TimeSpan InboxEvery = TimeSpan.FromSeconds(4), InboxEveryAway = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan InboxEvery = TimeSpan.FromSeconds(2), InboxEveryAway = TimeSpan.FromSeconds(2);
     private DateTime _nextInboxUtc;
 
     private static string Auth(string? token) => token != null ? "?auth=" + Uri.EscapeDataString(token) : "";
@@ -367,14 +376,24 @@ internal sealed partial class CloudSync : IDisposable
         if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
         var edits = new List<NoteEdit>();
         var remote = new List<RemoteMsg>();
-        foreach (var m in doc.RootElement.EnumerateObject().OrderBy(m => m.Name, StringComparer.Ordinal).Take(100))   // 키(푸시 ID)가 보낸 순서
+        var items = doc.RootElement.EnumerateObject().OrderBy(m => m.Name, StringComparer.Ordinal).ToList();   // 키(푸시 ID)가 보낸 순서
+        // 더미 항목이 대량으로 밀려 들어와도 뒤에 있는 정상 휴대폰 지시·승인이 함께 버려지지 않게 최근 500개까지 먼저 복호화한다
+        foreach (var m in items.TakeLast(500))
         {
-            switch (TryDecrypt(cfg.Key!, m.Value))
+            switch (TryDecrypt(cfg.Key!, cfg.Uid!, m.Value))
             {
                 case NoteEdit e when cfg.PhoneEdit: edits.Add(e); break;   // 고치기를 끈 뒤에 온 것은 버린다
                 case RemoteMsg r when _remoteInstalled: remote.Add(r); break;
             }
-            using var del = await _http.DeleteAsync($"{url}/{Uri.EscapeDataString(m.Name)}.json{Auth(token)}", ct);
+            if (items.Count is > 1 and <= 20)
+            {
+                using var del = await _http.DeleteAsync($"{url}/{Uri.EscapeDataString(m.Name)}.json{Auth(token)}", ct);
+            }
+        }
+        // 하나뿐이거나 많이(20개 초과) 쌓였으면 복호화를 마친 뒤 통째로 비워 요청 수를 아낀다
+        if (items.Count == 1 || items.Count > 20)
+        {
+            using var delAll = await _http.DeleteAsync(url + ".json" + Auth(token), ct);
         }
         if (edits.Count > 0) NotesFromPhone?.Invoke(edits);
         if (remote.Count > 0) RemoteFromPhone?.Invoke(remote);
@@ -382,19 +401,22 @@ internal sealed partial class CloudSync : IDisposable
 
     /// <summary>
     /// 휴대폰이 보낸 {v, iv, ct} 를 해독한다. AES-256-GCM(태그는 암호문 뒤 — WebCrypto 모양) — 키가 맞아야 풀리므로 QR 을 찍은 휴대폰이 보낸 것만 남는다.
+    /// v=2 는 경로·UID(inbox:&lt;uid&gt;)를 AAD 로 묶어 다른 경로의 암호문을 옮겨 넣는 재전송까지 막는다(v=1 은 새로고침 전 휴대폰 호환용).
     /// k 가 없으면 별명·메모 {id, nick, memo, t}, 있으면 원격 {k: say|ok|no, sid, req, text, t, n}.
     /// </summary>
-    private static object? TryDecrypt(string keyB64Url, JsonElement v)
+    private static object? TryDecrypt(string keyB64Url, string uid, JsonElement v)
     {
         try
         {
-            if (v.ValueKind != JsonValueKind.Object) return null;
+            if (v.ValueKind != JsonValueKind.Object || v.TryGetProperty("z", out _)) return null;
+            int ver = v.TryGetProperty("v", out var vp) && vp.ValueKind == JsonValueKind.Number && vp.TryGetInt32(out var vn) ? vn : 1;
             var iv = Convert.FromBase64String(v.GetProperty("iv").GetString()!);
             var all = Convert.FromBase64String(v.GetProperty("ct").GetString()!);
             if (iv.Length != 12 || all.Length < 17 || all.Length > 8000) return null;
             var plain = new byte[all.Length - 16];
+            var aad = ver >= 2 ? Encoding.UTF8.GetBytes("inbox:" + uid) : null;
             using (var aes = new AesGcm(CloudConfig.FromBase64Url(keyB64Url), 16))
-                aes.Decrypt(iv, all.AsSpan(0, all.Length - 16), all.AsSpan(all.Length - 16), plain);
+                aes.Decrypt(iv, all.AsSpan(0, all.Length - 16), all.AsSpan(all.Length - 16), plain, aad);
             using var doc = JsonDocument.Parse(plain);
             var r = doc.RootElement;
             string? Text(string name, int max) =>
@@ -402,7 +424,7 @@ internal sealed partial class CloudSync : IDisposable
             long t = r.TryGetProperty("t", out var tt) && tt.ValueKind == JsonValueKind.Number && tt.TryGetInt64(out var tv) ? tv : 0;
 
             if (Text("k", 10) is { } kind)
-                return kind is "say" or "ok" or "no" or "away"
+                return kind is "say" or "ok" or "no" or "away" or "stop" or "cancel"
                     ? new RemoteMsg(kind, Text("sid", 100), Text("req", 40), Text("text", RemoteHub.MaxText), t, Text("n", 64))
                     : null;
 
@@ -417,7 +439,10 @@ internal sealed partial class CloudSync : IDisposable
     }
 
     private static string OfficeUrl(CloudConfig cfg, string? token) =>
-        $"{cfg.DatabaseUrl}/offices/{Uri.EscapeDataString(cfg.Uid!)}.json" + (token != null ? "?auth=" + Uri.EscapeDataString(token) : "");
+        $"{cfg.DatabaseUrl}/offices/{Uri.EscapeDataString(cfg.Uid!)}.json" + Auth(token);
+
+    private static string InboxUrl(CloudConfig cfg, string? token) =>
+        $"{cfg.DatabaseUrl}/inbox/{Uri.EscapeDataString(cfg.Uid!)}.json" + Auth(token);
 
     /// <summary>gzip → AES-256-GCM. 휴대폰(WebCrypto)은 암호문 뒤에 인증 태그가 붙은 모양을 받는다.</summary>
     private static string Encrypt(string keyB64Url, string plain, DateTime now)

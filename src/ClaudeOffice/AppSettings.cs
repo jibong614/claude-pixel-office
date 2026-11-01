@@ -50,6 +50,16 @@ internal sealed class AppSettings
     public bool Widget { get; set; }
     public WindowPlacement? WidgetWindow { get; set; }
 
+    /// <summary>바탕화면 미니펫(MiniPet): 대표 직원 한 명을 바탕화면 오른쪽 아래 작은 창에 꺼내 둔다.</summary>
+    public bool Pet { get; set; }
+    /// <summary>미니펫 대표 세션 ID. 비어 있으면 확인 필요 → 최근 활동순으로 자동 선택.</summary>
+    public string? PetSessionId { get; set; }
+    /// <summary>미니펫 아래 지시 입력칸을 접어 두고 책상 그림만 작게 볼지.</summary>
+    public bool PetCompact { get; set; }
+    /// <summary>미니펫 배경(벽·창문·화분·카펫)을 숨기고 직원·의자·책상·컴퓨터만 보여 줄지.</summary>
+    public bool PetNoBg { get; set; }
+    public WindowPlacement? PetWindow { get; set; }
+
     public sealed class WindowPlacement
     {
         public double Left { get; set; }
