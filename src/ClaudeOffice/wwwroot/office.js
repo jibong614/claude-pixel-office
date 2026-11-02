@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.5.1';
+const PAGE_VERSION = '1.5.2';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -788,7 +788,7 @@ function buyFurniture(id) {
   const owned = getOwnedFurniture();
   if (owned.includes(id)) return true;
   if (!spendCoins(item.price)) {
-    alert(T(`코인이 부족합니다! (필요: 🪙 ${item.price} 코인)`, `Not enough coins! (Need: 🪙 ${item.price} coins)`));
+    showToast(T(`코인이 부족합니다! (필요: 🪙 ${item.price} 코인)`, `Not enough coins! (Need: 🪙 ${item.price} coins)`), '🪙');
     return false;
   }
   owned.push(id);
@@ -2711,7 +2711,7 @@ function setupVoicePrompt(btnEl, targetInputEl) {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
     btnEl.addEventListener('click', () => {
-      alert(T('이 브라우저/환경에서는 Web Speech 음성 인식을 지원하지 않습니다 (Chrome/Safari 권장).', 'Web Speech recognition is not supported in this environment (Chrome/Safari recommended).'));
+      showToast(T('이 브라우저/환경에서는 음성 인식을 지원하지 않습니다.', 'Voice recognition is not supported in this environment.'), '🎙️');
     });
     return;
   }
@@ -2761,7 +2761,7 @@ function setupVoicePrompt(btnEl, targetInputEl) {
         console.warn('SpeechRecognition error:', event.error);
         stopListening();
         if (event.error === 'not-allowed') {
-          alert(T('마이크 접근 권한이 허용되지 않았습니다. 브라우저 설정에서 마이크 권한을 확인해주세요.', 'Microphone access denied. Please allow microphone permissions.'));
+          showToast(T('마이크 접근 권한이 허용되지 않았습니다.', 'Microphone access denied.'), '🎙️');
         }
       };
 
