@@ -252,7 +252,7 @@ src/ClaudeOffice/
   Hooks/        Claude Code 연결 — 127.0.0.1 훅 수신기(HookServer), settings.json 훅 넣기/빼기(HookSetup)
   Cloud/        휴대폰 연결 — 요약 암호화·무료 서버(Firebase) 업로드, 익명 로그인(CloudSync, CloudConfig)
   Remote/       휴대폰 지시·승인·중단을 훅으로 세션에 전함, 자리 비움(RemoteHub)
-  PetWindow     바탕화면 미니위젯 — 투명 윈도우, 항상 위, 상호작용
+  WidgetWindow  바탕화면 미니위젯 — 투명 윈도우, 항상 위, 상호작용
   MainWindow    WebView2 호스트, TrayIcon 알림 영역 아이콘, AutoStart 시작 프로그램 등록
   wwwroot/      사무실 화면(office.js 캔버스 픽셀아트) — PC 앱과 휴대폰 페이지가 같은 파일
 mobile/         무료 서버 데이터베이스 규칙

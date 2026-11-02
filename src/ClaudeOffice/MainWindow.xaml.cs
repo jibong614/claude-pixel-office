@@ -34,7 +34,7 @@ public partial class MainWindow : Window
     private bool _leftWhileAway;      // 자리 비움 중에 PC 가 한동안 비어 있었음 → 그 뒤 입력이 오면 "돌아옴"
     private readonly System.Windows.Threading.DispatcherTimer _presence = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly TrayIcon? _tray;
-    private PetWindow? _petWindow;
+    private WidgetWindow? _widgetWindow;
     private bool _pageReady;
     private bool _exiting, _cleanedUp;
     private string? _pendingSelect;   // 알림을 눌러 창을 열었는데 화면이 아직 준비 중이면, 준비되는 대로 그 직원을 연다
@@ -129,8 +129,8 @@ public partial class MainWindow : Window
         if (_cleanedUp) return;
         _cleanedUp = true;
         if (IsVisible) SavePlacement();
-        _petWindow?.CloseForce();
-        _petWindow = null;
+        _widgetWindow?.CloseForce();
+        _widgetWindow = null;
         Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
         _presence.Stop();
         _watcher.Dispose();
@@ -207,7 +207,7 @@ public partial class MainWindow : Window
         _updater.Changed += () => Dispatcher.InvokeAsync(() => Post(AppSettingsJson()));   // 받는 중 진행률
         _updates.Start();
 
-        if (App.Settings.Pet) ApplyPetWindow();
+        if (App.Settings.Pet) ApplyWidgetWindow();
     }
 
     // ───────────────────────── 알림 ─────────────────────────
@@ -319,28 +319,28 @@ public partial class MainWindow : Window
         TrySaveSettings();
         _tray?.SetPetChecked(on);
         _remote.SetPet(on, App.Settings.PetSessionId);
-        ApplyPetWindow();
+        ApplyWidgetWindow();
         Post(AppSettingsJson());
     }
 
-    private void ApplyPetWindow()
+    private void ApplyWidgetWindow()
     {
         if (App.DemoMode) return;
         if (App.Settings.Pet)
         {
-            if (_petWindow is null)
-                _petWindow = new PetWindow(VirtualHost, FindWebRoot(), e => OnWebMessage(null, e), () => SetPet(false, null));
-            _petWindow.ApplyBackdrop(App.Settings.PetNoBg);
-            if (!_petWindow.IsVisible)
+            if (_widgetWindow is null)
+                _widgetWindow = new WidgetWindow(VirtualHost, FindWebRoot(), e => OnWebMessage(null, e), () => SetPet(false, null));
+            _widgetWindow.ApplyBackdrop(App.Settings.PetNoBg);
+            if (!_widgetWindow.IsVisible)
             {
-                _petWindow.RestorePlacement();
-                _petWindow.Show();
+                _widgetWindow.RestorePlacement();
+                _widgetWindow.Show();
             }
         }
-        else if (_petWindow is { IsVisible: true })
+        else if (_widgetWindow is { IsVisible: true })
         {
-            _petWindow.SavePlacement();
-            _petWindow.Hide();
+            _widgetWindow.SavePlacement();
+            _widgetWindow.Hide();
         }
     }
 
@@ -520,7 +520,7 @@ public partial class MainWindow : Window
         MinWidth = WidgetMinWidth;
         MinHeight = WidgetMinHeight;
         Topmost = true;
-        var w = App.Settings.WidgetWindow;
+        var w = App.Settings.CompactPlacement;
         Width = w is { Width: >= WidgetMinWidth and <= 1000 } ? w.Width : 340;
         Height = w is { Height: >= WidgetMinHeight } ? w.Height : 260;
         if (App.Offscreen) return;   // 점검용 창은 화면 밖 그대로
@@ -570,7 +570,7 @@ public partial class MainWindow : Window
             Left = b.Left, Top = b.Top, Width = b.Width, Height = b.Height,
             Maximized = WindowState == WindowState.Maximized,
         };
-        if (App.Settings.Widget) App.Settings.WidgetWindow = p;
+        if (App.Settings.Widget) App.Settings.CompactPlacement = p;
         else App.Settings.Window = p;
         TrySaveSettings();
     }
@@ -664,7 +664,7 @@ public partial class MainWindow : Window
         _cloud.SetLanguage(L.Code);
         _watcher.Reparse();
         Web.CoreWebView2?.Navigate(PageUrl());
-        _petWindow?.ReloadLanguage();
+        _widgetWindow?.ReloadLanguage();
     }
 
     /// <summary>앱 쪽 설정(app.json·시작 프로그램 등록)과 새 버전 확인 결과를 화면 설정 패널에 알린다.</summary>
@@ -710,7 +710,7 @@ public partial class MainWindow : Window
     private void Post(string json)
     {
         if (_pageReady) Web.CoreWebView2?.PostWebMessageAsJson(json);
-        _petWindow?.Post(json);
+        _widgetWindow?.Post(json);
     }
 
     private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -840,7 +840,7 @@ public partial class MainWindow : Window
                     {
                         App.Settings.PetNoBg = pnb.ValueKind == JsonValueKind.True;
                         TrySaveSettings();
-                        _petWindow?.ApplyBackdrop(App.Settings.PetNoBg);
+                        _widgetWindow?.ApplyBackdrop(App.Settings.PetNoBg);
                         Post(AppSettingsJson());
                     }
                     break;
@@ -899,11 +899,11 @@ public partial class MainWindow : Window
                         SelectSession(oId);
                     break;
                 case "pet-drag":
-                    _petWindow?.StartDrag();
+                    _widgetWindow?.StartDrag();
                     break;
                 case "pet-size":
                     if (root.TryGetProperty("height", out var ph) && ph.TryGetDouble(out var pheight))
-                        _petWindow?.FitHeight(pheight);
+                        _widgetWindow?.FitHeight(pheight);
                     break;
                 case "notify-test":
                     if (_tray is null) break;
@@ -1055,7 +1055,7 @@ public partial class MainWindow : Window
         App.Settings.UpdateCheck = true;
         if (wasWidget) SetWidget(false);
         App.Settings.PetCompact = App.Settings.PetNoBg = false;
-        _petWindow?.ApplyBackdrop(false);
+        _widgetWindow?.ApplyBackdrop(false);
         if (App.Settings.Pet) SetPet(false, "");
         else App.Settings.PetSessionId = null;
         Topmost = false;

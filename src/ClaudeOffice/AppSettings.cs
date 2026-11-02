@@ -46,11 +46,12 @@ internal sealed class AppSettings
     /// <summary>마지막 창 위치·크기(화면 밖이면 쓰지 않는다).</summary>
     public WindowPlacement? Window { get; set; }
 
-    /// <summary>작게 보기(위젯): 창을 작게 줄이고 직원·상태 목록만. 위치·폭은 보통 창과 따로 기억한다(높이는 목록에 맞춤).</summary>
+    /// <summary>작게 보기(목록 모드): 창을 작게 줄이고 직원·상태 목록만. 위치·폭은 보통 창과 따로 기억한다(높이는 목록에 맞춤).</summary>
     public bool Widget { get; set; }
-    public WindowPlacement? WidgetWindow { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("WidgetWindow")]
+    public WindowPlacement? CompactPlacement { get; set; }
 
-    /// <summary>바탕화면 미니위젯(MiniWidget): 대표 직원 한 명을 바탕화면 오른쪽 아래 작은 창에 꺼내 둔다.</summary>
+    /// <summary>바탕화면 미니위젯(MiniWidget / WidgetWindow): 대표 직원 한 명을 바탕화면 오른쪽 아래 작은 창에 꺼내 둔다.</summary>
     public bool Pet { get; set; }
     /// <summary>미니위젯 대표 세션 ID. 비어 있으면 확인 필요 → 최근 활동순으로 자동 선택.</summary>
     public string? PetSessionId { get; set; }
@@ -58,7 +59,14 @@ internal sealed class AppSettings
     public bool PetCompact { get; set; }
     /// <summary>미니위젯 배경(벽·창문·화분·카펫)을 숨기고 직원·의자·책상·컴퓨터만 보여 줄지.</summary>
     public bool PetNoBg { get; set; }
-    public WindowPlacement? PetWindow { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("PetWindow")]
+    public WindowPlacement? MiniWidgetPlacement { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public WindowPlacement? PetWindow { get => MiniWidgetPlacement; set => MiniWidgetPlacement = value; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public WindowPlacement? MiniWidgetWindow { get => MiniWidgetPlacement; set => MiniWidgetPlacement = value; }
 
     public sealed class WindowPlacement
     {

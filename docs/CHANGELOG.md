@@ -2,6 +2,13 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.5.7 — 2026-11-02
+- **🪟 백엔드 C# 소스 코드 리팩토링: PetWindow ➔ WidgetWindow 클래스 개편**:
+  - 사용자 피드백에 맞춰 C# 소스 코드의 `PetWindow.cs`를 `WidgetWindow.cs`로 변경 및 클래스명 `WidgetWindow`로 일괄 개편
+  - `MainWindow.xaml.cs`의 내부 필드(`_widgetWindow`) 및 초기화/배치 로직(`ApplyWidgetWindow`) 동기화
+  - `AppSettings`에서 기존 `"PetWindow"` 및 `"WidgetWindow"` JSON 설정과의 100% 하위 호환성을 유지하도록 직렬화 매핑 구성
+  - `README.md` 아키텍처 구조도 내 윈도우 클래스 명칭 갱신 (`WidgetWindow  바탕화면 미니위젯`)
+
 ## 1.5.6 — 2026-11-02
 - **🪟 사용자 피드백 반영: '미니펫' 명칭을 '미니위젯(MiniWidget)'으로 전면 개편**:
   - 실제 동물 펫이 아닌 바탕화면에서 대표 세션을 상주 관측·제어하는 기능 본연의 성격에 부합하도록 기능 명칭을 '바탕화면 미니위젯(Desktop MiniWidget)'으로 변경

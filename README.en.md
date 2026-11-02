@@ -183,7 +183,7 @@ src/ClaudeOffice/
   Hooks/        Claude Code connection — 127.0.0.1 hook receiver, settings.json hook install/remove
   Cloud/        phone connection — locked summary upload to the free server (Firebase), anonymous sign-in
   Remote/       delivers phone instructions, approvals and stops to sessions through hooks, Away
-  PetWindow     Desktop MiniPet — transparent window, always on top, interactive companion
+  WidgetWindow  Desktop MiniWidget — transparent window, always on top, interactive companion
   MainWindow    WebView2 host, tray icon, notifications, update check, autostart
   wwwroot/      the office screen (canvas pixel art) — same files for the PC app and the phone page
 mobile/         free-server database rules

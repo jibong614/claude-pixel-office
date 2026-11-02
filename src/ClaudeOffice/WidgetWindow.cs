@@ -1,3 +1,7 @@
+// 하위 호환 및 편의용 별칭
+global using PetWindow = ClaudeOffice.WidgetWindow;
+global using MiniWidgetWindow = ClaudeOffice.WidgetWindow;
+
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -15,7 +19,7 @@ namespace ClaudeOffice;
 /// 바로 지시를 던지거나 승인·거절·대표 세션 전환을 할 수 있는 작은 테두리 없는 항상-위 창.
 /// 본창(MainWindow)을 ✕ 로 숨겨 두어도 바탕화면에 그대로 남아 있다.
 /// </summary>
-internal sealed class PetWindow : Window
+internal sealed class WidgetWindow : Window
 {
     public const double DefaultWidth = 300;
     private const double MinPetHeight = 44, MaxPetHeight = 640;
@@ -29,7 +33,7 @@ internal sealed class PetWindow : Window
     private bool _allowClose;
     private bool _subclassed;
 
-    public PetWindow(string virtualHost, string webRoot, Action<CoreWebView2WebMessageReceivedEventArgs> onMessage, Action onUserClose)
+    public WidgetWindow(string virtualHost, string webRoot, Action<CoreWebView2WebMessageReceivedEventArgs> onMessage, Action onUserClose)
     {
         _virtualHost = virtualHost;
         _webRoot = webRoot;
@@ -203,7 +207,7 @@ internal sealed class PetWindow : Window
             return;
         }
         var wa = SystemParameters.WorkArea;
-        if (App.Settings.PetWindow is { } w && OnScreen(w))
+        if ((App.Settings.MiniWidgetPlacement ?? App.Settings.PetWindow) is { } w && OnScreen(w))
         {
             if (w.Height >= MinPetHeight && w.Height <= MaxPetHeight) Height = w.Height;
             Left = w.Left;
@@ -248,7 +252,7 @@ internal sealed class PetWindow : Window
     public void SavePlacement()
     {
         if (App.Offscreen || App.DemoMode || !IsLoaded || Left <= -10000) return;
-        App.Settings.PetWindow = new AppSettings.WindowPlacement
+        App.Settings.MiniWidgetPlacement = new AppSettings.WindowPlacement
         {
             Left = Left,
             Top = Top,
