@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.5.9';
+const PAGE_VERSION = '1.6.0';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -143,8 +143,24 @@ let remotePcVersion = '';   // 휴대폰 보기: PC 앱 버전(1.1.2 부터 요�
 const noteOf = (id) => (REMOTE ? remoteShare?.notes?.[id] : notes[id]) || {};
 const displayName = (s) => noteOf(s.id).nick || s.name;
 
-/** 사무실 이름·별명·메모를 앱에 넘긴다 — 휴대폰 보기를 켰으면 요약과 함께 암호화해 올라간다. */
-const shareToApp = () => send({ cmd: 'share', data: { office: officeName, notes, teams: { prefs: teamPrefs, order: teamOrder, seats: seatOrder } } });
+/** 사무실 이름·별명·메모·가구·코인·고양이 상태를 앱에 넘긴다 — 휴대폰 보기를 켰으면 요약과 함께 암호화해 올라간다. */
+const shareToApp = () => {
+  if (REMOTE) return;
+  const f = typeof getOwnedFurniture === 'function' ? getOwnedFurniture() : [];
+  const c = typeof getCoins === 'function' ? getCoins() : 200;
+  const cat = typeof officeCatState !== 'undefined' ? officeCatState : null;
+  send({
+    cmd: 'share',
+    data: {
+      office: officeName,
+      notes,
+      teams: { prefs: teamPrefs, order: teamOrder, seats: seatOrder },
+      furniture: f,
+      coins: c,
+      cat: cat,
+    }
+  });
+};
 
 function setNote(id, patch) {
   const n = { ...noteOf(id), ...patch, t: Date.now() };
@@ -189,6 +205,19 @@ function onSavedShare(saved) {
       teamRev++; layoutKey = '';
     }
     if (!officeName && typeof saved.office === 'string' && saved.office.trim()) setOfficeName(saved.office.slice(0, 30));
+    if (Array.isArray(saved.furniture) && saved.furniture.length > 0) {
+      const local = typeof getOwnedFurniture === 'function' ? getOwnedFurniture() : [];
+      const merged = Array.from(new Set([...local, ...saved.furniture]));
+      localStorage.setItem(FURNITURE_KEY, JSON.stringify(merged));
+    }
+    if (saved.cat && typeof saved.cat === 'object') {
+      officeCatState = Object.assign(officeCatState, saved.cat);
+      saveOfficeCatState();
+    }
+    if (typeof saved.coins === 'number' && saved.coins > (typeof getCoins === 'function' ? getCoins() : 0)) {
+      localStorage.setItem(COIN_KEY, String(saved.coins));
+      updateCoinDisplay();
+    }
   }
   shareToApp();
   if (selectedId) { noteFor = null; renderPanel(); }
@@ -850,15 +879,19 @@ function saveOfficeCatState() {
 }
 
 function getAdoptedCatTypes() {
-  if (!officeCatState.adopted) return [];
-  if (Array.isArray(officeCatState.adoptedCats) && officeCatState.adoptedCats.length > 0) {
-    return officeCatState.adoptedCats;
+  const state = (remoteShare?.cat) ? remoteShare.cat : officeCatState;
+  if (!state.adopted) return [];
+  if (Array.isArray(state.adoptedCats) && state.adoptedCats.length > 0) {
+    return state.adoptedCats;
   }
-  if (officeCatState.type) return [officeCatState.type];
+  if (state.type) return [state.type];
   return [];
 }
 
 function getCoins() {
+  if (remoteShare && typeof remoteShare.coins === 'number') {
+    return remoteShare.coins;
+  }
   const v = localStorage.getItem(COIN_KEY);
   if (v === null) {
     // 신규 환영 스타터 코인: 200 코인 지급
@@ -874,6 +907,7 @@ function addCoins(n, reason = '') {
   const next = cur + n;
   localStorage.setItem(COIN_KEY, String(next));
   updateCoinDisplay();
+  if (!REMOTE) shareToApp();
 }
 
 function spendCoins(n) {
@@ -881,6 +915,7 @@ function spendCoins(n) {
   if (cur < n) return false;
   localStorage.setItem(COIN_KEY, String(cur - n));
   updateCoinDisplay();
+  if (!REMOTE) shareToApp();
   return true;
 }
 
@@ -893,6 +928,9 @@ function updateCoinDisplay() {
 }
 
 function getOwnedFurniture() {
+  if (remoteShare && Array.isArray(remoteShare.furniture)) {
+    return remoteShare.furniture;
+  }
   try {
     return JSON.parse(localStorage.getItem(FURNITURE_KEY) || '[]');
   } catch {
@@ -926,6 +964,7 @@ function adoptCat(item) {
   }
   officeCatState.adopted = true;
   saveOfficeCatState();
+  if (!REMOTE) shareToApp();
 
   playRetroSound('cat');
   playRetroSound('done');
@@ -958,6 +997,7 @@ function buyFurniture(id) {
   }
   renderShopModal();
   updateCoinDisplay();
+  if (!REMOTE) shareToApp();
   return true;
 }
 
@@ -1338,13 +1378,14 @@ const CAT_REACTIONS = [
 function getActiveCatSims() {
   const types = getAdoptedCatTypes();
   const list = [];
+  const state = (remoteShare?.cat) ? remoteShare.cat : officeCatState;
   for (const type of types) {
     if (!activeCatSims.has(type)) {
       const breed = CAT_BREEDS[type] || CAT_BREEDS.cheese;
       activeCatSims.set(type, {
         type,
         breed,
-        name: officeCatState.names?.[type] || breed.defaultName,
+        name: state.names?.[type] || breed.defaultName,
         x: 40 + Math.random() * 80,
         y: WALL_H + 15 + Math.random() * 30,
         targetX: 40 + Math.random() * 80,
@@ -1364,14 +1405,15 @@ function getActiveCatSims() {
       });
     }
     const cat = activeCatSims.get(type);
-    cat.name = officeCatState.names?.[type] || cat.breed.defaultName;
+    cat.name = state.names?.[type] || cat.breed.defaultName;
     list.push(cat);
   }
   return list;
 }
 
 function hitOfficeCat(cx, cy) {
-  if (!officeCatState.adopted) return null;
+  const state = (remoteShare?.cat) ? remoteShare.cat : officeCatState;
+  if (!state.adopted) return null;
   const mx = cx / U, my = cy / U;
   const cats = getActiveCatSims();
   for (const cat of cats) {
@@ -1383,6 +1425,16 @@ function hitOfficeCat(cx, cy) {
 }
 
 function petOfficeCat(cat) {
+  if (REMOTE) {
+    playRetroSound(Math.random() < 0.5 ? 'cat' : 'purr');
+    spawnHearts(cat.x + 6, cat.y - 2);
+    cat.state = 'petted';
+    cat.stateTimer = 2600;
+    cat.bubbleText = T('골골송... 💕', 'Purrr... 💕');
+    cat.bubbleTimer = 2600;
+    showToast(T(`💕 ${cat.name}(이)를 쓰다듬었습니다! 골골송을 부릅니다.`, `💕 Petted ${cat.name}! Purring happily.`), '🐱');
+    return;
+  }
   officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 2);
   officeCatState.pettedTotal = (officeCatState.pettedTotal || 0) + 1;
 
@@ -1394,6 +1446,7 @@ function petOfficeCat(cat) {
     addCoins(bonus, T('오늘의 고양이 첫 교감', 'Daily first cat pet'));
   }
   saveOfficeCatState();
+  if (!REMOTE) shareToApp();
 
   playRetroSound(Math.random() < 0.5 ? 'cat' : 'purr');
   spawnHearts(cat.x + 6, cat.y - 2);
@@ -1419,6 +1472,7 @@ function renameOfficeCat(cat) {
     if (!officeCatState.names) officeCatState.names = {};
     officeCatState.names[cat.type] = cat.name;
     saveOfficeCatState();
+    if (!REMOTE) shareToApp();
     playRetroSound('cat');
     spawnHearts(cat.x + 5, cat.y - 2);
     showToast(T(`🐱 고양이 이름이 「${cat.name}」(으)로 변경되었습니다!`, `🐱 Cat renamed to "${cat.name}"!`), '🐱');
@@ -1710,7 +1764,8 @@ function drawPixelCat(cat, t) {
 }
 
 function updateAndDrawOfficeCats(ts) {
-  if (!officeCatState.adopted) return;
+  const state = (remoteShare?.cat) ? remoteShare.cat : officeCatState;
+  if (!state.adopted) return;
   const cats = getActiveCatSims();
   if (cats.length === 0) return;
 
@@ -1724,7 +1779,8 @@ function updateAndDrawOfficeCats(ts) {
 }
 
 function drawCatOverlays(t) {
-  if (!officeCatState.adopted) return;
+  const state = (remoteShare?.cat) ? remoteShare.cat : officeCatState;
+  if (!state.adopted) return;
   const cats = getActiveCatSims();
   for (const cat of cats) {
     if (cat.bubbleText && cat.bubbleTimer > 0) {
@@ -1733,7 +1789,7 @@ function drawCatOverlays(t) {
   }
 
   // 화장실에 똥이 있으면 떠오르는 💩 인디케이터
-  if (isFurnitureOwned('cat_litter_box') && (officeCatState.poopCount || 0) > 0) {
+  if (isFurnitureOwned('cat_litter_box') && (state.poopCount || 0) > 0) {
     const lx = (logicalW - 24 + 10) * U;
     const ly = (WALL_H + 52 - 6 + Math.sin(t / 240) * 2) * U;
     ctx.save();
@@ -1747,7 +1803,7 @@ function drawCatOverlays(t) {
   }
 
   // 밥그릇이 비었으면 반짝이는 🥣 인디케이터
-  if (isFurnitureOwned('cat_food_bowl') && officeCatState.foodEmpty) {
+  if (isFurnitureOwned('cat_food_bowl') && state.foodEmpty) {
     const fx = (logicalW - 24 + 8) * U;
     const fy = (WALL_H + 38 - 5 + Math.sin(t / 280) * 1.5) * U;
     ctx.save();
@@ -1849,6 +1905,12 @@ function drawCatScratchPost(x, y, t) {
 
 function cleanCatLitter(b) {
   const count = officeCatState.poopCount || 0;
+  if (REMOTE) {
+    playRetroSound('stretch');
+    spawnHearts(b.x + 10, b.y + 4);
+    showToast(T('🚽 PC와 연동된 고양이 화장실입니다 ✨', '🚽 Synced with PC cat litter box ✨'), '🚽');
+    return;
+  }
   if (count > 0) {
     const reward = count * 10;
     officeCatState.poopCount = 0;
@@ -1856,6 +1918,7 @@ function cleanCatLitter(b) {
     officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 3);
     saveOfficeCatState();
     addCoins(reward, T('고양이 화장실 청소', 'Cleaned cat litter'));
+    shareToApp();
     playRetroSound('coin');
     spawnHearts(b.x + 10, b.y + 4);
     showToast(T(`🧹 화장실 청소 완료! 감자/맛동산을 수거하여 🪙 ${reward} 코인을 받았습니다! (친밀도 +3%)`, `🧹 Litter box cleaned! Earned 🪙 ${reward} coins! (+3% Affection)`), '🚽');
@@ -1867,11 +1930,18 @@ function cleanCatLitter(b) {
 }
 
 function refillCatFood(b) {
+  if (REMOTE) {
+    playRetroSound('coin');
+    spawnHearts(b.x + 8, b.y + 3);
+    showToast(T('🥣 PC와 연동된 고양이 식기입니다 🐟', '🥣 Synced with PC cat food bowl 🐟'), '🥣');
+    return;
+  }
   if (officeCatState.foodEmpty) {
     officeCatState.foodEmpty = false;
     officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 2);
     saveOfficeCatState();
     addCoins(5, T('사료 리필 보너스', 'Refilled food bonus'));
+    shareToApp();
     playRetroSound('coin');
     spawnHearts(b.x + 8, b.y + 3);
     showToast(T('🥣 신선한 사료와 물을 가득 채웠습니다! (+5🪙)', '🥣 Filled food & water bowls! (+5🪙)'), '🥣');
@@ -4956,6 +5026,9 @@ function renderShopModal() {
     } else if (isOwned) {
       btn.textContent = T('✅ 배치 완료', '✅ Placed');
       btn.disabled = true;
+    } else if (REMOTE) {
+      btn.textContent = T('PC에서 구매 가능', 'Buy on PC');
+      btn.disabled = true;
     } else if (isCat && !hasReqs) {
       btn.textContent = T('🔒 화장실·식기 필요', '🔒 Needs Essentials');
       btn.disabled = true;
@@ -8030,6 +8103,10 @@ async function startRemote() {
       remotePcVersion = typeof obj.ver === 'string' ? obj.ver : '';
       if (remoteEdit !== (obj.edit === true)) { remoteEdit = obj.edit === true; applyRemoteEdit(); }
       officeName = String(remoteShare.office || '').trim();
+      if (REMOTE && remoteShare.cat && typeof remoteShare.cat === 'object') {
+        officeCatState = Object.assign(officeCatState, remoteShare.cat);
+      }
+      updateCoinDisplay();
       remoteAt = p.t || Date.now();
       remoteError = '';
       onSnapshot(obj.snap);
