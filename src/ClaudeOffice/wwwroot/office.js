@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.6.1';
+const PAGE_VERSION = '1.6.2';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -3333,7 +3333,9 @@ function triggerDevMeme(isAuto = false) {
 }
 
 function checkDevMemeTimer() {
-  const intervalMin = Number(store.get('memeInterval', 60));
+  const userSetting = Number(store.get('memeInterval', 1));
+  // 임시 테스트 조치: 0(끔)으로 명시 설정한 경우가 아니면 1분 간격으로 작동 (뜨는 것 확인 후 원복 예정)
+  const intervalMin = userSetting === 0 ? 0 : 1;
   if (intervalMin <= 0) return;
   const intervalMs = intervalMin * 60 * 1000;
   const nowMs = Date.now();
@@ -5748,14 +5750,16 @@ function drawPetZzz(c, cx, y, t) {
   c.globalAlpha = 1;
 }
 setInterval(() => {
+  // 아이스브레이킹(개발자 밈) 주기 확인 (위젯/메인화면 상태 무관하게 상시 확인)
+  checkDevMemeTimer();
+
   if (widgetOn()) renderWidget();
   else if (!selectedId || panelEl.hidden || drawerFolded) return;
   else {
     const s = data.sessions.find((x) => x.id === selectedId);
     if (s) $('pLast').textContent = s.last ? `${fmtTime(s.last)} (${fmtAgo(now() - s.last)})` : '-';
   }
-  checkDevMemeTimer();
-}, 5000);   // "N분 전" 갱신 및 아이스브레이킹 밈 주기 확인
+}, 3000);   // "N분 전" 갱신 및 아이스브레이킹 밈 주기 확인
 
 /** 책상이 하나도 없을 때 왜 비었는지 알려 준다. */
 function refreshEmpty(shown) {
@@ -6095,13 +6099,14 @@ const SETTINGS = [
           'Pops up developer humor and quotes every few hours to break the ice (also available instantly via 💡 in MiniPet).'),
         options: [
           [0, T('끔 (직접 💡 클릭할 때만)', 'Off (manual click only)')],
+          [1, T('1분마다 (임시 테스트)', 'Every 1 minute (Test)')],
           [30, T('30분마다', 'Every 30 minutes')],
           [60, T('1시간마다 (권장)', 'Every 1 hour (Recommended)')],
           [120, T('2시간마다', 'Every 2 hours')],
           [180, T('3시간마다', 'Every 3 hours')],
           [240, T('4시간마다', 'Every 4 hours')],
         ],
-        get: () => Number(store.get('memeInterval', 60)),
+        get: () => Number(store.get('memeInterval', 1)),
         set: (v) => {
           store.set('memeInterval', Number(v));
           store.set('lastMemeAt', Date.now());
