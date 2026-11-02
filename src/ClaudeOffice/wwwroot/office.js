@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.5.3';
+const PAGE_VERSION = '1.5.4';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -2363,6 +2363,18 @@ function triggerDevMeme() {
 // ───────────────────────────── 🐾 Feature 4: 미니펫 모드 (시메지 산책 & 다이내믹 아일랜드) ─────────────────────────────
 let petMode = store.get('petMode', 'normal'); // 'normal' | 'shimeji' | 'island'
 let shimejiX = 24, shimejiVx = 1, shimejiState = 'walk', shimejiNextSwitch = 0, shimejiVy = 0, shimejiY = 0;
+let islandToastTimer = null;
+let islandToastText = null;
+
+function showIslandToast(text, icon = '🏝️') {
+  islandToastText = { text, icon, until: performance.now() + 2500 };
+  if (islandToastTimer) clearTimeout(islandToastTimer);
+  islandToastTimer = setTimeout(() => {
+    islandToastText = null;
+    renderPet();
+  }, 2500);
+  renderPet();
+}
 
 function togglePetWalk() {
   petMode = (petMode === 'shimeji') ? 'normal' : 'shimeji';
@@ -2385,9 +2397,15 @@ function togglePetWalk() {
 function togglePetIsland() {
   petMode = (petMode === 'island') ? 'normal' : 'island';
   store.set('petMode', petMode);
+  const gt = $('genToast');
+  if (gt) gt.classList.remove('show');
+  if (genToastTimer) clearTimeout(genToastTimer);
+
   if (petMode === 'island') {
-    showToast(T('🏝️ 다이내믹 아일랜드 모드 활성화!', '🏝️ Dynamic Island Mode Activated!'), '🏝️');
+    showIslandToast(T('초슬림 모드 켜짐 · ✕로 복귀', 'Ultra-slim active · ✕ to restore'), '🏝️');
   } else {
+    islandToastText = null;
+    if (islandToastTimer) clearTimeout(islandToastTimer);
     if (petIslandEl) {
       petIslandEl.hidden = true;
       petIslandEl.replaceChildren();
@@ -2406,28 +2424,35 @@ function renderPetIsland(s) {
   petIslandEl.hidden = false;
   petIslandEl.replaceChildren();
 
-  const isWait = !!actOf(s).wait;
-  const avatar = elem('span', 'island-avatar', s.icon);
+  const isWait = !!s && !!actOf(s).wait;
+  const isNotice = !!(islandToastText && performance.now() < islandToastText.until);
+  const icon = isNotice ? islandToastText.icon : (s?.icon || '🏝️');
+  const avatar = elem('span', 'island-avatar', icon);
   const info = elem('div', 'island-info');
-  const nm = elem('span', 'island-name', displayName(s));
+  const nameText = isNotice ? T('다이내믹 아일랜드', 'Dynamic Island') : (s ? displayName(s) : T('사무실', 'Office'));
+  const nm = elem('span', 'island-name', nameText);
   const dot = elem('span', `island-dot ${isWait ? 'waiting' : ''}`);
-  const tx = elem('span', 'island-text', s.text || T('대기 중', 'Standing by'));
+  const statusText = isNotice ? islandToastText.text : (s ? (s.text || T('대기 중', 'Standing by')) : T('직원 대기 중', 'Standing by'));
+  const tx = elem('span', `island-text ${isNotice ? 'island-notice' : ''}`, statusText);
   info.append(nm, dot, tx);
 
   const actions = elem('div', 'island-actions');
-  const jumpBtn = elem('button', 'island-btn btn-jump', '⚡');
-  jumpBtn.title = T('터미널/콘솔로 점프', 'Jump to Console');
-  jumpBtn.onclick = (e) => { e.stopPropagation(); jumpToConsole(s.id, s); };
+  if (s) {
+    const jumpBtn = elem('button', 'island-btn btn-jump', '⚡');
+    jumpBtn.title = T('터미널/콘솔로 점프', 'Jump to Console');
+    jumpBtn.onclick = (e) => { e.stopPropagation(); jumpToConsole(s.id, s); };
 
-  const stopBtn = elem('button', 'island-btn btn-stop', '🛑');
-  stopBtn.title = T('긴급 중단', 'Emergency Stop');
-  stopBtn.onclick = (e) => { e.stopPropagation(); stopSession(s.id); };
+    const stopBtn = elem('button', 'island-btn btn-stop', '🛑');
+    stopBtn.title = T('긴급 중단', 'Emergency Stop');
+    stopBtn.onclick = (e) => { e.stopPropagation(); stopSession(s.id); };
+    actions.append(jumpBtn, stopBtn);
+  }
 
   const restoreBtn = elem('button', 'island-btn btn-restore', '✕');
   restoreBtn.title = T('일반 모드로 복귀', 'Restore normal mode');
   restoreBtn.onclick = (e) => { e.stopPropagation(); togglePetIsland(); };
 
-  actions.append(jumpBtn, stopBtn, restoreBtn);
+  actions.append(restoreBtn);
   petIslandEl.append(avatar, info, actions);
 }
 
@@ -3037,6 +3062,10 @@ function closeWhiteboardModal() {
 // 전역 토스트 알림 헬퍼
 let genToastTimer = null;
 function showToast(msg, icon = '⚡') {
+  if (petMode === 'island') {
+    showIslandToast(msg, icon);
+    return;
+  }
   let t = $('genToast');
   if (!t) {
     t = elem('div', 'gen-toast');
@@ -4273,7 +4302,7 @@ function renderPet() {
   petFoldBtn.classList.toggle('on', !compact);
   petFoldBtn.title = compact ? T('지시·답변 칸 펼치기', 'Expand instruction & reply bar') : T('지시·답변 칸 접기(캐릭터만 작게 보기)', 'Collapse instruction & reply bar');
 
-  if (petMode === 'island' && s) {
+  if (petMode === 'island') {
     petEl.classList.add('pet-island');
     if (petAlertEl) petAlertEl.hidden = true;
     renderPetIsland(s);

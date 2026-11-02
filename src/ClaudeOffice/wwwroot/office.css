@@ -1176,6 +1176,33 @@ textarea.field { resize: vertical; min-height: 56px; }
   transform: translateX(-50%) translateY(0);
 }
 
+/* 바탕화면 미니펫 창 및 다이내믹 아일랜드 안에서는 하단 토스트가 창 밖으로 잘리거나 가리지 않도록 상단 배치 및 아일랜드 시 완전 숨김 */
+body.pet-window .gen-toast {
+  top: 8px;
+  bottom: auto;
+  transform: translateX(-50%) translateY(-6px);
+  max-width: 270px;
+  font-size: 11px;
+  padding: 5px 12px;
+}
+body.pet-window .gen-toast.show {
+  transform: translateX(-50%) translateY(0);
+}
+#pet.pet-island ~ .gen-toast,
+body:has(#pet.pet-island) .gen-toast {
+  display: none !important;
+}
+
+.island-text.island-notice {
+  color: #c4b5fd;
+  font-weight: 600;
+  animation: island-notice-flash 0.3s ease;
+}
+@keyframes island-notice-flash {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* 미니펫 컨텍스트 뱃지 */
 .pet-ctx-badge {
   font-size: 10px;
