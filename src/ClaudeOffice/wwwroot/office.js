@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.5.7';
+const PAGE_VERSION = '1.5.8';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -62,7 +62,8 @@ window.addEventListener('hashchange', () => {
 const HOSTED = location.protocol === 'https:' && location.hostname !== 'office.local';
 const REMOTE = !params.has('demo') && (!!remoteLink || HOSTED);
 const DEMO = !REMOTE && (!host || params.has('demo'));
-const PET_WINDOW = params.has('pet');   // 바탕화면 미니펫 전용 창(?pet=1)
+const WIDGET_WINDOW = params.has('pet') || params.has('widget_window') || params.has('miniwidget'); // 바탕화면 미니위젯 전용 창(?widget_window=1)
+const PET_WINDOW = WIDGET_WINDOW; // 하위 호환 별칭
 
 // 화면 언어(⚙️ → 사무실 → 화면 언어). PC 앱은 주소의 ?lang=en 으로 알려 준다(한국어는 붙이지 않음).
 // 휴대폰 보기는 PC가 요약에 실어 보낸 언어를 이 기기에 저장해 두고 쓴다(startRemote — 다르면 저장하고 다시 연다).
@@ -373,7 +374,7 @@ function onSnapshot(snap) {
 
   data = snap;
   skew = (snap.now || Date.now()) - Date.now();
-  if (PET_WINDOW) { renderPet(); return; }
+  if (WIDGET_WINDOW) { renderPet(); return; }
   refreshHud();
   refreshHookButton();
   refreshSettings();
@@ -1877,7 +1878,7 @@ function frame(ts) {
   if (ts - lastFrame < 33) return;   // 약 30fps면 충분
   lastFrame = ts;
 
-  if (PET_WINDOW) {
+  if (WIDGET_WINDOW) {
     drawPetFrame(ts);
     return;
   }
@@ -1964,7 +1965,7 @@ const nightShiftModalEl = $('nightShiftModal'), nsCloseBtn = $('nsClose'), nsTog
 const settingsEl = $('settings'), settingsBody = $('sBody'), drawerTab = $('drawerTab');
 
 function refreshHud() {
-  if (PET_WINDOW) {
+  if (WIDGET_WINDOW) {
     document.body.style.setProperty('--hud-h', '0px');
     return;
   }
@@ -2067,7 +2068,7 @@ let demoPetSessionId = store.get('petSessionId', '') || '';
 let demoPetCompact = store.get('petCompact', false);
 let demoPetNoBg = store.get('petNoBg', false);
 
-const petOn = () => (PET_WINDOW ? true : LOCAL_PET ? demoPetOpen : !!appSettings?.pet);
+const petOn = () => (WIDGET_WINDOW ? true : LOCAL_PET ? demoPetOpen : !!appSettings?.pet);
 const petSessionPref = () => (LOCAL_PET ? demoPetSessionId : (appSettings?.petSessionId || ''));
 const petCompactOn = () => (LOCAL_PET ? demoPetCompact : !!appSettings?.petCompact);
 const petNoBgOn = () => (LOCAL_PET ? demoPetNoBg : !!appSettings?.petNoBg);
@@ -2138,8 +2139,8 @@ function applyPetState() {
     btnPet.hidden = REMOTE;
     btnPet.classList.toggle('on', petOn());
   }
-  if (PET_WINDOW) {
-    document.body.classList.add('pet-window');
+  if (WIDGET_WINDOW) {
+    document.body.classList.add('widget-window', 'pet-window');
     petEl.hidden = false;
     renderPet();
     return;
@@ -2204,7 +2205,7 @@ function ensurePetDom() {
   officeBtn.title = T('메인 사무실 창에서 이 직원 열기', 'Open this employee in the main office window');
   officeBtn.addEventListener('click', () => {
     const s = resolvePetSession();
-    if (PET_WINDOW) send({ cmd: 'pet-open-office', id: s?.id || '' });
+    if (WIDGET_WINDOW) send({ cmd: 'pet-open-office', id: s?.id || '' });
     else if (s) selectSession(s.id);
   });
 
@@ -2244,7 +2245,7 @@ function ensurePetDom() {
   bar.append(petBarNm, petBarSt);
   bar.addEventListener('click', () => {
     const s = resolvePetSession();
-    if (PET_WINDOW) send({ cmd: 'pet-open-office', id: s?.id || '' });
+    if (WIDGET_WINDOW) send({ cmd: 'pet-open-office', id: s?.id || '' });
     else if (s) selectSession(s.id);
   });
   petStageEl.append(petCanvasEl, bar);
@@ -2253,7 +2254,7 @@ function ensurePetDom() {
   const startDrag = (e) => {
     if (e.button !== 0) return;
     if (e.target instanceof Element && e.target.closest('select, button, input, textarea, .pet-bar')) return;
-    if (PET_WINDOW) send({ cmd: 'pet-drag' });
+    if (WIDGET_WINDOW) send({ cmd: 'pet-drag' });
   };
   head.addEventListener('mousedown', startDrag);
   petStageEl.addEventListener('mousedown', startDrag);
@@ -2943,7 +2944,7 @@ function answerPetAsk(sid, id, allow, why, isQuestion = false) {
 function wakeTerminal(sid, text) {
   if (sid) {
     send({ cmd: 'focus-session', id: sid });
-    if (!PET_WINDOW) selectSession(sid);
+    if (!WIDGET_WINDOW) selectSession(sid);
   }
   const toCopy = text || T('안녕', 'Hello');
   if (toCopy && navigator.clipboard && navigator.clipboard.writeText) {
@@ -2963,7 +2964,7 @@ function doWakeTerminal(sid) {
         `📋 Copied your instruction ("${text.slice(0, 18)}")! Press Ctrl+V then Enter in terminal`)
     : T(`📋 연결 약속어 '${toCopy}' 자동 복사됨! 터미널에서 Ctrl+V 후 Enter를 누르면 연결됩니다`,
         `📋 Copied handshake phrase '${toCopy}'! Press Ctrl+V then Enter in terminal to connect`);
-  if (PET_WINDOW) {
+  if (WIDGET_WINDOW) {
     petNote = { sid, at: Date.now(), text: note };
     renderPet();
   } else {
@@ -3020,14 +3021,14 @@ function openConnectGuide(sid) {
   const chk = $('cgSkip');
   if (chk) chk.checked = !!skip;
   applyConnectGuideLang();
-  if (PET_WINDOW) syncPetHeight();
+  if (WIDGET_WINDOW) syncPetHeight();
 }
 
 function closeConnectGuide() {
   if (!connectGuideEl) return;
   connectGuideEl.hidden = true;
   connectGuideSid = '';
-  if (PET_WINDOW) syncPetHeight();
+  if (WIDGET_WINDOW) syncPetHeight();
 }
 
 function applyConnectGuideLang() {
@@ -4314,7 +4315,7 @@ function sendPetSay() {
 }
 
 function renderPet() {
-  if (!PET_WINDOW && !(DEMO && petOn())) return;
+  if (!WIDGET_WINDOW && !(DEMO && petOn())) return;
   ensurePetDom();
 
   const pref = petSessionPref();
@@ -4471,7 +4472,7 @@ function renderPet() {
 }
 
 function syncPetHeight() {
-  if (!PET_WINDOW) return;
+  if (!WIDGET_WINDOW) return;
   const guideOpen = connectGuideEl && !connectGuideEl.hidden;
   let h;
   if (guideOpen) {
@@ -4902,9 +4903,9 @@ let appSettings = null;
 function onApp(msg) {
   appSettings = msg;
   btnSettings.classList.toggle('dot', !!msg.update?.newer);   // 새 버전이 나오면 ⚙️ 에 점
-  if (!PET_WINDOW && !!msg.widget !== document.body.classList.contains('widget')) applyWidget();
+  if (!WIDGET_WINDOW && !!msg.widget !== document.body.classList.contains('widget')) applyWidget();
   applyPetState();
-  if (PET_WINDOW || (DEMO && petOn())) renderPet();
+  if (WIDGET_WINDOW || (DEMO && petOn())) renderPet();
   if (selectedId) renderPanel();
   refreshSettings();
 }
@@ -5756,7 +5757,7 @@ function getCanvasPos(e) {
 }
 
 canvas.addEventListener('touchstart', (e) => {
-  if (PET_WINDOW || widgetOn()) return;
+  if (WIDGET_WINDOW || widgetOn()) return;
 
   const now = Date.now();
   if (e.touches.length === 2) {
@@ -5796,7 +5797,7 @@ canvas.addEventListener('touchstart', (e) => {
 }, { passive: false });
 
 canvas.addEventListener('touchmove', (e) => {
-  if (PET_WINDOW || widgetOn()) return;
+  if (WIDGET_WINDOW || widgetOn()) return;
 
   if (touchState.mode === 'pinch' && e.touches.length === 2) {
     e.preventDefault();
@@ -5905,7 +5906,7 @@ canvas.addEventListener('mouseleave', () => { hoverId = null; tooltipEl.hidden =
 
 // ⚡ 책상 더블 클릭 시 해당 세션의 콘솔/터미널 창으로 즉시 점프
 canvas.addEventListener('dblclick', (e) => {
-  if (PET_WINDOW || widgetOn() || REMOTE) return;
+  if (WIDGET_WINDOW || widgetOn() || REMOTE) return;
   const pos = getCanvasPos(e);
   const hit = hitTest(pos.x, pos.y);
   if (hit && hit.s) {
@@ -6000,7 +6001,7 @@ document.addEventListener('keydown', (e) => {
     if (connectGuideEl && !connectGuideEl.hidden) { closeConnectGuide(); return; }
     if (whiteboardModalEl && !whiteboardModalEl.hidden) { closeWhiteboardModal(); return; }
     if (achieveModalEl && !achieveModalEl.hidden) { closeAchieveModal(); return; }
-    if (PET_WINDOW) return;
+    if (WIDGET_WINDOW) return;
     const inInput = e.target instanceof Element && e.target.matches('input, textarea, select');
     if (inInput) { e.target.blur(); return; }
     if (searchWrapEl && !searchWrapEl.hidden) { setSearchOpen(false, true); return; }
@@ -6012,7 +6013,7 @@ document.addEventListener('keydown', (e) => {
     renderPanel();
     return;
   }
-  if (PET_WINDOW) return;
+  if (WIDGET_WINDOW) return;
   const inInput = e.target instanceof Element && e.target.matches('input, textarea, select');
   if (inInput) return;
 
@@ -6669,7 +6670,7 @@ function onRemote(st) {
     prevAskIds = curAskIds;
   }
   remoteState = st || null;
-  if (PET_WINDOW) { renderPet(); return; }
+  if (WIDGET_WINDOW) { renderPet(); return; }
   refreshHookButton();
   refreshHud();
   renderPanel();

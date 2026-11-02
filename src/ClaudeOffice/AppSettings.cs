@@ -63,10 +63,10 @@ internal sealed class AppSettings
     public WindowPlacement? MiniWidgetPlacement { get; set; }
 
     [System.Text.Json.Serialization.JsonIgnore]
-    public WindowPlacement? PetWindow { get => MiniWidgetPlacement; set => MiniWidgetPlacement = value; }
+    public WindowPlacement? MiniWidgetWindow { get => MiniWidgetPlacement; set => MiniWidgetPlacement = value; }
 
     [System.Text.Json.Serialization.JsonIgnore]
-    public WindowPlacement? MiniWidgetWindow { get => MiniWidgetPlacement; set => MiniWidgetPlacement = value; }
+    public WindowPlacement? WidgetWindow { get => MiniWidgetPlacement; set => MiniWidgetPlacement = value; }
 
     public sealed class WindowPlacement
     {

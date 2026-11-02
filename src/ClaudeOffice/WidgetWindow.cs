@@ -1,5 +1,4 @@
 // 하위 호환 및 편의용 별칭
-global using PetWindow = ClaudeOffice.WidgetWindow;
 global using MiniWidgetWindow = ClaudeOffice.WidgetWindow;
 
 using System.IO;
@@ -129,7 +128,7 @@ internal sealed class WidgetWindow : Window
         Close();
     }
 
-    private string PageUrl() => $"https://{_virtualHost}/index.html?pet=1" + (L.En ? "&lang=en" : "");
+    private string PageUrl() => $"https://{_virtualHost}/index.html?widget_window=1&pet=1" + (L.En ? "&lang=en" : "");
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -207,7 +206,7 @@ internal sealed class WidgetWindow : Window
             return;
         }
         var wa = SystemParameters.WorkArea;
-        if ((App.Settings.MiniWidgetPlacement ?? App.Settings.PetWindow) is { } w && OnScreen(w))
+        if ((App.Settings.MiniWidgetPlacement ?? App.Settings.MiniWidgetWindow) is { } w && OnScreen(w))
         {
             if (w.Height >= MinPetHeight && w.Height <= MaxPetHeight) Height = w.Height;
             Left = w.Left;

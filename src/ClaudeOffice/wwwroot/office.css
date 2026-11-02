@@ -1177,7 +1177,7 @@ textarea.field { resize: vertical; min-height: 56px; }
 }
 
 /* 바탕화면 미니위젯 창 및 다이내믹 아일랜드 안에서는 하단 토스트가 창 밖으로 잘리거나 가리지 않도록 상단 배치 및 아일랜드 시 완전 숨김 */
-body.pet-window .gen-toast {
+body.widget-window .gen-toast, body.pet-window .gen-toast {
   top: 8px;
   bottom: auto;
   transform: translateX(-50%) translateY(-6px);
@@ -1185,7 +1185,7 @@ body.pet-window .gen-toast {
   font-size: 11px;
   padding: 5px 12px;
 }
-body.pet-window .gen-toast.show {
+body.widget-window .gen-toast, body.pet-window .gen-toast.show {
   transform: translateX(-50%) translateY(0);
 }
 #pet.pet-island ~ .gen-toast,
@@ -1830,15 +1830,15 @@ body:has(#pet.pet-island) .gen-toast {
 }
 
 /* 미니위젯 창에서의 모달 최적화 */
-body.pet-window .cg-box {
+body.widget-window .cg-box, body.pet-window .cg-box {
   width: calc(100vw - 12px);
   max-height: calc(100vh - 12px);
   border-radius: 10px;
 }
-body.pet-window .cg-head { padding: 10px 12px 6px; }
-body.pet-window .cg-body { padding: 8px 12px; gap: 8px; }
-body.pet-window .cg-foot { padding: 8px 12px; }
-body.pet-window .cg-step { padding: 6px 8px; gap: 7px; }
+body.widget-window .cg-head, body.pet-window .cg-head { padding: 10px 12px 6px; }
+body.widget-window .cg-body, body.pet-window .cg-body { padding: 8px 12px; gap: 8px; }
+body.widget-window .cg-foot, body.pet-window .cg-foot { padding: 8px 12px; }
+body.widget-window .cg-step, body.pet-window .cg-step { padding: 6px 8px; gap: 7px; }
 .mmain { flex: 1; min-height: 0; display: flex; }
 #sTabs {
   flex: 0 0 148px;
@@ -2075,11 +2075,12 @@ body.widget canvas#office, body.widget #hud, body.widget #drawerTab { display: n
   background: #7dffa0; box-shadow: 0 0 0 2px var(--bg); }
 
 /* ───── 바탕화면 미니위젯(대표 직원 구석 창) ───── */
-html:has(body.pet-window), body.pet-window {
+html:has(body.widget-window), html:has(body.pet-window), body.widget-window, body.pet-window {
   padding-top: 0 !important;
   overflow: hidden;
   background: transparent !important;
 }
+body.widget-window canvas#office, body.widget-window #hud, body.widget-window #drawerTab, body.widget-window #empty,
 body.pet-window canvas#office, body.pet-window #hud, body.pet-window #drawerTab, body.pet-window #empty {
   display: none !important;
 }
@@ -2096,7 +2097,7 @@ body.pet-window canvas#office, body.pet-window #hud, body.pet-window #drawerTab,
   border-radius: 13px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
 }
-body.pet-window #pet {
+body.widget-window #pet, body.pet-window #pet {
   width: 100%;
   margin: 0;
   border-radius: 13px;

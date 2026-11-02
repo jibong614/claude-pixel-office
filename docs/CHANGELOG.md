@@ -2,6 +2,13 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.5.8 — 2026-11-02
+- **🪟 프론트엔드 & 백엔드 코드 전반의 PetWindow 식별자 일괄 리팩토링**:
+  - `office.js`: 내부 전역 변수 `PET_WINDOW`를 `WIDGET_WINDOW`로 리팩토링 및 `widget_window` URL 쿼리 파라미터 지원
+  - `office.css`: `body.pet-window` 전용 스타일을 `body.widget-window`로 확장 동기화
+  - `WidgetWindow.cs` & `AppSettings.cs`: `PetWindow` 잔존 식별자를 `MiniWidgetWindow` 및 `WidgetWindow`로 완전 정리
+  - 하위 호환용 별칭 및 URL 쿼리(?pet=1)를 유지하여 기존 바로가기나 동작 흐름에 부작용 없도록 설계
+
 ## 1.5.7 — 2026-11-02
 - **🪟 백엔드 C# 소스 코드 리팩토링: PetWindow ➔ WidgetWindow 클래스 개편**:
   - 사용자 피드백에 맞춰 C# 소스 코드의 `PetWindow.cs`를 `WidgetWindow.cs`로 변경 및 클래스명 `WidgetWindow`로 일괄 개편
