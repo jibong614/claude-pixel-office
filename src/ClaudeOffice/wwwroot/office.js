@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.5.5';
+const PAGE_VERSION = '1.5.6';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -2056,7 +2056,7 @@ function renderWidget() {
   if (!LOCAL_WIDGET && h !== lastWidgetH) { lastWidgetH = h; send({ cmd: 'widget-size', height: h }); }
 }
 
-// ───────────────────────────── 바탕화면 미니펫 ─────────────────────────────
+// ───────────────────────────── 바탕화면 미니위젯 (Desktop MiniWidget) ─────────────────────────────
 // 대표 직원 한 명을 바탕화면 구석(우측 하단 기본, 드래그로 이동)에 작은 책상·컴퓨터와 함께 꺼내 두고,
 // 상태(타이핑·생각·손들기·졸음)를 보거나, 바로 지시를 던지거나, 승인·거절하거나, 다른 직원으로 바꿀 수 있다.
 
@@ -2119,7 +2119,7 @@ function setPetNoBg(v) {
   }
 }
 
-/** 미니펫에 앉힐 대표 직원: 지정한 세션이 있으면 그 직원, 없거나 사라졌으면 확인 필요(✋) → 작업 중 → 최근 활동 순으로 고른다. */
+/** 미니위젯에 표시할 대표 직원: 지정한 세션이 있으면 그 직원, 없거나 사라졌으면 확인 필요(✋) → 작업 중 → 최근 활동 순으로 고른다. */
 function resolvePetSession() {
   const list = data.sessions || [];
   if (!list.length) return null;
@@ -2168,10 +2168,10 @@ function ensurePetDom() {
   petDomBuilt = true;
 
   const head = elem('div', 'pet-head');
-  const badge = elem('span', 'pet-badge', '🐾');
+  const badge = elem('span', 'pet-badge', '🪟');
   badge.title = T('드래그해 위치 이동', 'Drag to move');
   petSelEl = elem('select', 'pet-sel');
-  petSelEl.title = T('대표 직원 선택(바탕화면 미니펫에 앉힐 세션)', 'Choose representative employee');
+  petSelEl.title = T('대표 직원 선택(바탕화면 미니위젯에 표시할 세션)', 'Choose representative employee');
   petSelEl.addEventListener('change', () => setPetSession(petSelEl.value));
 
   petBgBtn = elem('button', 'pet-ibtn', '🖼️');
@@ -2221,7 +2221,7 @@ function ensurePetDom() {
   petMemeBtn.addEventListener('click', () => triggerDevMeme());
 
   const closeBtn = elem('button', 'pet-ibtn', '✕');
-  closeBtn.title = T('바탕화면 미니펫 닫기', 'Close Desktop MiniPet');
+  closeBtn.title = T('바탕화면 미니위젯 닫기', 'Close Desktop MiniWidget');
   closeBtn.addEventListener('click', () => setPet(false));
 
   head.append(badge, petSelEl, petBgBtn, petFoldBtn, petWalkBtn, petIslandBtn, petMemeBtn, petStopBtn, focusBtn, officeBtn, closeBtn);
@@ -2402,7 +2402,7 @@ function checkDevMemeTimer() {
   }
 }
 
-// ───────────────────────────── 🐾 Feature 4: 미니펫 모드 (시메지 산책 & 다이내믹 아일랜드) ─────────────────────────────
+// ───────────────────────────── 🪟 Feature 4: 미니위젯 모드 (시메지 산책 & 다이내믹 아일랜드) ─────────────────────────────
 let petMode = store.get('petMode', 'normal'); // 'normal' | 'shimeji' | 'island'
 let shimejiX = 24, shimejiVx = 1, shimejiState = 'walk', shimejiNextSwitch = 0, shimejiVy = 0, shimejiY = 0;
 let islandToastTimer = null;
@@ -2876,7 +2876,7 @@ function makePetAsk(sid, a) {
 
   const btns = elem('div', 'btns');
   const term = elem('button', 'pet-btn', T('🖥️ 터미널에서', '🖥️ In terminal'));
-  term.title = T('미니펫에서 결정하지 않고 원래 터미널·VS Code 창으로 넘깁니다', 'Pass to the terminal or VS Code prompt');
+  term.title = T('미니위젯에서 결정하지 않고 원래 터미널·VS Code 창으로 넘깁니다', 'Pass to the terminal or VS Code prompt');
   term.addEventListener('click', () => answerPetAsk(sid, a.id, null, '', isQuestion));
 
   if (isQuestion) {
@@ -3060,7 +3060,7 @@ function applyConnectGuideLang() {
   t('cgS2Title', '⌨️ 2. 터미널 창에서 Ctrl+V 후 Enter 실행', '2. Paste with Ctrl+V & Enter');
   t('cgS2Desc', '별도로 복사하지 않아도 클립보드에 이미 들어 있으니, 입력창에 그대로 붙여넣고 Enter를 누르세요.', 'No need to press Ctrl+C beforehand. Just paste with Ctrl+V and press Enter.');
   t('cgS3Title', '✅ 3. 실시간 연결 완료!', '3. Connection Complete!');
-  t('cgS3Desc', 'Claude의 첫 답변이 끝나면 연결이 완료되어, 다음부터는 터미널로 이동할 필요 없이 오피스나 미니펫에서 바로 지시가 전달됩니다!', 'Once Claude finishes this reply, future instructions will be sent directly from the Office / MiniPet.');
+  t('cgS3Desc', 'Claude의 첫 답변이 끝나면 연결이 완료되어, 다음부터는 터미널로 이동할 필요 없이 오피스나 미니위젯에서 바로 지시가 전달됩니다!', 'Once Claude finishes this reply, future instructions will be sent directly from the Office / MiniPet.');
   t('cgSkipLbl', '다음부터는 팝업 없이 바로 터미널로 이동', 'Skip this guide next time and jump directly to terminal');
   t('cgWakeBtn', '🖥️ 지금 터미널로 이동 (클립보드 자동 복사)', '🖥️ Go to Terminal Now (Copy)');
   t('cgCancelBtn', '닫기', 'Close');
@@ -3553,8 +3553,8 @@ const ALL_ACHIEVEMENTS = [
     icon: '🐾',
     name: '바탕화면 파트너',
     en: 'Desktop Companion',
-    desc: '바탕화면 미니펫을 켜서 직원을 내 컴퓨터 바탕화면 구석에 꺼내두세요.',
-    enDesc: 'Turn on Desktop MiniPet to keep an employee in the screen corner.',
+    desc: '바탕화면 미니위젯을 켜서 직원을 내 컴퓨터 바탕화면 구석에 꺼내두세요.',
+    enDesc: 'Turn on Desktop MiniWidget to keep an employee on your desktop.',
     guide: '상단 바 [🐾] 버튼 또는 단축키 M 누르기',
     enGuide: 'Top [🐾] button or shortcut M',
     exp: 100,
@@ -3639,7 +3639,7 @@ const ALL_ACHIEVEMENTS = [
     icon: '🚀',
     name: '첫 발걸음',
     en: 'First Step',
-    desc: 'Claude Code 세션과 연결하고 오피스 또는 미니펫에서 첫 지시를 전달해보세요.',
+    desc: 'Claude Code 세션과 연결하고 오피스 또는 미니위젯에서 첫 지시를 전달해보세요.',
     enDesc: 'Connect a Claude Code session and deliver your first instruction.',
     guide: '지시 입력창에 명령 입력 후 [전송] 또는 터미널 연결',
     enGuide: 'Enter prompt and click [Send] or connect terminal',
@@ -3655,8 +3655,8 @@ const ALL_ACHIEVEMENTS = [
     en: 'Emergency Brake',
     desc: '직원이 작업 중일 때 [🛑 작업 중단] 버튼을 눌러 작업을 안전하게 멈춰보세요.',
     enDesc: 'Press emergency stop [🛑] to abort a running task safely.',
-    guide: '직원이 일할 때 상세 서랍 또는 미니펫의 [🛑] 버튼 클릭',
-    enGuide: 'Click [🛑] button in drawer or MiniPet while working',
+    guide: '직원이 일할 때 상세 서랍 또는 미니위젯의 [🛑] 버튼 클릭',
+    enGuide: 'Click [🛑] button in drawer or MiniWidget while working',
     exp: 100,
     action: null,
     check: () => !!getQuest('emergency_stop'),
@@ -3834,10 +3834,10 @@ const ALL_ACHIEVEMENTS = [
     icon: '🐾',
     name: '시메지 산책가',
     en: 'Shimeji Walker',
-    desc: '바탕화면 미니펫에서 시메지 산책 모드를 켜서 직원이 화면을 자유롭게 걷게 해보세요.',
-    enDesc: 'Turn on Shimeji walk mode in MiniPet and watch your employee walk across the screen.',
-    guide: '미니펫 툴바에서 🐾 산책 모드 버튼 클릭',
-    enGuide: 'Click 🐾 Walk Mode button in MiniPet toolbar',
+    desc: '바탕화면 미니위젯에서 시메지 산책 모드를 켜서 직원이 화면을 자유롭게 걷게 해보세요.',
+    enDesc: 'Turn on Shimeji walk mode in MiniWidget and watch your employee walk across the screen.',
+    guide: '미니위젯 툴바에서 🐾 산책 모드 버튼 클릭',
+    enGuide: 'Click 🐾 Walk Mode button in MiniWidget toolbar',
     exp: 150,
     check: () => !!getQuest('shimeji_walk'),
   },
@@ -5020,14 +5020,14 @@ const SETTINGS = [
     ],
   },
   {
-    tab: 'office', title: T('바탕화면 미니펫 & 아이스브레이킹', 'Desktop MiniPet & Icebreaker'),
+    tab: 'office', title: T('바탕화면 미니위젯 & 아이스브레이킹', 'Desktop MiniWidget & Icebreaker'),
     items: [
       { type: 'petcfg', pcOnly: true, enabled: () => LOCAL_PET || appReady() },
       {
         type: 'choice',
         name: T('💡 아이스브레이킹 개발자 밈 주기', '💡 Icebreaker Dev Memes Interval'),
         pcOnly: true,
-        desc: T('코딩 중 가벼운 활력을 위해 1~3시간 단위로 개발자 유머와 명언을 말풍선으로 띄웁니다 (미니펫 상단 💡 버튼으로 즉시 보기 가능).',
+        desc: T('코딩 중 가벼운 활력을 위해 1~3시간 단위로 개발자 유머와 명언을 말풍선으로 띄웁니다 (미니위젯 상단 💡 버튼으로 즉시 보기 가능).',
           'Pops up developer humor and quotes every few hours to break the ice (also available instantly via 💡 in MiniPet).'),
         options: [
           [0, T('끔 (직접 💡 클릭할 때만)', 'Off (manual click only)')],
@@ -5371,13 +5371,13 @@ const RENDER = {
     const top = elem('div', 'petcfg-top');
     const txt = elem('div', 'txt');
     txt.append(
-      elem('div', 'name', T('바탕화면 미니펫', 'Desktop MiniPet')),
-      elem('div', 'desc', T('대표 직원 한 명을 바탕화면 구석(기본: 오른쪽 아래, 드래그로 이동 가능)에 꺼내 둡니다. 메인 창을 닫아 알림 영역에 숨겨 두어도 바탕화면에 남아 지시·승인·거절·직원 전환을 바로 할 수 있습니다(상단 🐾 버튼과 같음).',
-        'Places one representative employee in the corner of your desktop (bottom-right by default, draggable). Stays on your desktop even when the main window is hidden to the tray (same as the 🐾 button).'))
+      elem('div', 'name', T('바탕화면 미니위젯', 'Desktop MiniWidget')),
+      elem('div', 'desc', T('대표 직원 한 명을 바탕화면 구석(기본: 오른쪽 아래, 드래그로 이동 가능)에 꺼내 둡니다. 메인 창을 닫아 알림 영역에 숨겨 두어도 바탕화면에 남아 지시·승인·거절·직원 전환을 바로 할 수 있습니다(상단 🪟 버튼과 같음).',
+        'Places one representative employee in the corner of your desktop (bottom-right by default, draggable). Stays on your desktop even when the main window is hidden to the tray (same as the 🪟 button).'))
     );
     const swOn = elem('button', 'switch');
     swOn.setAttribute('role', 'switch');
-    swOn.setAttribute('aria-label', T('바탕화면 미니펫 켜기', 'Enable Desktop MiniPet'));
+    swOn.setAttribute('aria-label', T('바탕화면 미니위젯 켜기', 'Enable Desktop MiniWidget'));
     swOn.addEventListener('click', () => setPet(!petOn()));
     top.append(txt, swOn);
 
@@ -5393,7 +5393,7 @@ const RENDER = {
     const bgLeft = elem('div', '');
     bgLeft.append(
       elem('div', 'lbl', T('배경 숨기기', 'Hide background')),
-      elem('div', 'subdesc', T('구석 방 배경(벽·창문·화분·카펫)을 빼고 직원·의자·책상·컴퓨터만 보여 줍니다 (미니펫 상단 🖼️ 버튼과 같음).',
+      elem('div', 'subdesc', T('구석 방 배경(벽·창문·화분·카펫)을 빼고 직원·의자·책상·컴퓨터만 보여 줍니다 (미니위젯 상단 🖼️ 버튼과 같음).',
         'Hides the room background (wall, window, plant, rug) and shows only the employee, chair, desk, and computer (same as the 🖼️ button).'))
     );
     const swBg = elem('button', 'switch');
@@ -5994,7 +5994,7 @@ if (hudSearchEl) {
   });
 }
 
-// 키보드 단축키: Esc(닫기), /(직원 검색), 1~9(책상 직원 선택), M(미니펫), W(작게 보기), R(근무 일지), A(업적 도감)
+// 키보드 단축키: Esc(닫기), /(직원 검색), 1~9(책상 직원 선택), M(미니위젯), W(작게 보기), R(근무 일지), A(업적 도감)
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (connectGuideEl && !connectGuideEl.hidden) { closeConnectGuide(); return; }
@@ -6480,9 +6480,9 @@ function renderPanel() {
   if ($('pPet')) {
     const isRep = petOn() && resolvePetSession()?.id === s.id;
     const pinnedRep = petOn() && petSessionPref() === s.id;
-    $('pPet').textContent = pinnedRep ? T('🐾 대표 직원 중', '🐾 Pinned MiniPet')
-      : isRep ? T('🐾 미니펫 고정', '🐾 Pin MiniPet')
-      : T('🐾 미니펫', '🐾 MiniPet');
+    $('pPet').textContent = pinnedRep ? T('🪟 대표 직원 중', '🪟 Pinned MiniWidget')
+      : isRep ? T('🪟 미니위젯 고정', '🪟 Pin MiniWidget')
+      : T('🪟 미니위젯', '🪟 MiniWidget');
     $('pPet').style.borderColor = isRep ? 'var(--accent)' : '';
   }
   renderRemote(s);
@@ -7186,7 +7186,7 @@ refreshButtons();
 applyPetState();
 refreshHud();
 if (selectedId === 'settings') setSettingsOpen(true, params.get('tab'));   // 화면 점검용: ?select=settings&tab=phone
-if (selectedId === 'pet') selectedId = null;   // ?select=pet 은 바탕화면 미니펫 미리보기를 켠다
+if (selectedId === 'pet') selectedId = null;   // ?select=pet 은 바탕화면 미니위젯 미리보기를 켠다
 window.addEventListener('resize', () => { layoutKey = ''; });
 
 if (REMOTE) {

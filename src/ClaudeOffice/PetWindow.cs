@@ -11,7 +11,7 @@ using Microsoft.Web.WebView2.Wpf;
 namespace ClaudeOffice;
 
 /// <summary>
-/// 바탕화면 미니펫(MiniPet) 창: 대표 세션의 직원이 바탕화면 오른쪽 아래 구석 책상에 앉아 일하는 모습을 보여 주고,
+/// 바탕화면 미니위젯(MiniWidget) 창: 대표 세션의 직원이 바탕화면 오른쪽 아래 구석 책상에 앉아 일하는 모습을 보여 주고,
 /// 바로 지시를 던지거나 승인·거절·대표 세션 전환을 할 수 있는 작은 테두리 없는 항상-위 창.
 /// 본창(MainWindow)을 ✕ 로 숨겨 두어도 바탕화면에 그대로 남아 있다.
 /// </summary>
@@ -36,7 +36,7 @@ internal sealed class PetWindow : Window
         _onMessage = onMessage;
         _webSubclass = OnWebChildWndProc;
 
-        Title = "Claude Office — MiniPet";
+        Title = "Claude Office — MiniWidget";
         Width = DefaultWidth;
         Height = 260;
         MinWidth = DefaultWidth;
@@ -216,7 +216,7 @@ internal sealed class PetWindow : Window
         }
     }
 
-    /// <summary>미니펫 내용 높이에 창 높이를 맞추되, 아래쪽 모서리를 고정해 바탕화면 오른쪽 아래 자리에서 위로만 늘어나고 줄어들게 한다.</summary>
+    /// <summary>미니위젯 내용 높이에 창 높이를 맞추되, 아래쪽 모서리를 고정해 바탕화면 오른쪽 아래 자리에서 위로만 늘어나고 줄어들게 한다.</summary>
     public void FitHeight(double contentHeight)
     {
         if (WindowState != WindowState.Normal) return;

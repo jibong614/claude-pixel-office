@@ -64,7 +64,7 @@ internal sealed class TrayIcon : IDisposable
     {
         _openItem.Text = L.T("열기", "Open");
         _reportItem.Text = L.T("📊 오늘의 근무 일지", "📊 Today's work log");
-        _petItem.Text = L.T("🐾 바탕화면 미니펫", "🐾 Desktop MiniPet");
+        _petItem.Text = L.T("🪟 바탕화면 미니위젯", "🪟 Desktop MiniWidget");
         _widgetItem.Text = L.T("📋 작게 보기(목록)", "📋 Compact view (list)");
         _exitItem.Text = L.T("끝내기", "Exit");
         RefreshWaitingLabel();

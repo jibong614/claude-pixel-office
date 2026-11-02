@@ -1176,7 +1176,7 @@ textarea.field { resize: vertical; min-height: 56px; }
   transform: translateX(-50%) translateY(0);
 }
 
-/* 바탕화면 미니펫 창 및 다이내믹 아일랜드 안에서는 하단 토스트가 창 밖으로 잘리거나 가리지 않도록 상단 배치 및 아일랜드 시 완전 숨김 */
+/* 바탕화면 미니위젯 창 및 다이내믹 아일랜드 안에서는 하단 토스트가 창 밖으로 잘리거나 가리지 않도록 상단 배치 및 아일랜드 시 완전 숨김 */
 body.pet-window .gen-toast {
   top: 8px;
   bottom: auto;
@@ -1203,7 +1203,7 @@ body:has(#pet.pet-island) .gen-toast {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 미니펫 컨텍스트 뱃지 */
+/* 미니위젯 컨텍스트 뱃지 */
 .pet-ctx-badge {
   font-size: 10px;
   font-weight: 700;
@@ -1829,7 +1829,7 @@ body:has(#pet.pet-island) .gen-toast {
   color: #94a3b8;
 }
 
-/* 미니펫 창에서의 모달 최적화 */
+/* 미니위젯 창에서의 모달 최적화 */
 body.pet-window .cg-box {
   width: calc(100vw - 12px);
   max-height: calc(100vh - 12px);
@@ -2074,7 +2074,7 @@ body.widget canvas#office, body.widget #hud, body.widget #drawerTab { display: n
 #hud button.dot::after { content: ''; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%;
   background: #7dffa0; box-shadow: 0 0 0 2px var(--bg); }
 
-/* ───── 바탕화면 미니펫(대표 직원 구석 창) ───── */
+/* ───── 바탕화면 미니위젯(대표 직원 구석 창) ───── */
 html:has(body.pet-window), body.pet-window {
   padding-top: 0 !important;
   overflow: hidden;
@@ -2315,7 +2315,7 @@ canvas#petCanvas {
   white-space: nowrap;
 }
 
-/* 설정의 바탕화면 미니펫 통합 카드(켜기 스위치 + 대표 직원 선택 + 배경 숨기기) */
+/* 설정의 바탕화면 미니위젯 통합 카드(켜기 스위치 + 대표 직원 선택 + 배경 숨기기) */
 .petcfg-top {
   display: flex;
   align-items: flex-start;
@@ -3073,7 +3073,7 @@ canvas#office {
   white-space: pre-wrap;
 }
 
-/* ───────────────────────────── 🐾 Feature 4: 미니펫 시메지 & 다이내믹 아일랜드 ───────────────────────────── */
+/* ───────────────────────────── 🐾 Feature 4: 미니위젯 시메지 & 다이내믹 아일랜드 ───────────────────────────── */
 /* 시메지 산책 모드 */
 #pet.pet-shimeji {
   background: transparent !important;
