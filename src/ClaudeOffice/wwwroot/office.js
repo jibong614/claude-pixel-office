@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.5.4';
+const PAGE_VERSION = '1.5.5';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1767,7 +1767,9 @@ function drawDeskBubble(d, t) {
   if (a.bubble === 'zzz') { drawZzz(cx, ay, t); return; }
 
   let text = `${s.icon} ${s.text}`;
-  if (a.bubble === 'thought') text += '.'.repeat(1 + tick(t, 450, 3));
+  if (currentDevMeme && t < devMemeExpires && s.id === (resolvePetSession()?.id || visibleSessions()[0]?.id)) {
+    text = `💡 ${currentDevMeme}`;
+  } else if (a.bubble === 'thought') text += '.'.repeat(1 + tick(t, 450, 3));
   else if (s.act === 'idle' && (!s.text || s.text.trim() === '')) {
     if (s.ctx && (s.ctx / MAX_CTX_TOKENS) >= 0.85) {
       const cCycle = ((t + hash(s.id) * 311) % 18000) / 1000;
@@ -2215,7 +2217,7 @@ function ensurePetDom() {
   petIslandBtn.addEventListener('click', togglePetIsland);
 
   const petMemeBtn = elem('button', 'pet-ibtn', '💡');
-  petMemeBtn.title = T('개발자 유머 & 명언 보기 (이스터에그)', 'Developer Memes & Quotes');
+  petMemeBtn.title = T('개발자 유머 & 명언 보기 (설정에서 1시간마다 자동 띄우기 가능)', 'Developer Memes & Quotes (auto icebreaker configurable in settings)');
   petMemeBtn.addEventListener('click', () => triggerDevMeme());
 
   const closeBtn = elem('button', 'pet-ibtn', '✕');
@@ -2343,21 +2345,61 @@ const DEV_MEMES = [
   { ko: "컴파일 성공의 희열은 10초, 런타임 에러의 고통은 10시간. ⚡", en: "Compile joy lasts 10s; runtime error pain lasts 10 hours. ⚡" },
   { ko: "인간은 실수하고, 컴퓨터는 그 실수를 초당 수십억 번 반복한다. 💻", en: "To err is human, to repeat it billions of times per sec is a computer. 💻" },
   { ko: "이 코드는 오직 나와 신만이 이해할 수 있었지만, 지금은 신만이 안다. 🕊️", en: "Only God and I understood this code. Now only God knows. 🕊️" },
-  { ko: "완벽한 코드란 더 이상 지울 것이 없을 때 완성된다. ✂️", en: "Perfection is achieved not when there is nothing to add, but nothing left to remove. ✂️" }
+  { ko: "완벽한 코드란 더 이상 지울 것이 없을 때 완성된다. ✂️", en: "Perfection is achieved not when there is nothing to add, but nothing left to remove. ✂️" },
+  { ko: "코드 리뷰 코멘트: '이게 왜 돌아가죠?' 🧐", en: "Code review comment: 'Why does this even work?' 🧐" },
+  { ko: "재부팅 한 번에 해결되는 버그만큼 허탈한 것도 없다. 🔄", en: "Nothing feels emptier than a bug fixed by a simple reboot. 🔄" },
+  { ko: "하드코딩은 미래의 나에게 빚을 지는 일이다. 💳", en: "Hardcoding is just taking a loan from future me. 💳" },
+  { ko: "콘솔창에 'asdf' 찍어가며 디버깅하는 나를 발견했다. 🕵️", en: "Caught myself debugging with console.log('asdf'). 🕵️" },
+  { ko: "오늘 할 일을 내일의 AI에게 미루자. 🤖", en: "Never do today what AI can do for you tomorrow. 🤖" }
 ];
 
 const playSfx = (k) => playRetroSound(k === 'quest' ? 'done' : k);
 let currentDevMeme = null;
 let devMemeExpires = 0;
+let lastMemeIndex = -1;
 
-function triggerDevMeme() {
-  const item = DEV_MEMES[Math.floor(Math.random() * DEV_MEMES.length)];
+function triggerDevMeme(isAuto = false) {
+  let idx = 0, attempts = 0;
+  do {
+    idx = Math.floor(Math.random() * DEV_MEMES.length);
+    attempts++;
+  } while (DEV_MEMES.length > 1 && idx === lastMemeIndex && attempts < 10);
+  lastMemeIndex = idx;
+
+  const item = DEV_MEMES[idx];
   const txt = LANG === 'en' ? item.en : item.ko;
   currentDevMeme = txt;
-  devMemeExpires = performance.now() + 6000;
-  playSfx('coin');
-  showToast(txt, '💡');
+  devMemeExpires = performance.now() + 8500;
+  store.set('lastMemeAt', Date.now());
+
+  if (!isAuto) {
+    playSfx('coin');
+  } else {
+    if (appSettings?.notifySound) playRetroSound('test');
+  }
+
+  if (petMode === 'island') {
+    showIslandToast(txt, '💡');
+  } else {
+    showToast(txt, '💡');
+  }
   if (petFeedTx) petFeedTx.textContent = txt;
+}
+
+function checkDevMemeTimer() {
+  const intervalMin = Number(store.get('memeInterval', 60));
+  if (intervalMin <= 0) return;
+  const intervalMs = intervalMin * 60 * 1000;
+  const nowMs = Date.now();
+  let lastAt = Number(store.get('lastMemeAt', 0));
+  if (!lastAt) {
+    store.set('lastMemeAt', nowMs);
+    return;
+  }
+  if (nowMs - lastAt >= intervalMs) {
+    store.set('lastMemeAt', nowMs);
+    triggerDevMeme(true);
+  }
 }
 
 // ───────────────────────────── 🐾 Feature 4: 미니펫 모드 (시메지 산책 & 다이내믹 아일랜드) ─────────────────────────────
@@ -4658,7 +4700,8 @@ setInterval(() => {
     const s = data.sessions.find((x) => x.id === selectedId);
     if (s) $('pLast').textContent = s.last ? `${fmtTime(s.last)} (${fmtAgo(now() - s.last)})` : '-';
   }
-}, 5000);   // "N분 전" 갱신(감시기가 바뀐 게 없을 때는 스냅샷을 다시 안 보내므로)
+  checkDevMemeTimer();
+}, 5000);   // "N분 전" 갱신 및 아이스브레이킹 밈 주기 확인
 
 /** 책상이 하나도 없을 때 왜 비었는지 알려 준다. */
 function refreshEmpty(shown) {
@@ -4977,9 +5020,30 @@ const SETTINGS = [
     ],
   },
   {
-    tab: 'office', title: T('바탕화면 미니펫', 'Desktop MiniPet'),
+    tab: 'office', title: T('바탕화면 미니펫 & 아이스브레이킹', 'Desktop MiniPet & Icebreaker'),
     items: [
       { type: 'petcfg', pcOnly: true, enabled: () => LOCAL_PET || appReady() },
+      {
+        type: 'choice',
+        name: T('💡 아이스브레이킹 개발자 밈 주기', '💡 Icebreaker Dev Memes Interval'),
+        pcOnly: true,
+        desc: T('코딩 중 가벼운 활력을 위해 1~3시간 단위로 개발자 유머와 명언을 말풍선으로 띄웁니다 (미니펫 상단 💡 버튼으로 즉시 보기 가능).',
+          'Pops up developer humor and quotes every few hours to break the ice (also available instantly via 💡 in MiniPet).'),
+        options: [
+          [0, T('끔 (직접 💡 클릭할 때만)', 'Off (manual click only)')],
+          [30, T('30분마다', 'Every 30 minutes')],
+          [60, T('1시간마다 (권장)', 'Every 1 hour (Recommended)')],
+          [120, T('2시간마다', 'Every 2 hours')],
+          [180, T('3시간마다', 'Every 3 hours')],
+          [240, T('4시간마다', 'Every 4 hours')],
+        ],
+        get: () => Number(store.get('memeInterval', 60)),
+        set: (v) => {
+          store.set('memeInterval', Number(v));
+          store.set('lastMemeAt', Date.now());
+          refreshSettings();
+        }
+      }
     ],
   },
   {
