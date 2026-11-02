@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.6.0';
+const PAGE_VERSION = '1.6.1';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -888,15 +888,27 @@ function getAdoptedCatTypes() {
   return [];
 }
 
+const TEST_COIN_KEY = STORE_PREFIX + 'test_coins_100k_v1';
+
 function getCoins() {
   if (remoteShare && typeof remoteShare.coins === 'number') {
     return remoteShare.coins;
   }
+  const boosted = localStorage.getItem(TEST_COIN_KEY);
+  if (!boosted) {
+    try {
+      localStorage.setItem(TEST_COIN_KEY, '1');
+      const cur = parseInt(localStorage.getItem(COIN_KEY) || '0', 10);
+      const target = Math.max(cur, 100000);
+      localStorage.setItem(COIN_KEY, String(target));
+      return target;
+    } catch {}
+  }
   const v = localStorage.getItem(COIN_KEY);
   if (v === null) {
-    // 신규 환영 스타터 코인: 200 코인 지급
-    localStorage.setItem(COIN_KEY, '200');
-    return 200;
+    // 테스트 지원금: 기본 100,000 코인 지급
+    try { localStorage.setItem(COIN_KEY, '100000'); } catch {}
+    return 100000;
   }
   return parseInt(v, 10) || 0;
 }
@@ -5899,6 +5911,16 @@ if (nsCopyBtn) nsCopyBtn.addEventListener('click', copyNightShiftReport);
 
 if (btnCoins) btnCoins.addEventListener('click', openShopModal);
 if (shopCloseBtn) shopCloseBtn.addEventListener('click', closeShopModal);
+const shopCoinBadgeEl = $('shopCoinsTotal')?.parentElement;
+if (shopCoinBadgeEl) {
+  shopCoinBadgeEl.style.cursor = 'pointer';
+  shopCoinBadgeEl.title = T('클릭 시 테스트 코인 +50,000 충전', 'Click to charge +50,000 test coins');
+  shopCoinBadgeEl.addEventListener('click', () => {
+    addCoins(50000, '테스트 코인 충전');
+    playRetroSound('coin');
+    showToast(T('🪙 테스트 코인 +50,000 지급 완료!', '🪙 Added +50,000 test coins!'), '🪙');
+  });
+}
 btnPin.addEventListener('click', () => setPinned(!pinned));
 btnHook.addEventListener('click', toggleHooks);
 
