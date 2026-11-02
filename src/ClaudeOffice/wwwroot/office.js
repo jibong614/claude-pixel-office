@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.6.3';
+const PAGE_VERSION = '1.6.4';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -843,6 +843,8 @@ function loadOfficeCatState() {
       const obj = JSON.parse(raw);
       if (!obj.adoptedCats && obj.adopted && obj.type) {
         obj.adoptedCats = [obj.type];
+      } else if (Array.isArray(obj.adoptedCats)) {
+        obj.adoptedCats = [...new Set(obj.adoptedCats)];
       }
       const loaded = Object.assign({
         adopted: false,
@@ -888,7 +890,7 @@ function getAdoptedCatTypes() {
   const state = (remoteShare?.cat) ? remoteShare.cat : officeCatState;
   if (!state.adopted) return [];
   if (Array.isArray(state.adoptedCats) && state.adoptedCats.length > 0) {
-    return state.adoptedCats;
+    return [...new Set(state.adoptedCats)];
   }
   if (state.type) return [state.type];
   return [];
@@ -1237,7 +1239,11 @@ function drawVendingMachine(x, y, t) {
 }
 
 function drawCatTower(x, y, t) {
-  curFurnitureBoxes.push({ id: 'cat_tower', x, y, w: 18, h: 32, name: T('🐱 나비 (사무실 고양이)', '🐱 Nabi (Office Cat)') });
+  curFurnitureBoxes.push({
+    id: 'cat_tower',
+    x, y, w: 18, h: 32,
+    name: T('🏰 원목 캣타워 (고양이의 아늑한 놀이터 & 전망대)', '🏰 Wooden Cat Tower (Cat playground & perch)')
+  });
   // 삼줄 기둥 & 받침대
   R(x + 2, y + 28, 14, 4, '#a27b5c');
   R(x + 7, y + 8, 4, 20, '#d7b38c');
@@ -1250,18 +1256,14 @@ function drawCatTower(x, y, t) {
   R(x + 4, y + 10, 1, 4, '#e2e8f0');
   P(x + 4 + sway, y + 14, '#ef4444');
 
-  // 🐱 치즈태비 고양이 '나비' (식빵 굽기 자세)
-  R(x + 4, y + 2, 9, 5, '#f59e0b');
-  R(x + 7, y + 6, 5, 1, '#ffffff'); // 흰 양말/가슴털
-  // 쫑긋한 귀
-  P(x + 5, y + 1, '#d97706'); P(x + 10, y + 1, '#d97706');
-  // 행복하게 감은 눈 & 핑크 코
-  P(x + 7, y + 3, '#78350f'); P(x + 9, y + 3, '#78350f');
-  P(x + 8, y + 4, '#fb7185');
-  // 살랑살랑 흔드는 꼬리
-  const tailUp = tick(t, 450);
-  P(x + 13, y + 4, '#d97706');
-  P(x + 14, y + (tailUp ? 2 : 3), '#f59e0b');
+  // 상단 전망대 푹신한 양모 방석 & 발자국 자수 (고양이가 올라오면 실제 고양이가 렌더링됨)
+  R(x + 3, y + 3, 12, 4, '#fef3c7');
+  R(x + 2, y + 4, 1, 3, '#fde68a');
+  R(x + 15, y + 4, 1, 3, '#fde68a');
+  R(x + 3, y + 6, 12, 1, '#fde68a');
+  P(x + 8, y + 5, '#f59e0b');
+  P(x + 7, y + 4, '#f59e0b');
+  P(x + 9, y + 4, '#f59e0b');
 }
 
 function drawArcadeCabinet(x, y, t) {
