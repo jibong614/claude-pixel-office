@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.6.5';
+const PAGE_VERSION = '1.6.6';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -3714,7 +3714,8 @@ function triggerDevMeme(isAuto = false) {
   const item = DEV_MEMES[idx];
   const txt = LANG === 'en' ? item.en : item.ko;
   currentDevMeme = txt;
-  devMemeExpires = performance.now() + 8500;
+  const MEME_DURATION = 14000; // 최소 10초 이상 유지 (14초로 여유롭게 노출)
+  devMemeExpires = performance.now() + MEME_DURATION;
   store.set('lastMemeAt', Date.now());
 
   const soundEnabled = store.get('memeSound', true) !== false;
@@ -3727,9 +3728,9 @@ function triggerDevMeme(isAuto = false) {
   }
 
   if (petMode === 'island') {
-    showIslandToast(txt, '💡');
+    showIslandToast(txt, '💡', MEME_DURATION);
   } else {
-    showToast(txt, '💡');
+    showToast(txt, '💡', MEME_DURATION);
   }
   if (petFeedTx) petFeedTx.textContent = txt;
 }
@@ -3756,13 +3757,13 @@ let shimejiX = 24, shimejiVx = 1, shimejiState = 'walk', shimejiNextSwitch = 0, 
 let islandToastTimer = null;
 let islandToastText = null;
 
-function showIslandToast(text, icon = '🏝️') {
-  islandToastText = { text, icon, until: performance.now() + 2500 };
+function showIslandToast(text, icon = '🏝️', durationMs = 2500) {
+  islandToastText = { text, icon, until: performance.now() + durationMs };
   if (islandToastTimer) clearTimeout(islandToastTimer);
   islandToastTimer = setTimeout(() => {
     islandToastText = null;
     renderPet();
-  }, 2500);
+  }, durationMs);
   renderPet();
 }
 
@@ -4451,9 +4452,9 @@ function closeWhiteboardModal() {
 
 // 전역 토스트 알림 헬퍼
 let genToastTimer = null;
-function showToast(msg, icon = '⚡') {
+function showToast(msg, icon = '⚡', durationMs = 2200) {
   if (petMode === 'island') {
-    showIslandToast(msg, icon);
+    showIslandToast(msg, icon, durationMs);
     return;
   }
   let t = $('genToast');
@@ -4465,9 +4466,10 @@ function showToast(msg, icon = '⚡') {
   if (genToastTimer) clearTimeout(genToastTimer);
   t.textContent = `${icon} ${msg}`;
   t.classList.add('show');
+  t.onclick = () => { if (t) t.classList.remove('show'); };
   genToastTimer = setTimeout(() => {
     if (t) t.classList.remove('show');
-  }, 2200);
+  }, durationMs);
 }
 
 // ⚡ 원클릭 터미널/콘솔 창 점프
