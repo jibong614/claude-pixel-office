@@ -3110,8 +3110,12 @@ body.pet-float #pet.pet-island {
 #pet.pet-island .pet-empty {
   display: none !important;
 }
-.island-wrap {
-  display: flex;
+#pet:not(.pet-island) .island-wrap,
+.island-wrap[hidden] {
+  display: none !important;
+}
+#pet.pet-island .island-wrap {
+  display: flex !important;
   align-items: center;
   gap: 8px;
   width: 100%;

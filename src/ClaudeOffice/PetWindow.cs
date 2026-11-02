@@ -18,7 +18,7 @@ namespace ClaudeOffice;
 internal sealed class PetWindow : Window
 {
     public const double DefaultWidth = 300;
-    private const double MinPetHeight = 120, MaxPetHeight = 640;
+    private const double MinPetHeight = 44, MaxPetHeight = 640;
 
     private readonly WebView2 _web = new();
     private readonly string _virtualHost;

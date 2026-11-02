@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.5.2';
+const PAGE_VERSION = '1.5.3';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -2154,7 +2154,7 @@ let petDomBuilt = false;
 let petSelEl = null, petBgBtn = null, petFoldBtn = null, petStopBtn = null, petAlertEl = null, petAlertTargetId = '';
 let petStageEl = null, petCanvasEl = null, petCtx = null;
 let petBarNm = null, petBarSt = null, petAsksEl = null, petFeedEl = null, petFeedHd = null, petFeedTx = null;
-let petCmdWrap = null, petInputEl = null, petSendBtn = null, petNoteEl = null, petCancelBtn = null, petWakeBtn = null, petGuideBtn = null, petEmptyEl = null;
+let petCmdWrap = null, petInputEl = null, petSendBtn = null, petNoteEl = null, petCancelBtn = null, petWakeBtn = null, petGuideBtn = null, petEmptyEl = null, petIslandEl = null;
 const petArt = document.createElement('canvas');
 const petAskEls = new Map();
 const petAnswered = new Map();
@@ -2309,7 +2309,9 @@ function ensurePetDom() {
   noteRow.append(petNoteEl, petCancelBtn, petWakeBtn, petGuideBtn);
   petCmdWrap.append(irow, noteRow);
 
-  petEl.replaceChildren(head, petAlertEl, petStageEl, petEmptyEl, petAsksEl, petFeedEl, petCmdWrap);
+  petIslandEl = elem('div', 'island-wrap');
+  petIslandEl.hidden = true;
+  petEl.replaceChildren(head, petAlertEl, petStageEl, petEmptyEl, petAsksEl, petFeedEl, petCmdWrap, petIslandEl);
 }
 
 // ───────────────────────────── 📱 모바일 & 원격 제어: Diff 아코디언 & 음성 지시 ─────────────────────────────
@@ -2361,7 +2363,6 @@ function triggerDevMeme() {
 // ───────────────────────────── 🐾 Feature 4: 미니펫 모드 (시메지 산책 & 다이내믹 아일랜드) ─────────────────────────────
 let petMode = store.get('petMode', 'normal'); // 'normal' | 'shimeji' | 'island'
 let shimejiX = 24, shimejiVx = 1, shimejiState = 'walk', shimejiNextSwitch = 0, shimejiVy = 0, shimejiY = 0;
-let petIslandEl = null;
 
 function togglePetWalk() {
   petMode = (petMode === 'shimeji') ? 'normal' : 'shimeji';
@@ -2373,6 +2374,11 @@ function togglePetWalk() {
     markQuest('shimeji_walk');
     showToast(T('🐾 시메지 산책 모드 활성화!', '🐾 Shimeji Walk Mode Activated!'), '🐾');
   }
+  if (petIslandEl) {
+    petIslandEl.hidden = true;
+    petIslandEl.replaceChildren();
+  }
+  petEl.classList.remove('pet-island');
   renderPet();
 }
 
@@ -2381,6 +2387,12 @@ function togglePetIsland() {
   store.set('petMode', petMode);
   if (petMode === 'island') {
     showToast(T('🏝️ 다이내믹 아일랜드 모드 활성화!', '🏝️ Dynamic Island Mode Activated!'), '🏝️');
+  } else {
+    if (petIslandEl) {
+      petIslandEl.hidden = true;
+      petIslandEl.replaceChildren();
+    }
+    petEl.classList.remove('pet-island');
   }
   renderPet();
 }
@@ -2391,6 +2403,7 @@ function renderPetIsland(s) {
     petIslandEl = elem('div', 'island-wrap');
     petEl.append(petIslandEl);
   }
+  petIslandEl.hidden = false;
   petIslandEl.replaceChildren();
 
   const isWait = !!actOf(s).wait;
@@ -4264,10 +4277,15 @@ function renderPet() {
     petEl.classList.add('pet-island');
     if (petAlertEl) petAlertEl.hidden = true;
     renderPetIsland(s);
+    if (petIslandEl) petIslandEl.hidden = false;
     syncPetHeight();
     return;
   }
   petEl.classList.remove('pet-island');
+  if (petIslandEl) {
+    petIslandEl.hidden = true;
+    petIslandEl.replaceChildren();
+  }
 
   if (!s) {
     petEl.classList.remove('compact', 'nobg');
@@ -4391,9 +4409,10 @@ function syncPetHeight() {
   } else {
     h = Math.ceil(petEl.getBoundingClientRect().height);
   }
-  if (h > 40 && Math.abs(h - lastPetH) > 1) {
+  const minH = (petMode === 'island') ? 40 : 120;
+  if (h >= 40 && Math.abs(h - lastPetH) > 1) {
     lastPetH = h;
-    send({ cmd: 'pet-size', height: Math.min(620, Math.max(h, 120)) });
+    send({ cmd: 'pet-size', height: Math.min(620, Math.max(h, minH)) });
   }
 }
 
