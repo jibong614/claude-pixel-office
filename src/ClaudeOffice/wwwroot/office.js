@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.6.2';
+const PAGE_VERSION = '1.6.3';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -844,17 +844,22 @@ function loadOfficeCatState() {
       if (!obj.adoptedCats && obj.adopted && obj.type) {
         obj.adoptedCats = [obj.type];
       }
-      return Object.assign({
+      const loaded = Object.assign({
         adopted: false,
         adoptedCats: [],
         affection: 50,
         pettedTotal: 0,
         poopCleanedTotal: 0,
         foodEmpty: false,
+        foodPortions: 10,
         poopCount: 0,
         lastPetDate: '',
         names: {},
       }, obj);
+      if (typeof loaded.foodPortions !== 'number') {
+        loaded.foodPortions = loaded.foodEmpty ? 0 : 10;
+      }
+      return loaded;
     }
   } catch {}
   return {
@@ -864,6 +869,7 @@ function loadOfficeCatState() {
     pettedTotal: 0,
     poopCleanedTotal: 0,
     foodEmpty: false,
+    foodPortions: 10,
     poopCount: 0,
     lastPetDate: '',
     names: {},
@@ -1412,8 +1418,8 @@ function getActiveCatSims() {
         jumpNextState: 'idle',
         bubbleText: '',
         bubbleTimer: 0,
-        hungerTimer: 25000 + Math.random() * 25000,
-        poopTimer: 45000 + Math.random() * 35000,
+        hungerTimer: 180000 + Math.random() * 120000,
+        poopTimer: 240000 + Math.random() * 180000,
       });
     }
     const cat = activeCatSims.get(type);
@@ -1540,13 +1546,13 @@ function updateSingleCat(cat, dt, ts) {
           ? { x: cat.targetDesk.x + 35, y: cat.targetDesk.y + 16 }
           : { x: cat.targetDesk.x + 36, y: cat.targetDesk.y + 34 };
         startCatJump(cat, targetPos, goMonitor ? 'onMonitor' : 'onDesk');
-      } else if (isFurnitureOwned('cat_food_bowl') && Math.hypot(logicalW - 24 - 10 - cat.x, WALL_H + 39 - cat.y) < 4) {
+      } else if (isFurnitureOwned('cat_food_bowl') && !officeCatState.foodEmpty && Math.hypot(logicalW - 24 - 8 - cat.x, WALL_H + 37 - cat.y) < 5) {
         cat.state = 'eating';
         cat.dir = 1;
         cat.stateTimer = 4500;
         cat.bubbleText = '🐟 오독오독 냠냠';
         cat.bubbleTimer = 3500;
-      } else if (isFurnitureOwned('cat_litter_box') && Math.hypot(logicalW - 24 + 3 - cat.x, WALL_H + 53 - cat.y) < 4) {
+      } else if (isFurnitureOwned('cat_litter_box') && (officeCatState.poopCount || 0) < 10 && Math.hypot(logicalW - 24 + 2 - cat.x, WALL_H + 51 - cat.y) < 5) {
         cat.state = 'pooping';
         cat.dir = 1;
         cat.stateTimer = 4500;
@@ -1610,29 +1616,32 @@ function updateSingleCat(cat, dt, ts) {
         startCatJump(cat, { x: floorX, y: floorY }, 'walk');
         cat.targetDesk = null;
       } else if (cat.state === 'eating') {
-        officeCatState.foodEmpty = true;
+        const curPortions = typeof officeCatState.foodPortions === 'number' ? officeCatState.foodPortions : (officeCatState.foodEmpty ? 0 : 10);
+        const nextPortions = Math.max(0, curPortions - 1);
+        officeCatState.foodPortions = nextPortions;
+        officeCatState.foodEmpty = (nextPortions <= 0);
         saveOfficeCatState();
-        cat.hungerTimer = 50000 + Math.random() * 30000;
-        cat.bubbleText = '🐟 냠냠 배부르다냥!';
+        cat.hungerTimer = 300000 + Math.random() * 240000; // 5~9분 주기
+        cat.bubbleText = nextPortions > 0 ? `🐟 냠냠 맛있다냥! (${nextPortions}/10)` : '🐟 냠냠 잘 먹었다냥! (빈 그릇)';
         cat.bubbleTimer = 2500;
         spawnHearts(cat.x + 4, cat.y - 2);
         walkToRandomFloor(cat);
       } else if (cat.state === 'pooping') {
-        officeCatState.poopCount = Math.min(3, (officeCatState.poopCount || 0) + 1);
+        officeCatState.poopCount = Math.min(10, (officeCatState.poopCount || 0) + 1);
         saveOfficeCatState();
-        cat.poopTimer = 65000 + Math.random() * 35000;
+        cat.poopTimer = 360000 + Math.random() * 240000; // 6~10분 주기
         cat.bubbleText = '✨ 시원하다냥!';
         cat.bubbleTimer = 2500;
         walkToRandomFloor(cat);
       } else {
         // 바닥에서 다음 행동 결정
-        if (cat.hungerTimer <= 0 && isFurnitureOwned('cat_food_bowl')) {
-          cat.targetX = Math.max(10, logicalW - 24 - 10);
-          cat.targetY = WALL_H + 39;
+        if (cat.hungerTimer <= 0 && isFurnitureOwned('cat_food_bowl') && !officeCatState.foodEmpty) {
+          cat.targetX = Math.max(10, logicalW - 24 - 8);
+          cat.targetY = WALL_H + 37;
           cat.state = 'walk';
-        } else if (cat.poopTimer <= 0 && isFurnitureOwned('cat_litter_box') && (officeCatState.poopCount || 0) < 3) {
-          cat.targetX = Math.max(10, logicalW - 24 + 3);
-          cat.targetY = WALL_H + 53;
+        } else if (cat.poopTimer <= 0 && isFurnitureOwned('cat_litter_box') && (officeCatState.poopCount || 0) < 10) {
+          cat.targetX = Math.max(10, logicalW - 24 + 2);
+          cat.targetY = WALL_H + 51;
           cat.state = 'walk';
         } else if (desks && desks.length > 0 && Math.random() < 0.38) {
           const d = desks[Math.floor(Math.random() * desks.length)];
@@ -1803,39 +1812,40 @@ function drawCatOverlays(t) {
   // 화장실에 똥이 있으면 떠오르는 💩 인디케이터
   if (isFurnitureOwned('cat_litter_box') && (state.poopCount || 0) > 0) {
     const lx = (logicalW - 24 + 10) * U;
-    const ly = (WALL_H + 52 - 6 + Math.sin(t / 240) * 2) * U;
+    const ly = (WALL_H + 50 - 6 + Math.sin(t / 240) * 2) * U;
     ctx.save();
     ctx.font = `bold ${Math.round(10 * U)}px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fde68a';
     ctx.shadowColor = 'rgba(0,0,0,0.6)';
     ctx.shadowBlur = 4;
-    ctx.fillText(`💩 +${(officeCatState.poopCount || 0) * 10}🪙`, lx, ly);
+    ctx.fillText(`💩 +${(officeCatState.poopCount || 0) * 10}🪙 (${officeCatState.poopCount}/10)`, lx, ly);
     ctx.restore();
   }
 
   // 밥그릇이 비었으면 반짝이는 🥣 인디케이터
   if (isFurnitureOwned('cat_food_bowl') && state.foodEmpty) {
     const fx = (logicalW - 24 + 8) * U;
-    const fy = (WALL_H + 38 - 5 + Math.sin(t / 280) * 1.5) * U;
+    const fy = (WALL_H + 36 - 6 + Math.sin(t / 280) * 1.5) * U;
     ctx.save();
     ctx.font = `bold ${Math.round(9 * U)}px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#6ee7b7';
     ctx.shadowColor = 'rgba(0,0,0,0.6)';
     ctx.shadowBlur = 4;
-    ctx.fillText(T('🥣 사료 리필 (+5🪙)', '🥣 Refill (+5🪙)'), fx, fy);
+    ctx.fillText(T('🥣 사료 채우기 (+5🪙)', '🥣 Refill (+5🪙)'), fx, fy);
     ctx.restore();
   }
 }
 
 function drawCatFoodBowl(x, y, t) {
+  const portions = typeof officeCatState.foodPortions === 'number' ? officeCatState.foodPortions : (officeCatState.foodEmpty ? 0 : 10);
   curFurnitureBoxes.push({
     id: 'cat_food_bowl',
-    x, y, w: 16, h: 9,
-    name: officeCatState.foodEmpty
-      ? T('🥣 고양이 밥그릇 (빈 그릇! 클릭하여 사료 리필 & +5🪙)', '🥣 Food Bowl (Empty! Click to refill & +5🪙)')
-      : T('🥣 고양이 밥그릇 & 신선한 물그릇 (가득 참 🐟)', '🥣 Food & Water Bowls (Full 🐟)')
+    x: x - 2, y: y - 8, w: 20, h: 18,
+    name: portions <= 0
+      ? T('🥣 고양이 밥그릇 (사료 바닥남! 클릭: 10회분 가득 채우기 & +5🪙)', '🥣 Food Bowl (Empty! Click: Fill 10 servings & +5🪙)')
+      : T(`🥣 고양이 밥그릇 (사료 잔여: ${portions}/10회분 - 클릭 시 리필)`, `🥣 Food Bowl (${portions}/10 servings left - Click to refill)`)
   });
   // 실리콘 식기 매트
   R(x, y + 2, 16, 7, '#cbd5e1');
@@ -1844,10 +1854,15 @@ function drawCatFoodBowl(x, y, t) {
   // 좌측 사료 그릇
   R(x + 1, y + 2, 6, 5, '#94a3b8');
   R(x + 2, y + 3, 4, 3, '#475569');
-  if (!officeCatState.foodEmpty) {
+  if (portions >= 7) {
     P(x + 2, y + 3, '#b45309'); P(x + 3, y + 3, '#f59e0b');
     P(x + 4, y + 4, '#d97706'); P(x + 5, y + 3, '#b45309');
     P(x + 3, y + 4, '#92400e');
+  } else if (portions >= 3) {
+    P(x + 2, y + 3, '#b45309'); P(x + 4, y + 4, '#d97706');
+    P(x + 3, y + 4, '#92400e');
+  } else if (portions >= 1) {
+    P(x + 3, y + 4, '#d97706');
   } else {
     P(x + 4, y + 4, '#78350f');
   }
@@ -1864,10 +1879,10 @@ function drawCatLitterBox(x, y, t) {
   const pCount = officeCatState.poopCount || 0;
   curFurnitureBoxes.push({
     id: 'cat_litter_box',
-    x, y, w: 20, h: 12,
+    x: x - 2, y: y - 8, w: 24, h: 22,
     name: pCount > 0
-      ? T(`🚽 고양이 화장실 💩 ${pCount}개 (클릭: 청소하고 +${pCount * 10}🪙 받기)`, `🚽 Litter Box 💩 x${pCount} (Click: Clean & get +${pCount * 10}🪙)`)
-      : T('🚽 모래 고양이 화장실 (깨끗함 ✨)', '🚽 Litter Box (Clean ✨)')
+      ? T(`🚽 고양이 화장실 (감자/맛동산: ${pCount}/10개 - 클릭: 싹 청소하고 +${pCount * 10}🪙 받기)`, `🚽 Litter Box (${pCount}/10 poops - Click: Clean & get +${pCount * 10}🪙)`)
+      : T('🚽 모래 고양이 화장실 (깨끗함 ✨ 0/10)', '🚽 Litter Box (Clean ✨ 0/10)')
   });
   // 민트/하늘색 플라스틱 화장실 트레이
   R(x, y + 2, 20, 10, '#0284c7');
@@ -1881,7 +1896,7 @@ function drawCatLitterBox(x, y, t) {
   R(x + 18, y, 2, 6, '#f43f5e');
   P(x + 18, y + 6, '#be123c');
 
-  // 감자 / 맛동산 (똥) 오브젝트
+  // 감자 / 맛동산 (똥) 오브젝트 (최대 10개까지 자연스럽게 렌더링)
   if (pCount >= 1) {
     R(x + 4, y + 5, 3, 2, '#78350f');
     P(x + 5, y + 4, '#92400e');
@@ -1893,6 +1908,18 @@ function drawCatLitterBox(x, y, t) {
   if (pCount >= 3) {
     R(x + 14, y + 4, 3, 2, '#78350f');
     P(x + 15, y + 3, '#92400e');
+  }
+  if (pCount >= 5) {
+    R(x + 7, y + 3, 3, 2, '#78350f');
+    P(x + 8, y + 2, '#92400e');
+  }
+  if (pCount >= 7) {
+    R(x + 12, y + 7, 3, 2, '#78350f');
+    P(x + 13, y + 6, '#92400e');
+  }
+  if (pCount >= 9) {
+    R(x + 3, y + 7, 3, 2, '#78350f');
+    P(x + 4, y + 6, '#92400e');
   }
 }
 
@@ -1926,18 +1953,18 @@ function cleanCatLitter(b) {
   if (count > 0) {
     const reward = count * 10;
     officeCatState.poopCount = 0;
-    officeCatState.poopCleanedTotal = (officeCatState.poopCleanedTotal || 0) + 1;
-    officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 3);
+    officeCatState.poopCleanedTotal = (officeCatState.poopCleanedTotal || 0) + count;
+    officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + Math.min(10, 1 + count));
     saveOfficeCatState();
     addCoins(reward, T('고양이 화장실 청소', 'Cleaned cat litter'));
     shareToApp();
     playRetroSound('coin');
     spawnHearts(b.x + 10, b.y + 4);
-    showToast(T(`🧹 화장실 청소 완료! 감자/맛동산을 수거하여 🪙 ${reward} 코인을 받았습니다! (친밀도 +3%)`, `🧹 Litter box cleaned! Earned 🪙 ${reward} coins! (+3% Affection)`), '🚽');
+    showToast(T(`🧹 화장실 청소 완료! 감자/맛동산 ${count}개를 수거하여 🪙 ${reward} 코인을 받았습니다!`, `🧹 Cleaned ${count} poops! Earned 🪙 ${reward} coins!`), '🚽');
     markQuest('poop_cleaner');
   } else {
     playRetroSound('stretch');
-    showToast(T('✨ 화장실 모래가 뽀송뽀송 깨끗합니다! 고양이가 상쾌해해요.', '✨ The litter box is clean and fresh!'), '✨');
+    showToast(T('✨ 화장실 모래가 뽀송뽀송 깨끗합니다! (0/10)', '✨ The litter box is clean and fresh! (0/10)'), '✨');
   }
 }
 
@@ -1948,7 +1975,9 @@ function refillCatFood(b) {
     showToast(T('🥣 PC와 연동된 고양이 식기입니다 🐟', '🥣 Synced with PC cat food bowl 🐟'), '🥣');
     return;
   }
-  if (officeCatState.foodEmpty) {
+  const curPortions = typeof officeCatState.foodPortions === 'number' ? officeCatState.foodPortions : (officeCatState.foodEmpty ? 0 : 10);
+  if (curPortions < 10 || officeCatState.foodEmpty) {
+    officeCatState.foodPortions = 10;
     officeCatState.foodEmpty = false;
     officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 2);
     saveOfficeCatState();
@@ -1956,18 +1985,18 @@ function refillCatFood(b) {
     shareToApp();
     playRetroSound('coin');
     spawnHearts(b.x + 8, b.y + 3);
-    showToast(T('🥣 신선한 사료와 물을 가득 채웠습니다! (+5🪙)', '🥣 Filled food & water bowls! (+5🪙)'), '🥣');
+    showToast(T('🥣 신선한 사료를 가득(10회분) 채웠습니다! (+5🪙)', '🥣 Filled food bowl with 10 servings! (+5🪙)'), '🥣');
     const sims = getActiveCatSims();
     for (const cat of sims) {
       if (cat.hungerTimer <= 20000 && cat.state !== 'eating') {
-        cat.targetX = Math.max(10, logicalW - 24 - 10);
-        cat.targetY = WALL_H + 39;
+        cat.targetX = Math.max(10, logicalW - 24 - 8);
+        cat.targetY = WALL_H + 37;
         cat.state = 'walk';
       }
     }
   } else {
     spawnHearts(b.x + 8, b.y + 3);
-    showToast(T('🐟 신선한 사료와 깨끗한 물이 이미 가득 차 있습니다.', '🐟 Food and water are already full.'), '🥣');
+    showToast(T('🥣 사료가 아직 넉넉하게 남아있습니다 (10/10회분)!', '🥣 Food bowl is still full (10/10 servings)!'), '🥣');
   }
 }
 
@@ -2836,13 +2865,13 @@ function frame(ts) {
   if (isFurnitureOwned('cat_scratch_post')) drawCatScratchPost(6, WALL_H + 74, ts);
 
   if (isFurnitureOwned('cat_tower')) drawCatTower(logicalW - 22, WALL_H + 4, ts);
-  if (isFurnitureOwned('cat_food_bowl')) drawCatFoodBowl(logicalW - 24, WALL_H + 38, ts);
-  if (isFurnitureOwned('cat_litter_box')) drawCatLitterBox(logicalW - 24, WALL_H + 52, ts);
+  if (isFurnitureOwned('cat_food_bowl')) drawCatFoodBowl(logicalW - 24, WALL_H + 36, ts);
+  if (isFurnitureOwned('cat_litter_box')) drawCatLitterBox(logicalW - 24, WALL_H + 50, ts);
 
-  // 🤝 회의실 테이블: 2개 이상 세션이 있을 때 또는 넓은 공간일 때 렌더링
+  // 🤝 전략 회의 테이블: 2개 이상 세션이 있을 때 렌더링 (고양이 식기/화장실과 겹치지 않도록 하단 영역으로 분리)
   if (data.sessions && data.sessions.length >= 2) {
     const meetX = Math.max(36, logicalW - 58);
-    const meetY = WALL_H + 34;
+    const meetY = WALL_H + 68; // 고양이 화장실(WALL_H+50~63)과 완전히 분리
     drawMeetingTable(meetX, meetY, ts);
   }
 
@@ -3318,10 +3347,13 @@ function triggerDevMeme(isAuto = false) {
   devMemeExpires = performance.now() + 8500;
   store.set('lastMemeAt', Date.now());
 
-  if (!isAuto) {
-    playSfx('coin');
-  } else {
-    if (appSettings?.notifySound) playRetroSound('test');
+  const soundEnabled = store.get('memeSound', true) !== false;
+  if (soundEnabled) {
+    if (!isAuto) {
+      playSfx('coin');
+    } else {
+      if (appSettings?.notifySound !== false) playRetroSound('test');
+    }
   }
 
   if (petMode === 'island') {
@@ -3333,9 +3365,7 @@ function triggerDevMeme(isAuto = false) {
 }
 
 function checkDevMemeTimer() {
-  const userSetting = Number(store.get('memeInterval', 1));
-  // 임시 테스트 조치: 0(끔)으로 명시 설정한 경우가 아니면 1분 간격으로 작동 (뜨는 것 확인 후 원복 예정)
-  const intervalMin = userSetting === 0 ? 0 : 1;
+  const intervalMin = Number(store.get('memeInterval', 60));
   if (intervalMin <= 0) return;
   const intervalMs = intervalMin * 60 * 1000;
   const nowMs = Date.now();
@@ -6095,23 +6125,30 @@ const SETTINGS = [
         type: 'choice',
         name: T('💡 아이스브레이킹 개발자 밈 주기', '💡 Icebreaker Dev Memes Interval'),
         pcOnly: true,
-        desc: T('코딩 중 가벼운 활력을 위해 1~3시간 단위로 개발자 유머와 명언을 말풍선으로 띄웁니다 (미니위젯 상단 💡 버튼으로 즉시 보기 가능).',
-          'Pops up developer humor and quotes every few hours to break the ice (also available instantly via 💡 in MiniPet).'),
+        desc: T('코딩 중 가벼운 활력을 위해 주기적으로 개발자 유머와 명언을 말풍선으로 띄웁니다 (미니위젯 상단 💡 버튼으로 즉시 보기 가능).',
+          'Pops up developer humor and quotes periodically to break the ice (also available instantly via 💡 in MiniPet).'),
         options: [
           [0, T('끔 (직접 💡 클릭할 때만)', 'Off (manual click only)')],
-          [1, T('1분마다 (임시 테스트)', 'Every 1 minute (Test)')],
           [30, T('30분마다', 'Every 30 minutes')],
-          [60, T('1시간마다 (권장)', 'Every 1 hour (Recommended)')],
+          [60, T('1시간마다', 'Every 1 hour')],
           [120, T('2시간마다', 'Every 2 hours')],
           [180, T('3시간마다', 'Every 3 hours')],
           [240, T('4시간마다', 'Every 4 hours')],
         ],
-        get: () => Number(store.get('memeInterval', 1)),
+        get: () => Number(store.get('memeInterval', 60)),
         set: (v) => {
           store.set('memeInterval', Number(v));
           store.set('lastMemeAt', Date.now());
           refreshSettings();
         }
+      },
+      {
+        type: 'toggle',
+        name: T('💡 아이스브레이킹 효과음', '💡 Icebreaker Sound Effect'),
+        pcOnly: true,
+        desc: T('개발자 밈이 팝업될 때 재생되는 효과음을 켜거나 끕니다.', 'Play a sound effect when a developer meme pops up.'),
+        get: () => store.get('memeSound', true) !== false,
+        set: (v) => { store.set('memeSound', v); refreshSettings(); }
       }
     ],
   },
