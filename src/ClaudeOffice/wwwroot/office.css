@@ -2715,6 +2715,63 @@ canvas#petCanvas {
   cursor: default;
 }
 
+/* 🐾 힐링 냥이 상점 & 입양 시스템 */
+.shop-section-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 6px;
+  padding: 8px 4px 6px;
+  border-bottom: 1px solid rgba(255, 179, 71, 0.25);
+  color: #fde68a;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.shop-section-header:first-child {
+  margin-top: 0;
+}
+.shop-section-note {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--dim);
+}
+.shop-req-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+  margin-bottom: 6px;
+}
+.shop-ready-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #6ee7b7;
+  margin-bottom: 6px;
+}
+.shop-card.locked {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.03);
+}
+.shop-card.locked:hover {
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
 /* 📱 모바일 & 원격 제어 고도화: Git Diff 아코디언 & 음성 프롬프트 */
 .diff-accordion {
   margin: 6px 0 8px;

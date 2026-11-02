@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.5.8';
+const PAGE_VERSION = '1.5.9';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -275,6 +275,11 @@ function playRetroSound(kind, force = false) {
   } else if (kind === 'cat') {
     // 🐱 고양이 야옹: 귀여운 주파수 스윕 (880Hz -> 660Hz)
     playSweep(ctx, 880, 660, t0, 0.18, 'triangle', 0.14);
+  } else if (kind === 'purr') {
+    // 🐱 고양이 골골송: 기분 좋은 저음 진동음 (140~160Hz)
+    playTone(ctx, 160, t0, 0.08, 'triangle', 0.08);
+    playTone(ctx, 135, t0 + 0.10, 0.08, 'triangle', 0.07);
+    playTone(ctx, 160, t0 + 0.20, 0.09, 'triangle', 0.08);
   } else if (kind === 'stretch') {
     // 으라차 기지개: 상쾌한 2음 상승
     playTone(ctx, 659.25, t0, 0.06, 'triangle', 0.10);
@@ -367,6 +372,9 @@ function onSnapshot(snap) {
         playRetroSound('coin');
         const h = new Date().getHours();
         if (h >= 22 || h < 6) markQuest('night_shift');
+      } else if (prev === 'asking' && ['writing', 'running', 'working', 'searching'].includes(s.act)) {
+        addCoins(5, T('도구 승인 및 지시 전달', 'Tool approved'));
+        playRetroSound('coin');
       }
     }
   }
@@ -736,6 +744,119 @@ function line(x0, y0, x1, y1, c) {
 
 const COIN_KEY = STORE_PREFIX + 'coins';
 const FURNITURE_KEY = STORE_PREFIX + 'furniture';
+const OFFICE_CAT_KEY = STORE_PREFIX + 'office_cat_state';
+
+const CAT_BREEDS = {
+  cheese: {
+    id: 'cheese',
+    name: '치즈태비 「나비」',
+    enName: 'Cheese Tabby "Nabi"',
+    defaultName: '나비',
+    palette: {
+      base: '#f59e0b',
+      dark: '#d97706',
+      white: '#ffffff',
+      nose: '#fb7185',
+      eye: '#78350f',
+      ear: '#f43f5e',
+    },
+  },
+  tuxedo: {
+    id: 'tuxedo',
+    name: '턱시도 「까망이」',
+    enName: 'Tuxedo "Kkamang"',
+    defaultName: '까망이',
+    palette: {
+      base: '#1e293b',
+      dark: '#0f172a',
+      white: '#ffffff',
+      nose: '#f472b6',
+      eye: '#facc15',
+      ear: '#fb7185',
+    },
+  },
+  calico: {
+    id: 'calico',
+    name: '삼색이 「미미」',
+    enName: 'Calico "Mimi"',
+    defaultName: '미미',
+    palette: {
+      base: '#ffffff',
+      dark: '#ea580c',
+      black: '#1f2937',
+      white: '#ffffff',
+      nose: '#fb7185',
+      eye: '#10b981',
+      ear: '#f43f5e',
+    },
+  },
+  white: {
+    id: 'white',
+    name: '터키시앙고라 「구름이」',
+    enName: 'Turkish Angora "Gureum"',
+    defaultName: '구름이',
+    palette: {
+      base: '#f8fafc',
+      dark: '#e2e8f0',
+      white: '#ffffff',
+      nose: '#f472b6',
+      eye: '#38bdf8',
+      eyeR: '#fbbf24',
+      ear: '#fbcfe8',
+    },
+  },
+};
+
+function loadOfficeCatState() {
+  try {
+    const raw = localStorage.getItem(OFFICE_CAT_KEY);
+    if (raw) {
+      const obj = JSON.parse(raw);
+      if (!obj.adoptedCats && obj.adopted && obj.type) {
+        obj.adoptedCats = [obj.type];
+      }
+      return Object.assign({
+        adopted: false,
+        adoptedCats: [],
+        affection: 50,
+        pettedTotal: 0,
+        poopCleanedTotal: 0,
+        foodEmpty: false,
+        poopCount: 0,
+        lastPetDate: '',
+        names: {},
+      }, obj);
+    }
+  } catch {}
+  return {
+    adopted: false,
+    adoptedCats: [],
+    affection: 50,
+    pettedTotal: 0,
+    poopCleanedTotal: 0,
+    foodEmpty: false,
+    poopCount: 0,
+    lastPetDate: '',
+    names: {},
+  };
+}
+
+let officeCatState = loadOfficeCatState();
+
+function saveOfficeCatState() {
+  try {
+    localStorage.setItem(OFFICE_CAT_KEY, JSON.stringify(officeCatState));
+  } catch {}
+}
+
+function getAdoptedCatTypes() {
+  if (!officeCatState.adopted) return [];
+  if (Array.isArray(officeCatState.adoptedCats) && officeCatState.adoptedCats.length > 0) {
+    return officeCatState.adoptedCats;
+  }
+  if (officeCatState.type) return [officeCatState.type];
+  return [];
+}
 
 function getCoins() {
   const v = localStorage.getItem(COIN_KEY);
@@ -783,9 +904,45 @@ function isFurnitureOwned(id) {
   return getOwnedFurniture().includes(id);
 }
 
+function adoptCat(item) {
+  const owned = getOwnedFurniture();
+  // 필수 조건: 화장실과 식기 모두 소유
+  if (item.reqItems && !item.reqItems.every((r) => owned.includes(r))) {
+    playRetroSound('ask');
+    showToast(T('🚨 고양이를 맞이하려면 먼저 [모래 화장실 🚽]과 [식기 & 물그릇 🥣]을 구매해주세요!', '🚨 Please buy the Litter Box 🚽 and Food Bowl 🥣 first!'), '🚨');
+    return false;
+  }
+  if (!spendCoins(item.price)) {
+    showToast(T(`코인이 부족합니다! (필요: 🪙 ${item.price} 코인)`, `Not enough coins! (Need: 🪙 ${item.price} coins)`), '🪙');
+    return false;
+  }
+  if (!owned.includes(item.id)) {
+    owned.push(item.id);
+    localStorage.setItem(FURNITURE_KEY, JSON.stringify(owned));
+  }
+  if (!officeCatState.adoptedCats) officeCatState.adoptedCats = [];
+  if (!officeCatState.adoptedCats.includes(item.catType)) {
+    officeCatState.adoptedCats.push(item.catType);
+  }
+  officeCatState.adopted = true;
+  saveOfficeCatState();
+
+  playRetroSound('cat');
+  playRetroSound('done');
+  spawnHearts(Math.round(logicalW / 2), WALL_H + 20);
+  markQuest('first_cat_adopt');
+  showToast(T(`🎉 축하합니다! 새로운 가족 「${item.catName}」(이)가 사무실에 입주했습니다! 🐱💕`, `🎉 Welcome your new cat "${item.catName}" to the office! 🐱💕`), '🐱');
+  renderShopModal();
+  updateCoinDisplay();
+  return true;
+}
+
 function buyFurniture(id) {
   const item = SHOP_ITEMS.find((x) => x.id === id);
   if (!item) return false;
+  if (item.catType) {
+    return adoptCat(item);
+  }
   const owned = getOwnedFurniture();
   if (owned.includes(id)) return true;
   if (!spendCoins(item.price)) {
@@ -796,14 +953,127 @@ function buyFurniture(id) {
   localStorage.setItem(FURNITURE_KEY, JSON.stringify(owned));
   playRetroSound('buy');
   markQuest('first_furniture');
+  if (isFurnitureOwned('cat_litter_box') && isFurnitureOwned('cat_food_bowl')) {
+    markQuest('responsible_butler');
+  }
   renderShopModal();
   updateCoinDisplay();
   return true;
 }
 
 const SHOP_ITEMS = [
+  // ── 🐾 고양이 필수 용품 ──
+  {
+    id: 'cat_litter_box',
+    catGroup: 'pet',
+    name: '모래 고양이 화장실',
+    enName: 'Cat Litter Box',
+    price: 60,
+    icon: '🚽',
+    desc: '먼지 없는 벤토나이트 모래 화장실. 응가(💩) 청소 시 +10 코인! ★ 고양이 입양 필수품',
+    enDesc: 'Odor-free litter box. Clean poop for +10 coins! ★ Essential for cat adoption',
+  },
+  {
+    id: 'cat_food_bowl',
+    catGroup: 'pet',
+    name: '식기 & 신선한 물그릇',
+    enName: 'Food & Water Bowls',
+    price: 50,
+    icon: '🥣',
+    desc: '오독오독 사료와 물그릇. 클릭하여 사료 리필 시 +5 코인! ★ 고양이 입양 필수품',
+    enDesc: 'Kibble and fresh water bowls. Click to refill for +5 coins! ★ Essential for cat adoption',
+  },
+
+  // ── 🐱 고양이 분양 & 입양 (화장실과 식기 둘 다 소유해야 분양 가능!) ──
+  {
+    id: 'cat_adopt_cheese',
+    catGroup: 'cat',
+    catType: 'cheese',
+    catName: '나비',
+    name: '치즈태비 「나비」 입양',
+    enName: 'Adopt Cheese Tabby "Nabi"',
+    price: 120,
+    icon: '🐱',
+    desc: '애교 만점 호기심 대장! 책상과 모니터를 훌쩍 올라타며 골골송을 부릅니다. (화장실 & 식기 필요)',
+    enDesc: 'Affectionate & curious! Climbs desks and monitors. (Requires Litter Box & Bowls)',
+    reqItems: ['cat_litter_box', 'cat_food_bowl'],
+  },
+  {
+    id: 'cat_adopt_tuxedo',
+    catGroup: 'cat',
+    catType: 'tuxedo',
+    catName: '까망이',
+    name: '턱시도 「까망이」 입양',
+    enName: 'Adopt Tuxedo "Kkamang"',
+    price: 150,
+    icon: '🐈‍⬛',
+    desc: '하얀 양말을 신은 젠틀한 냥이. 개발자의 모니터 위를 가장 좋아합니다. (화장실 & 식기 필요)',
+    enDesc: 'Gentleman cat with white socks. Loves sleeping on monitors. (Requires Litter Box & Bowls)',
+    reqItems: ['cat_litter_box', 'cat_food_bowl'],
+  },
+  {
+    id: 'cat_adopt_calico',
+    catGroup: 'cat',
+    catType: 'calico',
+    catName: '미미',
+    name: '삼색이 「미미」 입양',
+    enName: 'Adopt Calico "Mimi"',
+    price: 160,
+    icon: '🐱',
+    desc: '행운을 부르는 사랑스러운 삼색냥. 바닥을 신나게 우다다 뛰어다닙니다. (화장실 & 식기 필요)',
+    enDesc: 'Brings good luck! Loves dashing around the office floor. (Requires Litter Box & Bowls)',
+    reqItems: ['cat_litter_box', 'cat_food_bowl'],
+  },
+  {
+    id: 'cat_adopt_white',
+    catGroup: 'cat',
+    catType: 'white',
+    catName: '구름이',
+    name: '터키시앙고라 「구름이」 입양',
+    enName: 'Adopt White "Gureum"',
+    price: 180,
+    icon: '🤍',
+    desc: '신비로운 오드아이를 가진 새하얀 고양이. 도도하면서도 쓰다듬기를 좋아합니다. (화장실 & 식기 필요)',
+    enDesc: 'White fur with charming odd-eyes. Elegant and loves gentle pats. (Requires Litter Box & Bowls)',
+    reqItems: ['cat_litter_box', 'cat_food_bowl'],
+  },
+
+  // ── 🧶 고양이 추가 놀이 용품 ──
+  {
+    id: 'cat_box',
+    catGroup: 'pet',
+    name: '마성의 택배 상자',
+    enName: 'Amazon Courier Box',
+    price: 35,
+    icon: '📦',
+    desc: '어떤 비싼 가구보다 좋아하는 마성의 택배 상자! 쏙 들어가서 얼굴만 빼꼼 내밉니다.',
+    enDesc: 'Cats love cardboard boxes! Hides inside with ears poking out.',
+  },
+  {
+    id: 'cat_scratch_post',
+    catGroup: 'pet',
+    name: '원목 기둥 스크래처',
+    enName: 'Wooden Scratch Post',
+    price: 45,
+    icon: '🪵',
+    desc: '앞발톱을 벅벅 긁으며 스트레스를 시원하게 푸는 고양이 필수 놀이기구.',
+    enDesc: 'Satisfies scratching instincts to relieve feline stress.',
+  },
+  {
+    id: 'cat_tower',
+    catGroup: 'pet',
+    name: '다단 원목 캣타워',
+    enName: 'Multi-level Cat Tower',
+    price: 220,
+    icon: '🏰',
+    desc: '고양이들의 지상 낙원! 캣타워 꼭대기 전망대에 올라가 사무실 전체를 내려다봅니다.',
+    enDesc: 'The ultimate cat kingdom! Snoozes on top perch and oversees the office.',
+  },
+
+  // ── 🛋️ 오피스 인테리어 & 휴게 가구 ──
   {
     id: 'coffee_bar',
+    catGroup: 'interior',
     name: '원두 에스프레소 머신 & 바',
     enName: 'Espresso Bar',
     price: 150,
@@ -813,24 +1083,17 @@ const SHOP_ITEMS = [
   },
   {
     id: 'vending_machine',
+    catGroup: 'interior',
     name: '레트로 음료 자판기',
     enName: 'Retro Vending Machine',
     price: 180,
     icon: '🥤',
-    desc: '시원한 캔음료와 에너지 드링크가 가득. 클릭 시 덜컹 소리와 함께 음료가 나옵니다.',
-    enDesc: 'Filled with cold drinks and energy sodas. Click to vend a can.',
-  },
-  {
-    id: 'cat_tower',
-    name: '캣타워 & 사무실 고양이 나비',
-    enName: 'Cat Tower & Nabi',
-    price: 250,
-    icon: '🐱',
-    desc: '개발자의 최고의 힐링 친구! 캣타워 위에서 낮잠을 자고 클릭하면 야옹~ 웁니다.',
-    enDesc: 'The ultimate healing buddy! Snoozes on top and meows when clicked.',
+    desc: '시원한 캔음료와 에너지 드링크 가득. 클릭 시 덜컹 소리와 가끔 잔돈 코인 발견!',
+    enDesc: 'Filled with cold drinks. Click to vend a can & occasionally find coins!',
   },
   {
     id: 'arcade_cabinet',
+    catGroup: 'interior',
     name: '8비트 레트로 아케이드 오락기',
     enName: 'Retro Arcade Cabinet',
     price: 220,
@@ -840,15 +1103,17 @@ const SHOP_ITEMS = [
   },
   {
     id: 'tech_bookshelf',
+    catGroup: 'interior',
     name: '개발 서적 서가',
     enName: 'Tech Bookshelf',
     price: 120,
     icon: '📚',
-    desc: '클린 코드, 리팩토링, 알고리즘 서적이 꽂혀 있어 개발 집중력을 높여줍니다.',
-    enDesc: 'Clean Code and algorithm classics to boost developer concentration.',
+    desc: '클린 코드와 알고리즘 서적이 꽂혀 있어 집중력 향상! 클릭 시 책갈피 코인 발견.',
+    enDesc: 'Clean Code classics to boost concentration. Click to find bookmark coins.',
   },
   {
     id: 'monstera_plant',
+    catGroup: 'interior',
     name: '대형 몬스테라 관엽식물',
     enName: 'Monstera Plant',
     price: 80,
@@ -858,12 +1123,13 @@ const SHOP_ITEMS = [
   },
   {
     id: 'lounge_sofa',
+    catGroup: 'interior',
     name: '푹신한 패브릭 휴게 소파',
     enName: 'Lounge Sofa',
     price: 200,
     icon: '🛋️',
-    desc: '휴식할 때 기분 좋게쉴 수 있는 편안한 2인용 패브릭 소파.',
-    enDesc: 'A cozy fabric sofa for the team to relax and brainstorm.',
+    desc: '휴식할 때 기분 좋게 쉴 수 있는 편안한 2인용 패브릭 소파. 고양이도 냥모나이트로 잡니다.',
+    enDesc: 'A cozy fabric sofa for the team and cats to relax.',
   },
 ];
 
@@ -1055,11 +1321,591 @@ function hitFurniture(cx, cy) {
   return curFurnitureBoxes.find((b) => mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) || null;
 }
 
+// ───────────────────────────── 🐾 오피스 자율 반려묘 시스템 ─────────────────────────────
+
+let activeCatSims = new Map();
+let lastCatTs = 0;
+
+const CAT_REACTIONS = [
+  '앗, 고양이가 키보드를... 🐾',
+  '고양이님 오타는 안돼요 💦',
+  '심쿵... 너무 귀여워서 코딩 불가 💕',
+  '냥이님의 코드 리뷰 통과! 🐱',
+  '엔터 누르지 마~ 아직 커밋 전이야 😱',
+  '따뜻해서 좋은가 봐... 식빵 굽는 중 🍞',
+];
+
+function getActiveCatSims() {
+  const types = getAdoptedCatTypes();
+  const list = [];
+  for (const type of types) {
+    if (!activeCatSims.has(type)) {
+      const breed = CAT_BREEDS[type] || CAT_BREEDS.cheese;
+      activeCatSims.set(type, {
+        type,
+        breed,
+        name: officeCatState.names?.[type] || breed.defaultName,
+        x: 40 + Math.random() * 80,
+        y: WALL_H + 15 + Math.random() * 30,
+        targetX: 40 + Math.random() * 80,
+        targetY: WALL_H + 15 + Math.random() * 30,
+        state: 'idle',
+        dir: 1,
+        stateTimer: 2000 + Math.random() * 2000,
+        targetDesk: null,
+        jumpProgress: 0,
+        jumpStart: { x: 0, y: 0 },
+        jumpEnd: { x: 0, y: 0 },
+        jumpNextState: 'idle',
+        bubbleText: '',
+        bubbleTimer: 0,
+        hungerTimer: 25000 + Math.random() * 25000,
+        poopTimer: 45000 + Math.random() * 35000,
+      });
+    }
+    const cat = activeCatSims.get(type);
+    cat.name = officeCatState.names?.[type] || cat.breed.defaultName;
+    list.push(cat);
+  }
+  return list;
+}
+
+function hitOfficeCat(cx, cy) {
+  if (!officeCatState.adopted) return null;
+  const mx = cx / U, my = cy / U;
+  const cats = getActiveCatSims();
+  for (const cat of cats) {
+    if (mx >= cat.x - 4 && mx <= cat.x + 16 && my >= cat.y - 5 && my <= cat.y + 14) {
+      return cat;
+    }
+  }
+  return null;
+}
+
+function petOfficeCat(cat) {
+  officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 2);
+  officeCatState.pettedTotal = (officeCatState.pettedTotal || 0) + 1;
+
+  const today = new Date().toDateString();
+  let bonus = 0;
+  if (officeCatState.lastPetDate !== today) {
+    officeCatState.lastPetDate = today;
+    bonus = 10;
+    addCoins(bonus, T('오늘의 고양이 첫 교감', 'Daily first cat pet'));
+  }
+  saveOfficeCatState();
+
+  playRetroSound(Math.random() < 0.5 ? 'cat' : 'purr');
+  spawnHearts(cat.x + 6, cat.y - 2);
+  cat.state = 'petted';
+  cat.stateTimer = 2600;
+  cat.bubbleText = T('골골송... 💕', 'Purrr... 💕');
+  cat.bubbleTimer = 2600;
+
+  if (bonus > 0) {
+    showToast(T(`💕 ${cat.name}(이)가 기분 좋게 골골송을 부릅니다! (일일 첫 교감: +10🪙, 친밀도: ${officeCatState.affection}%)`, `💕 ${cat.name} purrs happily! (+10🪙, Affection: ${officeCatState.affection}%)`), '🐱');
+  } else {
+    showToast(T(`💕 ${cat.name}(이)를 쓰다듬었습니다! (친밀도: ${officeCatState.affection}%)`, `💕 Petted ${cat.name}! (Affection: ${officeCatState.affection}%)`), '🐱');
+  }
+
+  markQuest('cat_purr_master');
+}
+
+function renameOfficeCat(cat) {
+  const curName = cat.name;
+  const newName = prompt(T(`🐱 고양이 [${curName}]의 새 이름을 지어주세요:`, `🐱 Enter a new name for cat [${curName}]:`), curName);
+  if (newName && newName.trim() && newName.trim() !== curName) {
+    cat.name = newName.trim();
+    if (!officeCatState.names) officeCatState.names = {};
+    officeCatState.names[cat.type] = cat.name;
+    saveOfficeCatState();
+    playRetroSound('cat');
+    spawnHearts(cat.x + 5, cat.y - 2);
+    showToast(T(`🐱 고양이 이름이 「${cat.name}」(으)로 변경되었습니다!`, `🐱 Cat renamed to "${cat.name}"!`), '🐱');
+  }
+}
+
+function getCatStateDesc(state) {
+  switch (state) {
+    case 'walk': return T('사무실 순찰 중 🐾', 'Patrolling office 🐾');
+    case 'loaf': return T('따끈따끈 식빵 굽는 중 🍞', 'Loafing peacefully 🍞');
+    case 'onDesk': return T('직원 책상 점령 중 💻', 'On employee desk 💻');
+    case 'onMonitor': return T('모니터 위 명당 점령 🖥️', 'On top of monitor 🖥️');
+    case 'eating': return T('사료 냠냠 먹는 중 🥣', 'Eating kibble 🥣');
+    case 'pooping': return T('화장실 감자 생산 중 🚽', 'In the litter box 🚽');
+    case 'onTower': return T('캣타워 전망대에서 감시 중 🏰', 'On cat tower perch 🏰');
+    case 'inBox': return T('택배 상자에 쏙 숨는 중 📦', 'Hiding in box 📦');
+    case 'petted': return T('골골송 부르며 애교 부리는 중 💕', 'Purring happily 💕');
+    default: return T('사무실 호기심 가득 탐색 중 ✨', 'Exploring office ✨');
+  }
+}
+
+function walkToRandomFloor(cat) {
+  cat.targetX = clamp(20 + Math.random() * (logicalW - 48), 16, Math.max(20, logicalW - 24));
+  cat.targetY = clamp(WALL_H + 8 + Math.random() * (logicalH - WALL_H - 18), WALL_H + 6, Math.max(WALL_H + 10, logicalH - 10));
+  cat.state = 'walk';
+  cat.stateTimer = 5000;
+}
+
+function startCatJump(cat, end, nextState) {
+  cat.jumpStart = { x: cat.x, y: cat.y };
+  cat.jumpEnd = { x: end.x, y: end.y };
+  cat.jumpProgress = 0;
+  cat.state = 'jump';
+  cat.jumpNextState = nextState;
+}
+
+function updateSingleCat(cat, dt, ts) {
+  if (cat.bubbleTimer > 0) cat.bubbleTimer -= dt;
+  if (cat.hungerTimer > 0) cat.hungerTimer -= dt;
+  if (cat.poopTimer > 0) cat.poopTimer -= dt;
+
+  if (cat.state === 'walk') {
+    const dx = cat.targetX - cat.x;
+    const dy = cat.targetY - cat.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1.2) {
+      cat.x = cat.targetX;
+      cat.y = cat.targetY;
+      if (cat.targetDesk && Math.hypot(cat.targetDesk.x + 10 - cat.x, cat.targetDesk.y + 48 - cat.y) < 6) {
+        // 책상 착지 준비 완료 ➔ 책상 위 또는 모니터 위로 점프!
+        const goMonitor = Math.random() < 0.45;
+        const targetPos = goMonitor
+          ? { x: cat.targetDesk.x + 35, y: cat.targetDesk.y + 16 }
+          : { x: cat.targetDesk.x + 36, y: cat.targetDesk.y + 34 };
+        startCatJump(cat, targetPos, goMonitor ? 'onMonitor' : 'onDesk');
+      } else if (isFurnitureOwned('cat_food_bowl') && Math.hypot(logicalW - 24 - 10 - cat.x, WALL_H + 39 - cat.y) < 4) {
+        cat.state = 'eating';
+        cat.dir = 1;
+        cat.stateTimer = 4500;
+        cat.bubbleText = '🐟 오독오독 냠냠';
+        cat.bubbleTimer = 3500;
+      } else if (isFurnitureOwned('cat_litter_box') && Math.hypot(logicalW - 24 + 3 - cat.x, WALL_H + 53 - cat.y) < 4) {
+        cat.state = 'pooping';
+        cat.dir = 1;
+        cat.stateTimer = 4500;
+        cat.bubbleText = '끙... 💩';
+        cat.bubbleTimer = 3000;
+      } else if (isFurnitureOwned('cat_box') && Math.hypot(6 + 2 - cat.x, WALL_H + 60 - cat.y) < 4) {
+        cat.state = 'inBox';
+        cat.stateTimer = 10000 + Math.random() * 8000;
+        cat.bubbleText = '📦 아늑하다냥';
+        cat.bubbleTimer = 2500;
+      } else if (isFurnitureOwned('cat_scratch_post') && Math.hypot(6 + 8 - cat.x, WALL_H + 74 - cat.y) < 4) {
+        cat.state = 'scratching';
+        cat.stateTimer = 4500;
+        cat.bubbleText = '🪵 벅벅벅!';
+        cat.bubbleTimer = 2500;
+      } else {
+        const roll = Math.random();
+        if (roll < 0.45) {
+          cat.state = 'idle';
+          cat.stateTimer = 3000 + Math.random() * 3000;
+        } else if (roll < 0.8) {
+          cat.state = 'loaf';
+          cat.stateTimer = 6000 + Math.random() * 6000;
+        } else {
+          walkToRandomFloor(cat);
+        }
+      }
+    } else {
+      cat.dir = dx >= 0 ? 1 : -1;
+      const speed = 0.5 * (dt / 33);
+      cat.x += (dx / dist) * speed;
+      cat.y += (dy / dist) * speed;
+    }
+  } else if (cat.state === 'jump') {
+    cat.jumpProgress = Math.min(1, cat.jumpProgress + (dt / 500));
+    const p = cat.jumpProgress;
+    cat.x = cat.jumpStart.x + (cat.jumpEnd.x - cat.jumpStart.x) * p;
+    const linY = cat.jumpStart.y + (cat.jumpEnd.y - cat.jumpStart.y) * p;
+    cat.y = linY - 14 * Math.sin(p * Math.PI);
+    if (p >= 1) {
+      cat.x = cat.jumpEnd.x;
+      cat.y = cat.jumpEnd.y;
+      cat.state = cat.jumpNextState;
+      cat.stateTimer = 10000 + Math.random() * 10000;
+      if (cat.state === 'onDesk') {
+        if (cat.targetDesk) {
+          cat.targetDesk.catReaction = T(CAT_REACTIONS[Math.floor(Math.random() * CAT_REACTIONS.length)], '🐾 Cat on keyboard!');
+          cat.targetDesk.catReactionExpires = ts + 4500;
+        }
+        spawnHearts(cat.x + 4, cat.y - 2);
+        markQuest('desk_invader');
+      }
+    }
+  } else {
+    // idle, loaf, onDesk, onMonitor, eating, pooping, onTower, inBox, scratching, petted
+    cat.stateTimer -= dt;
+    if (cat.stateTimer <= 0) {
+      if (cat.state === 'onDesk' || cat.state === 'onMonitor') {
+        const floorX = cat.targetDesk ? cat.targetDesk.x + 8 + Math.random() * 16 : cat.x;
+        const floorY = cat.targetDesk ? cat.targetDesk.y + 48 : cat.y + 24;
+        startCatJump(cat, { x: floorX, y: floorY }, 'walk');
+        cat.targetDesk = null;
+      } else if (cat.state === 'eating') {
+        officeCatState.foodEmpty = true;
+        saveOfficeCatState();
+        cat.hungerTimer = 50000 + Math.random() * 30000;
+        cat.bubbleText = '🐟 냠냠 배부르다냥!';
+        cat.bubbleTimer = 2500;
+        spawnHearts(cat.x + 4, cat.y - 2);
+        walkToRandomFloor(cat);
+      } else if (cat.state === 'pooping') {
+        officeCatState.poopCount = Math.min(3, (officeCatState.poopCount || 0) + 1);
+        saveOfficeCatState();
+        cat.poopTimer = 65000 + Math.random() * 35000;
+        cat.bubbleText = '✨ 시원하다냥!';
+        cat.bubbleTimer = 2500;
+        walkToRandomFloor(cat);
+      } else {
+        // 바닥에서 다음 행동 결정
+        if (cat.hungerTimer <= 0 && isFurnitureOwned('cat_food_bowl')) {
+          cat.targetX = Math.max(10, logicalW - 24 - 10);
+          cat.targetY = WALL_H + 39;
+          cat.state = 'walk';
+        } else if (cat.poopTimer <= 0 && isFurnitureOwned('cat_litter_box') && (officeCatState.poopCount || 0) < 3) {
+          cat.targetX = Math.max(10, logicalW - 24 + 3);
+          cat.targetY = WALL_H + 53;
+          cat.state = 'walk';
+        } else if (desks && desks.length > 0 && Math.random() < 0.38) {
+          const d = desks[Math.floor(Math.random() * desks.length)];
+          cat.targetDesk = d;
+          cat.targetX = d.x + 10;
+          cat.targetY = d.y + 48;
+          cat.state = 'walk';
+        } else if (isFurnitureOwned('cat_tower') && Math.random() < 0.25) {
+          startCatJump(cat, { x: logicalW - 22 + 4, y: WALL_H + 2 }, 'onTower');
+        } else if (isFurnitureOwned('cat_box') && Math.random() < 0.22) {
+          cat.targetX = 6 + 2;
+          cat.targetY = WALL_H + 60;
+          cat.state = 'walk';
+        } else if (isFurnitureOwned('cat_scratch_post') && Math.random() < 0.22) {
+          cat.targetX = 6 + 8;
+          cat.targetY = WALL_H + 74;
+          cat.state = 'walk';
+        } else {
+          walkToRandomFloor(cat);
+        }
+      }
+    }
+  }
+
+  cat.x = clamp(cat.x, 6, Math.max(10, logicalW - 16));
+  cat.y = clamp(cat.y, WALL_H + 1, Math.max(WALL_H + 6, logicalH - 8));
+}
+
+function drawPixelCat(cat, t) {
+  const pal = cat.breed.palette;
+  const x = Math.round(cat.x);
+  const y = Math.round(cat.y);
+  const dir = cat.dir;
+
+  const cP = (dx, dy, c) => {
+    const rx = dir === 1 ? x + dx : x + (12 - dx);
+    P(rx, y + dy, c);
+  };
+  const cR = (dx, dy, w, h, c) => {
+    const rx = dir === 1 ? x + dx : x + (13 - dx - w);
+    R(rx, y + dy, w, h, c);
+  };
+
+  if (cat.state === 'loaf' || cat.state === 'sit' || cat.state === 'onMonitor' || cat.state === 'onTower') {
+    const breath = tick(t, 1000) ? 1 : 0;
+    cR(2, 2 - breath, 8, 4, pal.base);
+    cR(7, 1 - breath, 4, 4, pal.base);
+    cP(8, -breath, pal.dark);
+    cP(10, -breath, pal.ear || pal.dark);
+    cP(10, 2 - breath, pal.dark);
+    cP(11, 3 - breath, pal.nose);
+    cR(3, 5 - breath, 6, 1, pal.white);
+    if (cat.type === 'cheese') {
+      cP(4, 3 - breath, pal.dark);
+      cP(6, 3 - breath, pal.dark);
+    }
+    if (cat.state === 'onMonitor') {
+      const tailSwing = tick(t, 350) ? 1 : 0;
+      cP(1, 4, pal.dark);
+      cP(1, 5, pal.dark);
+      cP(1 + tailSwing, 6, pal.base);
+    } else {
+      const tailWag = tick(t, 450) ? 1 : 0;
+      cP(1, 4, pal.dark);
+      cP(0, 3 - tailWag, pal.base);
+    }
+  } else if (cat.state === 'inBox') {
+    cP(5, 0, pal.dark); cP(7, 0, pal.ear || pal.dark);
+    cR(4, 1, 5, 3, pal.base);
+    cP(7, 2, pal.eye);
+    cP(8, 3, pal.nose);
+  } else if (cat.state === 'pooping') {
+    cR(3, 1, 6, 5, pal.base);
+    cR(7, 2, 4, 3, pal.base);
+    cP(8, 1, pal.dark); cP(10, 1, pal.ear || pal.dark);
+    cP(10, 3, pal.dark);
+    cP(11, 4, pal.nose);
+    cP(1, 2, pal.dark);
+  } else if (cat.state === 'eating') {
+    const dip = tick(t, 220) ? 1 : 0;
+    cR(2, 2, 7, 4, pal.base);
+    cR(7, 2 + dip, 4, 4, pal.base);
+    cP(8, 1 + dip, pal.dark); cP(10, 1 + dip, pal.ear || pal.dark);
+    cP(11, 4 + dip, pal.nose);
+    const tailWag = tick(t, 200) ? 1 : 0;
+    cP(1, 2, pal.dark); cP(0, 1 - tailWag, pal.base);
+    cR(3, 5, 5, 1, pal.white);
+  } else if (cat.state === 'petted') {
+    cR(2, 2, 8, 4, pal.base);
+    cR(7, 1, 4, 4, pal.base);
+    cP(9, 2, pal.ear || pal.dark);
+    cP(11, 2, pal.ear || pal.dark);
+    cP(10, 3, pal.nose);
+    cP(8, 0, pal.dark); cP(10, 0, pal.ear || pal.dark);
+    const fastTail = tick(t, 120) ? 1 : 0;
+    cP(2, 1, pal.dark);
+    cP(2 + fastTail, 0, pal.base);
+    cP(2 + fastTail, -1, pal.base);
+    cR(3, 5, 6, 1, pal.white);
+  } else {
+    const isWalk = cat.state === 'walk';
+    const step = isWalk ? tick(t, 130, 4) : 0;
+    const bob = isWalk && (step === 1 || step === 3) ? 1 : 0;
+
+    cR(3, 2 - bob, 7, 3, pal.base);
+    cR(8, 0 - bob, 4, 4, pal.base);
+    cP(9, -1 - bob, pal.dark);
+    cP(11, -1 - bob, pal.ear || pal.dark);
+    if (cat.type === 'white') {
+      cP(10, 1 - bob, pal.eye);
+      cP(11, 1 - bob, pal.eyeR || pal.eye);
+    } else {
+      cP(11, 1 - bob, pal.eye);
+    }
+    cP(12, 2 - bob, pal.nose);
+    cR(7, 3 - bob, 3, 2, pal.white);
+
+    if (isWalk) {
+      cP(9 + (step === 0 ? 1 : step === 2 ? -1 : 0), 5, pal.white);
+      cP(8 + (step === 2 ? 1 : step === 0 ? -1 : 0), 5, pal.base);
+      cP(4 + (step === 1 ? 1 : step === 3 ? -1 : 0), 5, pal.white);
+      cP(3 + (step === 3 ? 1 : step === 1 ? -1 : 0), 5, pal.base);
+    } else {
+      cR(4, 5, 2, 1, pal.white);
+      cR(8, 5, 2, 1, pal.white);
+    }
+
+    const tailWag = tick(t, 280) ? 1 : 0;
+    cP(2, 2 - bob, pal.dark);
+    cP(1, 1 - bob, pal.dark);
+    cP(1, -bob - tailWag, pal.base);
+
+    if (cat.type === 'cheese') {
+      cP(5, 2 - bob, pal.dark);
+      cP(7, 2 - bob, pal.dark);
+    } else if (cat.type === 'calico') {
+      cP(5, 2 - bob, pal.dark);
+      cP(6, 3 - bob, pal.black);
+    }
+  }
+}
+
+function updateAndDrawOfficeCats(ts) {
+  if (!officeCatState.adopted) return;
+  const cats = getActiveCatSims();
+  if (cats.length === 0) return;
+
+  const dt = lastCatTs ? Math.min(100, ts - lastCatTs) : 33;
+  lastCatTs = ts;
+
+  for (const cat of cats) {
+    updateSingleCat(cat, dt, ts);
+    drawPixelCat(cat, ts);
+  }
+}
+
+function drawCatOverlays(t) {
+  if (!officeCatState.adopted) return;
+  const cats = getActiveCatSims();
+  for (const cat of cats) {
+    if (cat.bubbleText && cat.bubbleTimer > 0) {
+      drawBubble(cat.x * U, (cat.y - 8) * U, cat.bubbleText, BUBBLE.normal, t, 130);
+    }
+  }
+
+  // 화장실에 똥이 있으면 떠오르는 💩 인디케이터
+  if (isFurnitureOwned('cat_litter_box') && (officeCatState.poopCount || 0) > 0) {
+    const lx = (logicalW - 24 + 10) * U;
+    const ly = (WALL_H + 52 - 6 + Math.sin(t / 240) * 2) * U;
+    ctx.save();
+    ctx.font = `bold ${Math.round(10 * U)}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fde68a';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 4;
+    ctx.fillText(`💩 +${(officeCatState.poopCount || 0) * 10}🪙`, lx, ly);
+    ctx.restore();
+  }
+
+  // 밥그릇이 비었으면 반짝이는 🥣 인디케이터
+  if (isFurnitureOwned('cat_food_bowl') && officeCatState.foodEmpty) {
+    const fx = (logicalW - 24 + 8) * U;
+    const fy = (WALL_H + 38 - 5 + Math.sin(t / 280) * 1.5) * U;
+    ctx.save();
+    ctx.font = `bold ${Math.round(9 * U)}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#6ee7b7';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 4;
+    ctx.fillText(T('🥣 사료 리필 (+5🪙)', '🥣 Refill (+5🪙)'), fx, fy);
+    ctx.restore();
+  }
+}
+
+function drawCatFoodBowl(x, y, t) {
+  curFurnitureBoxes.push({
+    id: 'cat_food_bowl',
+    x, y, w: 16, h: 9,
+    name: officeCatState.foodEmpty
+      ? T('🥣 고양이 밥그릇 (빈 그릇! 클릭하여 사료 리필 & +5🪙)', '🥣 Food Bowl (Empty! Click to refill & +5🪙)')
+      : T('🥣 고양이 밥그릇 & 신선한 물그릇 (가득 참 🐟)', '🥣 Food & Water Bowls (Full 🐟)')
+  });
+  // 실리콘 식기 매트
+  R(x, y + 2, 16, 7, '#cbd5e1');
+  R(x + 1, y + 1, 14, 1, '#e2e8f0');
+
+  // 좌측 사료 그릇
+  R(x + 1, y + 2, 6, 5, '#94a3b8');
+  R(x + 2, y + 3, 4, 3, '#475569');
+  if (!officeCatState.foodEmpty) {
+    P(x + 2, y + 3, '#b45309'); P(x + 3, y + 3, '#f59e0b');
+    P(x + 4, y + 4, '#d97706'); P(x + 5, y + 3, '#b45309');
+    P(x + 3, y + 4, '#92400e');
+  } else {
+    P(x + 4, y + 4, '#78350f');
+  }
+
+  // 우측 신선한 물그릇
+  R(x + 9, y + 2, 6, 5, '#94a3b8');
+  R(x + 10, y + 3, 4, 3, '#0284c7');
+  const shimmer = tick(t, 450) ? 1 : 0;
+  P(x + 11 + shimmer, y + 3, '#7dd3fc');
+  P(x + 12 - shimmer, y + 4, '#38bdf8');
+}
+
+function drawCatLitterBox(x, y, t) {
+  const pCount = officeCatState.poopCount || 0;
+  curFurnitureBoxes.push({
+    id: 'cat_litter_box',
+    x, y, w: 20, h: 12,
+    name: pCount > 0
+      ? T(`🚽 고양이 화장실 💩 ${pCount}개 (클릭: 청소하고 +${pCount * 10}🪙 받기)`, `🚽 Litter Box 💩 x${pCount} (Click: Clean & get +${pCount * 10}🪙)`)
+      : T('🚽 모래 고양이 화장실 (깨끗함 ✨)', '🚽 Litter Box (Clean ✨)')
+  });
+  // 민트/하늘색 플라스틱 화장실 트레이
+  R(x, y + 2, 20, 10, '#0284c7');
+  R(x + 1, y + 1, 18, 2, '#38bdf8');
+  // 고운 벤토나이트 모래 바닥
+  R(x + 2, y + 3, 16, 7, '#fef08a');
+  for (let sx = x + 3; sx < x + 17; sx += 4) P(sx, y + 5, '#fde047');
+  for (let sx = x + 4; sx < x + 16; sx += 4) P(sx, y + 7, '#eab308');
+
+  // 사이드 모래 삽 (Scoop)
+  R(x + 18, y, 2, 6, '#f43f5e');
+  P(x + 18, y + 6, '#be123c');
+
+  // 감자 / 맛동산 (똥) 오브젝트
+  if (pCount >= 1) {
+    R(x + 4, y + 5, 3, 2, '#78350f');
+    P(x + 5, y + 4, '#92400e');
+  }
+  if (pCount >= 2) {
+    R(x + 10, y + 6, 3, 2, '#78350f');
+    P(x + 11, y + 5, '#92400e');
+  }
+  if (pCount >= 3) {
+    R(x + 14, y + 4, 3, 2, '#78350f');
+    P(x + 15, y + 3, '#92400e');
+  }
+}
+
+function drawCatBox(x, y, t) {
+  curFurnitureBoxes.push({ id: 'cat_box', x, y, w: 18, h: 12, name: T('📦 마성의 택배 상자 (고양이의 안식처)', '📦 Cardboard Box (Cat sanctuary)') });
+  R(x, y + 2, 18, 10, '#b45309');
+  R(x + 1, y + 1, 16, 2, '#d97706');
+  R(x + 2, y + 3, 14, 8, '#78350f');
+  R(x + 3, y + 6, 4, 3, '#ffffff');
+  R(x + 9, y + 7, 7, 1, '#fde047');
+}
+
+function drawCatScratchPost(x, y, t) {
+  curFurnitureBoxes.push({ id: 'cat_scratch_post', x, y, w: 14, h: 22, name: T('🪵 원목 기둥 스크래처', '🪵 Scratch Post') });
+  R(x, y + 18, 14, 4, '#78350f');
+  R(x + 1, y + 17, 12, 1, '#92400e');
+  R(x + 4, y, 6, 18, '#d7b38c');
+  for (let py = y + 1; py < y + 18; py += 2) R(x + 4, py, 6, 1, '#b88d66');
+  const sway = tick(t, 400) ? 1 : 0;
+  P(x + 7 + sway, y - 1, '#ef4444');
+}
+
+function cleanCatLitter(b) {
+  const count = officeCatState.poopCount || 0;
+  if (count > 0) {
+    const reward = count * 10;
+    officeCatState.poopCount = 0;
+    officeCatState.poopCleanedTotal = (officeCatState.poopCleanedTotal || 0) + 1;
+    officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 3);
+    saveOfficeCatState();
+    addCoins(reward, T('고양이 화장실 청소', 'Cleaned cat litter'));
+    playRetroSound('coin');
+    spawnHearts(b.x + 10, b.y + 4);
+    showToast(T(`🧹 화장실 청소 완료! 감자/맛동산을 수거하여 🪙 ${reward} 코인을 받았습니다! (친밀도 +3%)`, `🧹 Litter box cleaned! Earned 🪙 ${reward} coins! (+3% Affection)`), '🚽');
+    markQuest('poop_cleaner');
+  } else {
+    playRetroSound('stretch');
+    showToast(T('✨ 화장실 모래가 뽀송뽀송 깨끗합니다! 고양이가 상쾌해해요.', '✨ The litter box is clean and fresh!'), '✨');
+  }
+}
+
+function refillCatFood(b) {
+  if (officeCatState.foodEmpty) {
+    officeCatState.foodEmpty = false;
+    officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 2);
+    saveOfficeCatState();
+    addCoins(5, T('사료 리필 보너스', 'Refilled food bonus'));
+    playRetroSound('coin');
+    spawnHearts(b.x + 8, b.y + 3);
+    showToast(T('🥣 신선한 사료와 물을 가득 채웠습니다! (+5🪙)', '🥣 Filled food & water bowls! (+5🪙)'), '🥣');
+    const sims = getActiveCatSims();
+    for (const cat of sims) {
+      if (cat.hungerTimer <= 20000 && cat.state !== 'eating') {
+        cat.targetX = Math.max(10, logicalW - 24 - 10);
+        cat.targetY = WALL_H + 39;
+        cat.state = 'walk';
+      }
+    }
+  } else {
+    spawnHearts(b.x + 8, b.y + 3);
+    showToast(T('🐟 신선한 사료와 깨끗한 물이 이미 가득 차 있습니다.', '🐟 Food and water are already full.'), '🥣');
+  }
+}
+
 function interactFurniture(b) {
   if (b.id === 'cat_tower') {
     playRetroSound('cat');
     spawnHearts(b.x + 8, b.y + 3);
     markQuest('office_cat');
+  } else if (b.id === 'cat_litter_box') {
+    cleanCatLitter(b);
+  } else if (b.id === 'cat_food_bowl') {
+    refillCatFood(b);
+  } else if (b.id === 'cat_box') {
+    playRetroSound('cat');
+    spawnHearts(b.x + 9, b.y + 6);
+    showToast(T('📦 바스락바스락! 고양이가 상자 안에서 편안하게 몸을 웅크립니다.', '📦 Rustle rustle! Cat curls up in the box.'), '📦');
+  } else if (b.id === 'cat_scratch_post') {
+    playRetroSound('cat');
+    spawnHearts(b.x + 7, b.y + 10);
+    showToast(T('🪵 벅벅벅! 시원하게 발톱을 긁으며 스트레스를 풉니다.', '🪵 Scratch scratch! Relieving stress.'), '🪵');
   } else if (b.id === 'coffee_bar') {
     playRetroSound('coffee');
     spawnHearts(b.x + 11, b.y + 4);
@@ -1070,6 +1916,11 @@ function interactFurniture(b) {
   } else if (b.id === 'vending_machine') {
     playRetroSound('vending');
     spawnHearts(b.x + 9, b.y + 12);
+    if (Math.random() < 0.25) {
+      addCoins(5, T('자판기 잔돈 반환구 동전 발견', 'Coin found in vending machine'));
+      playRetroSound('coin');
+      showToast(T('🪙 짤랑! 자판기 잔돈 반환구에서 5 코인을 발견했습니다!', '🪙 Clink! Found 5 coins in the vending machine!'), '🪙');
+    }
   } else if (b.id === 'tech_bookshelf') {
     playRetroSound('coin');
     addCoins(1, '책갈피 코인 발견');
@@ -1651,6 +2502,7 @@ function drawOverlay(t) {
   drawAmbientLighting(t);
   drawFloatingHearts(t);
   drawMeetingBubbles(t);
+  drawCatOverlays(t);
   for (const d of desks) drawDeskBubble(d, t);   // 말풍선은 맨 위에
 }
 
@@ -1762,9 +2614,13 @@ function headAnchor(d, pose) {
 
 function drawDeskBubble(d, t) {
   const s = d.s, a = actOf(s);
-  if (a.bubble === 'none') return;
   const h = headAnchor(d, a.pose);
   const cx = h.x * U, ay = h.y * U;
+  if (d.catReaction && t < d.catReactionExpires) {
+    drawBubble(cx, ay, d.catReaction, BUBBLE.normal, t, CELL_W * U - 6);
+    return;
+  }
+  if (a.bubble === 'none') return;
   if (a.bubble === 'zzz') { drawZzz(cx, ay, t); return; }
 
   let text = `${s.icon} ${s.text}`;
@@ -1894,7 +2750,12 @@ function frame(ts) {
   // 구매한 바닥/휴게 가구 렌더링
   if (isFurnitureOwned('arcade_cabinet')) drawArcadeCabinet(6, WALL_H + 4, ts);
   if (isFurnitureOwned('lounge_sofa')) drawLoungeSofa(6, WALL_H + 36, ts);
+  if (isFurnitureOwned('cat_box')) drawCatBox(6, WALL_H + 58, ts);
+  if (isFurnitureOwned('cat_scratch_post')) drawCatScratchPost(6, WALL_H + 74, ts);
+
   if (isFurnitureOwned('cat_tower')) drawCatTower(logicalW - 22, WALL_H + 4, ts);
+  if (isFurnitureOwned('cat_food_bowl')) drawCatFoodBowl(logicalW - 24, WALL_H + 38, ts);
+  if (isFurnitureOwned('cat_litter_box')) drawCatLitterBox(logicalW - 24, WALL_H + 52, ts);
 
   // 🤝 회의실 테이블: 2개 이상 세션이 있을 때 또는 넓은 공간일 때 렌더링
   if (data.sessions && data.sessions.length >= 2) {
@@ -1905,6 +2766,8 @@ function frame(ts) {
 
   for (const z of zones) drawZone(z);
   for (const d of desks) drawDesk(d, ts);
+
+  updateAndDrawOfficeCats(ts);
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.imageSmoothingEnabled = false;
@@ -3883,6 +4746,73 @@ const ALL_ACHIEVEMENTS = [
     action: () => openNightShiftModal(),
     check: () => !!getQuest('night_shift_guard'),
   },
+  {
+    id: 'responsible_butler',
+    cat: 'onboarding',
+    icon: '🚽',
+    name: '책임감 있는 집사의 첫걸음',
+    en: 'Responsible Butler',
+    desc: '고양이를 맞이하기 위한 필수품! [모래 화장실]과 [식기 & 물그릇]을 모두 구비해보세요.',
+    enDesc: 'Prepare essential pet supplies: Litter Box and Food & Water Bowls.',
+    guide: '상점 🪙 ➔ 모래 고양이 화장실 & 식기 세트 구매',
+    enGuide: 'Shop 🪙 ➔ Buy Litter Box & Food Bowl set',
+    exp: 150,
+    action: () => openShopModal(),
+    check: () => isFurnitureOwned('cat_litter_box') && isFurnitureOwned('cat_food_bowl'),
+  },
+  {
+    id: 'first_cat_adopt',
+    cat: 'onboarding',
+    icon: '🐱',
+    name: '새로운 털뭉치 가족',
+    en: 'New Furry Family',
+    desc: '상점에서 첫 고양이를 분양받아 사무실의 힐링 요정으로 맞이해보세요.',
+    enDesc: 'Adopt your first office cat from the shop.',
+    guide: '상점 🪙 ➔ 화장실·식기 준비 후 고양이 분양받기',
+    enGuide: 'Shop 🪙 ➔ Adopt a cat after preparing essentials',
+    exp: 250,
+    action: () => openShopModal(),
+    check: () => !!getAdoptedCatTypes().length,
+  },
+  {
+    id: 'cat_purr_master',
+    cat: 'development',
+    icon: '💕',
+    name: '골골송 마스터',
+    en: 'Purr Master',
+    desc: '사무실을 돌아다니는 고양이를 클릭하여 기분 좋게 10회 이상 쓰다듬어보세요.',
+    enDesc: 'Pet roaming office cats 10+ times to make them purr.',
+    guide: '오피스 캔버스 ➔ 돌아다니는 고양이 클릭하여 쓰다듬기',
+    enGuide: 'Canvas ➔ Click roaming cat to pet',
+    exp: 200,
+    check: () => (officeCatState.pettedTotal || 0) >= 10,
+  },
+  {
+    id: 'poop_cleaner',
+    cat: 'development',
+    icon: '🧹',
+    name: '특급 환경미화 집사',
+    en: 'Pro Poop Scooper',
+    desc: '고양이 화장실의 맛동산과 감자(💩)를 클릭하여 깨끗하게 치워주고 코인을 획득해보세요.',
+    enDesc: 'Scoop poop from the cat litter box to keep it clean and earn coins.',
+    guide: '화장실에 💩 마크가 떴을 때 클릭하여 청소',
+    enGuide: 'Click litter box when 💩 icon appears',
+    exp: 200,
+    check: () => (officeCatState.poopCleanedTotal || 0) >= 3,
+  },
+  {
+    id: 'desk_invader',
+    cat: 'mastery',
+    icon: '🐾',
+    name: '키보드 점령 사건',
+    en: 'Keyboard Invader',
+    desc: '고양이가 일하는 직원의 책상 위로 훌쩍 올라타 키보드를 밟는 모습을 관측해보세요.',
+    enDesc: 'Observe a cat jumping on an employee desk and stepping on the keyboard.',
+    guide: '고양이가 직원 책상 위로 올라가 낮잠을 자거나 장난칠 때 관측',
+    enGuide: 'Watch cat climbing on employee desk',
+    exp: 180,
+    check: () => !!getQuest('desk_invader'),
+  },
 ];
 
 function isAchieved(ach, sessions) {
@@ -3969,16 +4899,47 @@ function renderShopModal() {
   shopGridEl.replaceChildren();
   const owned = getOwnedFurniture();
   const coins = getCoins();
+  const hasEssentials = isFurnitureOwned('cat_litter_box') && isFurnitureOwned('cat_food_bowl');
 
+  let lastGroup = '';
   for (const item of SHOP_ITEMS) {
-    const isOwned = owned.includes(item.id);
+    if (item.catGroup !== lastGroup) {
+      lastGroup = item.catGroup;
+      const header = elem('div', 'shop-section-header');
+      if (item.catGroup === 'pet' || item.catGroup === 'cat') {
+        const title = elem('div', '', T('🐾 고양이 입양 & 필수 용품', '🐾 Cat Adoption & Essentials'));
+        const note = elem('div', 'shop-section-note', T('※ 고양이를 분양받으려면 [모래 화장실 🚽]과 [식기 🥣]를 먼저 구비해야 합니다.', '※ Must prepare Litter Box 🚽 & Food Bowl 🥣 before adopting a cat.'));
+        header.append(title, note);
+      } else {
+        const title = elem('div', '', T('🛋️ 오피스 가구 & 휴게 시설', '🛋️ Office Decor & Lounge'));
+        const note = elem('div', 'shop-section-note', T('사무실을 아늑하고 생산적인 공간으로 꾸며보세요.', 'Make your office cozy and productive.'));
+        header.append(title, note);
+      }
+      shopGridEl.append(header);
+    }
+
+    const isCat = !!item.catType;
+    const isAdopted = isCat && (officeCatState.adoptedCats || []).includes(item.catType);
+    const isOwned = !isCat && owned.includes(item.id);
+    const hasReqs = !item.reqItems || item.reqItems.every((r) => owned.includes(r));
     const canAfford = coins >= item.price;
 
-    const card = elem('div', `shop-card ${isOwned ? 'owned' : ''}`);
+    const card = elem('div', `shop-card ${isOwned || isAdopted ? 'owned' : ''} ${!isAdopted && !hasReqs ? 'locked' : ''}`);
 
     const top = elem('div', 'shop-card-top');
     const icon = elem('div', 'shop-card-icon', item.icon);
     const info = elem('div', 'shop-card-info');
+
+    if (isCat && !isAdopted) {
+      if (!hasReqs) {
+        const pill = elem('div', 'shop-req-pill', T('⚠️ 필수조건: 화장실 🚽 & 식기 🥣 필요', '⚠️ Needs: Litter Box 🚽 & Food Bowl 🥣'));
+        info.append(pill);
+      } else {
+        const pill = elem('div', 'shop-ready-pill', T('✨ 입양 준비 완료! 🐾', '✨ Ready to Adopt! 🐾'));
+        info.append(pill);
+      }
+    }
+
     const name = elem('div', 'shop-card-name', T(item.name, item.enName));
     const desc = elem('div', 'shop-card-desc', T(item.desc, item.enDesc));
     info.append(name, desc);
@@ -3986,14 +4947,21 @@ function renderShopModal() {
 
     const foot = elem('div', 'shop-card-foot');
     const price = elem('div', 'shop-price', `🪙 ${item.price} 코인`);
-    const btn = elem('button', `shop-btn ${isOwned ? 'owned' : ''}`);
+    const btn = elem('button', `shop-btn ${isOwned || isAdopted ? 'owned' : ''}`);
     btn.type = 'button';
 
-    if (isOwned) {
+    if (isAdopted) {
+      btn.textContent = T('✅ 입양 완료 (동행 중 💕)', '✅ Adopted (With you 💕)');
+      btn.disabled = true;
+    } else if (isOwned) {
       btn.textContent = T('✅ 배치 완료', '✅ Placed');
       btn.disabled = true;
+    } else if (isCat && !hasReqs) {
+      btn.textContent = T('🔒 화장실·식기 필요', '🔒 Needs Essentials');
+      btn.disabled = true;
+      btn.title = T('고양이를 맞이하려면 먼저 [모래 화장실 🚽]과 [식기 & 물그릇 🥣]을 구매해주세요!', 'Please buy the Litter Box and Food Bowl first!');
     } else {
-      btn.textContent = canAfford ? T('구매하기', 'Buy') : T('코인 부족', 'Need Coins');
+      btn.textContent = canAfford ? (isCat ? T('분양받기', 'Adopt') : T('구매하기', 'Buy')) : T('코인 부족', 'Need Coins');
       btn.disabled = !canAfford;
       btn.addEventListener('click', () => {
         buyFurniture(item.id);
@@ -5871,8 +6839,23 @@ canvas.addEventListener('mousemove', (e) => {
     canvas.style.cursor = 'pointer';
     tooltipEl.replaceChildren();
     const add = (tag, text, cls) => { const el = document.createElement(tag); el.textContent = text; if (cls) el.className = cls; tooltipEl.append(el); };
-    add('b', fHit.name || T('🛋️ 오피스 가구', '🛋️ Office Decor'));
+    add('b', fHit.name || T('🛋️ 오피스 인테리어 가구', '🛋️ Office Decor'));
     add('div', T('클릭하여 상호작용하기', 'Click to interact'), 'dim');
+    tooltipEl.hidden = false;
+    const r = tooltipEl.getBoundingClientRect();
+    tooltipEl.style.left = clamp(e.clientX + 14, 4, viewW() - r.width - 4) + 'px';
+    tooltipEl.style.top = clamp(e.clientY + 14, 4, innerHeight - r.height - 4) + 'px';
+    return;
+  }
+  const catHit = hitOfficeCat(pos.x, pos.y);
+  if (catHit) {
+    hoverId = null;
+    canvas.style.cursor = 'pointer';
+    tooltipEl.replaceChildren();
+    const add = (tag, text, cls) => { const el = document.createElement(tag); el.textContent = text; if (cls) el.className = cls; tooltipEl.append(el); };
+    add('b', `🐱 ${catHit.name} (${T(catHit.breed.name, catHit.breed.enName)})`);
+    add('div', T(`친밀도: ${officeCatState.affection || 50}% 💕 · 상태: ${getCatStateDesc(catHit.state)}`, `Affection: ${officeCatState.affection || 50}% 💕 · State: ${getCatStateDesc(catHit.state)}`));
+    add('div', T('클릭: 쓰다듬기 (더블 클릭: 이름 변경)', 'Click: Pet (Double-click: Rename)'), 'dim');
     tooltipEl.hidden = false;
     const r = tooltipEl.getBoundingClientRect();
     tooltipEl.style.left = clamp(e.clientX + 14, 4, viewW() - r.width - 4) + 'px';
@@ -5908,6 +6891,11 @@ canvas.addEventListener('mouseleave', () => { hoverId = null; tooltipEl.hidden =
 canvas.addEventListener('dblclick', (e) => {
   if (WIDGET_WINDOW || widgetOn() || REMOTE) return;
   const pos = getCanvasPos(e);
+  const catHit = hitOfficeCat(pos.x, pos.y);
+  if (catHit) {
+    renameOfficeCat(catHit);
+    return;
+  }
   const hit = hitTest(pos.x, pos.y);
   if (hit && hit.s) {
     jumpToConsole(hit.s.id, hit.s);
@@ -5923,6 +6911,11 @@ canvas.addEventListener('click', (e) => {
   const fHit = hitFurniture(pos.x, pos.y);
   if (fHit) {
     interactFurniture(fHit);
+    return;
+  }
+  const catHit = hitOfficeCat(pos.x, pos.y);
+  if (catHit) {
+    petOfficeCat(catHit);
     return;
   }
   const hit = hitTest(pos.x, pos.y);
