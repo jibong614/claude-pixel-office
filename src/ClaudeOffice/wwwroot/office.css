@@ -1619,6 +1619,43 @@ body:has(#pet.pet-island) .gen-toast {
   animation: toastIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   max-width: 360px;
 }
+
+/* 바탕화면 미니위젯 창 내 도전과제 달성 토스트: 창 크기(300px)에 맞추고 잘리지 않도록 상단 배치 */
+body.widget-window .quest-toast,
+body.pet-window .quest-toast {
+  top: 8px;
+  bottom: auto;
+  left: 8px;
+  right: 8px;
+  width: auto;
+  max-width: calc(100% - 16px);
+  padding: 8px 12px;
+  gap: 8px;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+body.widget-window .quest-toast .quest-toast-icon,
+body.pet-window .quest-toast .quest-toast-icon {
+  font-size: 20px;
+}
+body.widget-window .quest-toast .quest-toast-tag,
+body.pet-window .quest-toast .quest-toast-tag {
+  font-size: 9.5px;
+}
+body.widget-window .quest-toast .quest-toast-title,
+body.pet-window .quest-toast .quest-toast-title {
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.widget-window .quest-toast .quest-toast-desc,
+body.pet-window .quest-toast .quest-toast-desc {
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 @keyframes toastIn {
   from { transform: translateY(20px) scale(0.95); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }
@@ -3131,24 +3168,27 @@ canvas#office {
   white-space: pre-wrap;
 }
 
-/* ───────────────────────────── 🐾 Feature 4: 미니위젯 시메지 & 다이내믹 아일랜드 ───────────────────────────── */
-/* 시메지 산책 모드 */
-#pet.pet-shimeji {
+/* ───────────────────────────── 🐾 Feature 4: 미니위젯 산책 모드 & 다이내믹 아일랜드 ───────────────────────────── */
+/* 산책 모드 (직원만 바탕화면을 자유롭게 걸어 다니고 하단 바 숨김) */
+#pet.pet-shimeji,
+#pet.pet-shimeji .pet-stage {
   background: transparent !important;
   box-shadow: none !important;
   border: none !important;
 }
-#pet.pet-shimeji .pet-head,
-#pet.pet-shimeji .pet-feed,
-#pet.pet-shimeji .pet-cmd {
+#pet.pet-shimeji .pet-head {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s;
 }
-#pet.pet-shimeji:hover .pet-head,
-#pet.pet-shimeji:hover .pet-cmd {
+#pet.pet-shimeji:hover .pet-head {
   opacity: 1;
   pointer-events: auto;
+}
+#pet.pet-shimeji .pet-bar,
+#pet.pet-shimeji .pet-feed,
+#pet.pet-shimeji .pet-cmd {
+  display: none !important;
 }
 #pet.pet-shimeji .pet-stage {
   cursor: grab;

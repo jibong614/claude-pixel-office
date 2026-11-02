@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.6.6';
+const PAGE_VERSION = '1.6.7';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -3554,7 +3554,7 @@ function ensurePetDom() {
   });
 
   const petWalkBtn = elem('button', 'pet-ibtn', '🐾');
-  petWalkBtn.title = T('시메지 산책 모드 (직원이 화면을 걸어 다닙니다)', 'Shimeji Walk Mode');
+  petWalkBtn.title = T('산책 모드 (직원이 자유롭게 걸어 다닙니다)', 'Walk Mode (employee walks freely)');
   petWalkBtn.addEventListener('click', togglePetWalk);
 
   const petIslandBtn = elem('button', 'pet-ibtn', '🏝️');
@@ -3729,14 +3729,19 @@ function triggerDevMeme(isAuto = false) {
 
   if (petMode === 'island') {
     showIslandToast(txt, '💡', MEME_DURATION);
-  } else {
+  } else if (!WIDGET_WINDOW) {
     showToast(txt, '💡', MEME_DURATION);
   }
   if (petFeedTx) petFeedTx.textContent = txt;
 }
 
 function checkDevMemeTimer() {
-  const intervalMin = Number(store.get('memeInterval', 60));
+  let intervalMin = Number(store.get('memeInterval', 60));
+  // 기존 1분 등 테스트용 잔여 설정값 자동 복구 (30분 미만 양수는 1시간(60분) 기본값으로 원복)
+  if (intervalMin > 0 && intervalMin < 30) {
+    intervalMin = 60;
+    store.set('memeInterval', 60);
+  }
   if (intervalMin <= 0) return;
   const intervalMs = intervalMin * 60 * 1000;
   const nowMs = Date.now();
@@ -3775,7 +3780,10 @@ function togglePetWalk() {
     shimejiVx = 1;
     shimejiState = 'walk';
     markQuest('shimeji_walk');
-    showToast(T('🐾 시메지 산책 모드 활성화!', '🐾 Shimeji Walk Mode Activated!'), '🐾');
+    if (WIDGET_WINDOW) send({ cmd: 'pet-backdrop', noBg: true });
+    showToast(T('🐾 산책 모드 활성화!', '🐾 Walk Mode Activated!'), '🐾');
+  } else {
+    if (WIDGET_WINDOW) send({ cmd: 'pet-backdrop', noBg: petNoBgOn() });
   }
   if (petIslandEl) {
     petIslandEl.hidden = true;
@@ -3793,8 +3801,10 @@ function togglePetIsland() {
   if (genToastTimer) clearTimeout(genToastTimer);
 
   if (petMode === 'island') {
+    if (WIDGET_WINDOW) send({ cmd: 'pet-backdrop', noBg: true });
     showIslandToast(T('초슬림 모드 켜짐 · ✕로 복귀', 'Ultra-slim active · ✕ to restore'), '🏝️');
   } else {
+    if (WIDGET_WINDOW) send({ cmd: 'pet-backdrop', noBg: petNoBgOn() });
     islandToastText = null;
     if (islandToastTimer) clearTimeout(islandToastTimer);
     if (petIslandEl) {
@@ -4786,6 +4796,10 @@ function markQuest(id) {
 
 let toastTimer = null;
 function showQuestToast(ach) {
+  if (petMode === 'island') {
+    showIslandToast(`🏆 ${T(ach.name, ach.en)} 달성! (+${ach.exp || 100} EXP)`, ach.icon || '🏆', 4000);
+    return;
+  }
   const toast = $('questToast');
   if (!toast) return;
   if (toastTimer) clearTimeout(toastTimer);
@@ -4802,7 +4816,11 @@ function showQuestToast(ach) {
   toast.hidden = false;
   toast.onclick = () => {
     toast.hidden = true;
-    openAchieveModal();
+    if (WIDGET_WINDOW) {
+      send({ cmd: 'pet-open-office' });
+    } else {
+      openAchieveModal();
+    }
   };
 
   toastTimer = setTimeout(() => {
@@ -5196,10 +5214,10 @@ const ALL_ACHIEVEMENTS = [
     id: 'shimeji_walk',
     cat: 'onboarding',
     icon: '🐾',
-    name: '시메지 산책가',
-    en: 'Shimeji Walker',
-    desc: '바탕화면 미니위젯에서 시메지 산책 모드를 켜서 직원이 화면을 자유롭게 걷게 해보세요.',
-    enDesc: 'Turn on Shimeji walk mode in MiniWidget and watch your employee walk across the screen.',
+    name: '산책가',
+    en: 'Office Walker',
+    desc: '바탕화면 미니위젯에서 산책 모드를 켜서 직원이 화면을 자유롭게 걷게 해보세요.',
+    enDesc: 'Turn on Walk mode in MiniWidget and watch your employee walk freely across the screen.',
     guide: '미니위젯 툴바에서 🐾 산책 모드 버튼 클릭',
     enGuide: 'Click 🐾 Walk Mode button in MiniWidget toolbar',
     exp: 150,
@@ -5990,8 +6008,8 @@ function drawPetFrame(ts) {
 
     if (shimejiState === 'walk') {
       shimejiX += shimejiVx * 0.7;
-      if (shimejiX < 8) { shimejiX = 8; shimejiVx = 1; }
-      else if (shimejiX > PW - 22) { shimejiX = PW - 22; shimejiVx = -1; }
+      if (shimejiX < 3) { shimejiX = 3; shimejiVx = 1; }
+      else if (shimejiX > PW - 14) { shimejiX = PW - 14; shimejiVx = -1; }
       if (ts > shimejiNextSwitch) {
         shimejiState = Math.random() < 0.4 ? 'jump' : 'idle';
         shimejiNextSwitch = ts + 2000 + Math.random() * 3000;
@@ -6031,13 +6049,13 @@ function drawPetFrame(ts) {
       drawPetBubble(petCtx, cx, ay, currentDevMeme, BUBBLE.thought, ts, cssWidth);
     } else {
       const a = actOf(s);
-      if (a.bubble !== 'none') {
+      // 산책 중에는 졸음(zzz) 말풍선을 숨겨 활기차게 걷는 모습 유지
+      if (a.bubble !== 'none' && a.bubble !== 'zzz') {
         let text = `${s.icon} ${s.text}`;
         if (a.bubble === 'thought') text += '.'.repeat(1 + tick(ts, 450, 3));
         drawPetBubble(petCtx, cx, ay, text, BUBBLE[a.bubble] || BUBBLE.normal, ts, cssWidth);
       }
     }
-    markQuest('shimeji_walk');
     return;
   }
   petEl.classList.remove('pet-shimeji');
@@ -6521,7 +6539,14 @@ const SETTINGS = [
           [180, T('3시간마다', 'Every 3 hours')],
           [240, T('4시간마다', 'Every 4 hours')],
         ],
-        get: () => Number(store.get('memeInterval', 60)),
+        get: () => {
+          let v = Number(store.get('memeInterval', 60));
+          if (v > 0 && v < 30) {
+            v = 60;
+            store.set('memeInterval', 60);
+          }
+          return v;
+        },
         set: (v) => {
           store.set('memeInterval', Number(v));
           store.set('lastMemeAt', Date.now());

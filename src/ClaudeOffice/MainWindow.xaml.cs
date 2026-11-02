@@ -844,6 +844,12 @@ public partial class MainWindow : Window
                         Post(AppSettingsJson());
                     }
                     break;
+                case "pet-backdrop":
+                    if (!App.DemoMode && root.TryGetProperty("noBg", out var pbd))
+                    {
+                        _widgetWindow?.ApplyBackdrop(pbd.ValueKind == JsonValueKind.True);
+                    }
+                    break;
                 case "pet-say":
                     if (!App.DemoMode && root.TryGetProperty("sid", out var saySid) && root.TryGetProperty("text", out var sayTxt)
                         && saySid.GetString() is { Length: > 0 } sId && sayTxt.GetString() is { Length: > 0 } sText)
