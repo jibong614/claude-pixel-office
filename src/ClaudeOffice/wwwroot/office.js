@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.6.4';
+const PAGE_VERSION = '1.6.5';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1191,11 +1191,303 @@ const SHOP_ITEMS = [
     desc: '휴식할 때 기분 좋게 쉴 수 있는 편안한 2인용 패브릭 소파. 고양이도 냥모나이트로 잡니다.',
     enDesc: 'A cozy fabric sofa for the team and cats to relax.',
   },
+  {
+    id: 'neon_sign',
+    catGroup: 'interior',
+    name: '사이버 네온사인 「CODE & CATS」',
+    enName: 'Cyber Neon Sign',
+    price: 140,
+    icon: '💡',
+    desc: '벽면을 화려하게 수놓는 사이버펑크 핑크&시안 네온사인! 클릭 시 눈부신 네온 애니메이션.',
+    enDesc: 'Cyberpunk pink & cyan glowing neon sign on the wall. Click for vibrant neon glow.',
+  },
+  {
+    id: 'aquarium',
+    catGroup: 'interior',
+    name: '열대어 네온 수조 & 어항',
+    enName: 'Tropical Neon Aquarium',
+    price: 170,
+    icon: '🐠',
+    desc: '헤엄치는 네온 테트라와 수초가 있는 물멍 힐링 수조. 클릭하여 먹이 주기 & 가끔 진주 코인 발견!',
+    enDesc: 'Glowing aquarium with swimming neon tetras. Click to feed fish & occasionally find pearls!',
+  },
+  {
+    id: 'server_rack',
+    catGroup: 'interior',
+    name: '엔터프라이즈 미니 서버 랙',
+    enName: 'Mini Server Rack',
+    price: 210,
+    icon: '🖧',
+    desc: '초당 수만 건의 요청을 처리하는 고성능 랙! 깜빡이는 LED와 쿨링팬. 클릭 시 정기 점검 보너스(+5🪙).',
+    enDesc: 'High-performance 19-inch rack with blinking LEDs. Click for maintenance bonus (+5🪙).',
+  },
+  {
+    id: 'coffee_table',
+    catGroup: 'interior',
+    name: '원목 티테이블 & 북유럽 러그',
+    enName: 'Coffee Table & Rug',
+    price: 90,
+    icon: '🍵',
+    desc: '휴게 소파와 완벽한 조화를 이루는 아늑한 라운지 테이블. 따뜻한 허브티와 매거진 구비.',
+    enDesc: 'Cozy round coffee table with steaming herbal tea and magazines on a patterned rug.',
+  },
+  {
+    id: 'turntable',
+    catGroup: 'interior',
+    name: '레트로 LP 턴테이블 & 스피커',
+    enName: 'Vinyl Turntable & Speaker',
+    price: 160,
+    icon: '🎵',
+    desc: '아날로그 감성의 LP 레코드 플레이어. 클릭 시 지지직- 편안한 로파이 코딩 비트가 흐릅니다.',
+    enDesc: 'Analog vinyl turntable playing relaxing lofi coding beats with floating music notes.',
+  },
+  {
+    id: 'bean_bag',
+    catGroup: 'interior',
+    name: '마약 빈백 힐링 쿠션',
+    enName: 'Cozy Bean Bag',
+    price: 110,
+    icon: '🛋️',
+    desc: '한번 누우면 일어날 수 없는 마성의 푹신한 빈백! 고양이와 직원이 가장 사랑하는 멍때리기 명당.',
+    enDesc: 'Ultra-soft plush bean bag where employees and cats take restful naps.',
+  },
+  {
+    id: 'cat_wheel',
+    catGroup: 'pet',
+    name: '원목 캣휠 런닝머신',
+    enName: 'Wooden Cat Wheel',
+    price: 190,
+    icon: '🎡',
+    desc: '무소음 베어링으로 쌩쌩 돌아가는 대형 캣휠! 우다다 에너지 방출 필수 운동기구.',
+    enDesc: 'Whisper-quiet wooden running wheel for energetic cats to dash and stay fit.',
+  },
+  {
+    id: 'cat_tunnel',
+    catGroup: 'pet',
+    name: '도넛 펠트 캣 터널',
+    enName: 'Donut Felt Cat Tunnel',
+    price: 85,
+    icon: '🍩',
+    desc: '바스락거리는 소리가 매력적인 둥근 펠트 터널. 숨바꼭질과 기습 장난을 치기 안성맞춤!',
+    enDesc: 'Round donut-shaped felt tunnel with peek holes for playful hide-and-seek.',
+  },
 ];
 
 let curFurnitureBoxes = [];
 
 // ── 가구별 픽셀아트 렌더링 ──
+
+
+function drawNeonSign(x, y, t) {
+  curFurnitureBoxes.push({
+    id: 'neon_sign',
+    x, y, w: 26, h: 12,
+    name: T('💡 네온사인 「CODE & CATS」', '💡 Neon Sign "CODE & CATS"')
+  });
+  // 걸이 체인
+  P(x + 4, y - 2, '#64748b'); P(x + 21, y - 2, '#64748b');
+  // 아크릴 블랙 백패널
+  R(x, y, 26, 12, '#090d16');
+  R(x, y, 26, 1, '#1e293b'); R(x, y + 11, 26, 1, '#1e293b');
+
+  // 사이버 네온 튜브: 시안 < > 괄호 & 핫핑크 CODE + 고양이 실루엣
+  const pulse = tick(t, 350);
+  const cyan = pulse ? '#38bdf8' : '#0284c7';
+  const pink = pulse ? '#f43f5e' : '#be123c';
+  const pinkHi = pulse ? '#fda4af' : '#fb7185';
+
+  // 좌측 <
+  P(x + 3, y + 4, cyan); P(x + 2, y + 5, cyan); P(x + 3, y + 6, cyan);
+  // 우측 >
+  P(x + 22, y + 4, cyan); P(x + 23, y + 5, cyan); P(x + 22, y + 6, cyan);
+
+  // 중앙 핫핑크 CODE 글자 (픽셀 아트)
+  // C
+  R(x + 5, y + 4, 3, 1, pink); P(x + 5, y + 5, pink); R(x + 5, y + 6, 3, 1, pink);
+  // O
+  R(x + 9, y + 4, 3, 1, pink); P(x + 9, y + 5, pink); P(x + 11, y + 5, pink); R(x + 9, y + 6, 3, 1, pink);
+  // D
+  R(x + 13, y + 4, 2, 3, pink); P(x + 15, y + 5, pink);
+  // E
+  R(x + 17, y + 4, 3, 1, pink); P(x + 17, y + 5, pink); R(x + 17, y + 6, 3, 1, pink); P(x + 18, y + 5, pinkHi);
+
+  // 미니 네온 하트
+  P(x + 12, y + 8, '#f43f5e'); P(x + 14, y + 8, '#f43f5e'); P(x + 13, y + 9, '#fb7185');
+}
+
+function drawAquarium(x, y, t) {
+  curFurnitureBoxes.push({
+    id: 'aquarium',
+    x, y, w: 20, h: 20,
+    name: T('🐠 열대어 네온 수조 (클릭: 먹이주기 & 힐링)', '🐠 Tropical Neon Aquarium (Click: Feed fish)')
+  });
+  // 모던 블랙 상단 후드 & 하단 받침
+  R(x, y, 20, 3, '#1e293b');
+  R(x, y + 17, 20, 3, '#0f172a');
+  // 유리 어항 수조 본체
+  R(x + 1, y + 3, 18, 14, '#0284c7');
+  R(x + 2, y + 4, 16, 12, '#0369a1');
+  // 바닥 고운 모래 & 자갈
+  R(x + 2, y + 14, 16, 2, '#d97706');
+  P(x + 4, y + 15, '#b45309'); P(x + 10, y + 14, '#fde68a'); P(x + 14, y + 15, '#b45309');
+
+  // 하늘거리는 수초
+  const sway = tick(t, 600) ? 1 : 0;
+  R(x + 3, y + 10, 2, 4, '#15803d'); P(x + 3 + sway, y + 8, '#22c55e');
+  R(x + 15, y + 11, 2, 3, '#16a34a'); P(x + 15 - sway, y + 9, '#4ade80');
+
+  // 뽀글뽀글 기포
+  const bStep = Math.floor(t / 240) % 8;
+  P(x + 8, y + 13 - bStep, 'rgba(255,255,255,0.7)');
+
+  // 유영하는 네온 테트라 (파랑/빨강)
+  const fx = x + 5 + Math.round(Math.sin(t / 650) * 4);
+  const fdir = Math.cos(t / 650) >= 0 ? 1 : -1;
+  P(fx, y + 7, '#38bdf8');
+  P(fx + (fdir > 0 ? -1 : 1), y + 7, '#ef4444');
+
+  // 골든 구피 (노랑)
+  const gx = x + 11 + Math.round(Math.cos(t / 550) * 3);
+  P(gx, y + 10, '#fbbf24'); P(gx + 1, y + 10, '#f59e0b');
+}
+
+function drawServerRack(x, y, t) {
+  curFurnitureBoxes.push({
+    id: 'server_rack',
+    x, y, w: 14, h: 28,
+    name: T('🖧 엔터프라이즈 미니 서버 랙 (가동률 99.99%)', '🖧 Enterprise Mini Server Rack (99.99% Uptime)')
+  });
+  // 19인치 서버 랙 메탈 바디
+  R(x, y, 14, 28, '#0f172a');
+  R(x + 1, y + 1, 12, 26, '#1e293b');
+
+  // 서버 유닛 슬롯 (1U, 2U 블록)
+  for (let sy = y + 2; sy < y + 26; sy += 4) {
+    R(x + 2, sy, 10, 3, '#334155');
+    R(x + 2, sy + 3, 10, 1, '#0f172a');
+  }
+
+  // 깜빡이는 LED 매트릭스
+  P(x + 3, y + 3, tick(t, 250) ? '#22c55e' : '#15803d');
+  P(x + 5, y + 3, tick(t, 400) ? '#38bdf8' : '#0369a1');
+  P(x + 3, y + 7, tick(t, 320) ? '#22c55e' : '#15803d');
+  P(x + 5, y + 7, tick(t, 500) ? '#f59e0b' : '#b45309');
+  P(x + 3, y + 11, tick(t, 180) ? '#22c55e' : '#15803d');
+  P(x + 5, y + 11, tick(t, 300) ? '#38bdf8' : '#0369a1');
+  P(x + 3, y + 15, tick(t, 450) ? '#22c55e' : '#15803d');
+  P(x + 5, y + 15, tick(t, 600) ? '#22c55e' : '#15803d');
+  P(x + 3, y + 19, tick(t, 350) ? '#22c55e' : '#15803d');
+  P(x + 5, y + 19, tick(t, 220) ? '#38bdf8' : '#0369a1');
+
+  // 강화유리 반사광
+  if (tick(t, 1200)) R(x + 8, y + 2, 1, 24, 'rgba(255,255,255,0.18)');
+}
+
+function drawCoffeeTable(x, y, t) {
+  curFurnitureBoxes.push({
+    id: 'coffee_table',
+    x, y, w: 16, h: 14,
+    name: T('🍵 원목 티테이블 & 북유럽 러그 (티타임 휴식)', '🍵 Coffee Table & Nordic Rug (Tea Break)')
+  });
+  // 북유럽 스타일 패턴 러그
+  R(x - 2, y + 3, 20, 11, '#3b4252');
+  R(x - 3, y + 4, 1, 9, '#d8dee9');
+  R(x + 18, y + 4, 1, 9, '#d8dee9');
+  P(x + 1, y + 6, '#88c0d0'); P(x + 3, y + 7, '#81a1c1'); P(x + 14, y + 6, '#88c0d0');
+
+  // 라운드 원목 테이블
+  R(x + 1, y + 2, 14, 7, '#78350f');
+  R(x + 2, y + 1, 12, 1, '#92400e');
+  R(x + 3, y + 3, 10, 4, '#1e293b');
+  P(x + 3, y + 9, '#451a03'); P(x + 12, y + 9, '#451a03');
+
+  // 김 모락모락 허브티 머그잔
+  R(x + 4, y + 2, 3, 3, '#ffffff');
+  P(x + 5, y + 2, '#047857');
+  P(x + 5, y, tick(t, 300) ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.3)');
+
+  // 테크 매거진
+  R(x + 9, y + 3, 4, 3, '#38bdf8');
+  P(x + 10, y + 4, '#ffffff');
+}
+
+function drawTurntable(x, y, t) {
+  curFurnitureBoxes.push({
+    id: 'turntable',
+    x, y, w: 14, h: 14,
+    name: T('🎵 레트로 LP 턴테이블 (클릭: 로파이 코딩 비트)', '🎵 Retro Vinyl Turntable (Click: Lofi Beats)')
+  });
+  // 마호가니 원목 바디
+  R(x, y + 3, 14, 10, '#5c3a21');
+  R(x + 1, y + 2, 12, 1, '#78350f');
+  P(x + 1, y + 13, '#2a1a0f'); P(x + 12, y + 13, '#2a1a0f');
+
+  // 회전하는 블랙 LP판
+  R(x + 2, y + 4, 7, 6, '#0f172a');
+  P(x + 5, y + 6, tick(t, 350) ? '#ef4444' : '#f59e0b');
+  // 톤암 & 바늘
+  P(x + 9, y + 5, '#cbd5e1'); P(x + 8, y + 6, '#94a3b8');
+  // 스피커 그릴
+  R(x + 10, y + 5, 3, 5, '#1e293b');
+
+  // 공중에 은은히 떠오르는 음표 (보라색 픽셀)
+  if (tick(t, 450)) P(x + 8, y - 1, '#c084fc');
+}
+
+function drawBeanBag(x, y, t) {
+  curFurnitureBoxes.push({
+    id: 'bean_bag',
+    x, y, w: 18, h: 12,
+    name: T('🛋️ 마약 빈백 힐링 쿠션 (고양이와 직원의 쉼터)', '🛋️ Cozy Bean Bag Cushion (Relaxing lounge)')
+  });
+  // 민트/틸 컬러 푹신한 빈백 형태
+  R(x + 2, y + 3, 14, 8, '#0d9488');
+  R(x + 4, y + 1, 10, 3, '#14b8a6');
+  R(x + 3, y + 4, 12, 5, '#2dd4bf');
+  R(x + 1, y + 9, 16, 2, '#0f766e');
+  P(x + 6, y + 2, '#99f6e4'); P(x + 7, y + 3, '#ccfbf1');
+}
+
+function drawCatWheel(x, y, t) {
+  curFurnitureBoxes.push({
+    id: 'cat_wheel',
+    x, y, w: 18, h: 22,
+    name: T('🎡 원목 캣휠 런닝머신 (클릭: 쌩쌩 회전)', '🎡 Wooden Cat Wheel (Click: Spin wheel)')
+  });
+  // 원목 A자 거치대
+  R(x + 1, y + 19, 16, 3, '#78350f');
+  P(x + 4, y + 18, '#475569'); P(x + 13, y + 18, '#475569');
+
+  // 대형 원형 휠 외륜 & 내부 달리기 트랙
+  R(x + 2, y, 14, 18, '#92400e');
+  R(x + 4, y + 2, 10, 14, '#262626');
+  R(x + 5, y + 3, 8, 12, '#404040');
+
+  // 회전하는 바퀴살
+  const spin = Math.floor(t / 200) % 4;
+  if (spin === 0) { R(x + 8, y + 4, 2, 10, '#a16207'); }
+  else if (spin === 1) { R(x + 5, y + 8, 8, 2, '#a16207'); }
+  else if (spin === 2) { P(x + 6, y + 6, '#a16207'); P(x + 11, y + 11, '#a16207'); }
+  else { P(x + 11, y + 6, '#a16207'); P(x + 6, y + 11, '#a16207'); }
+  P(x + 8, y + 8, '#ca8a04'); P(x + 9, y + 8, '#ca8a04');
+}
+
+function drawCatTunnel(x, y, t) {
+  curFurnitureBoxes.push({
+    id: 'cat_tunnel',
+    x, y, w: 18, h: 14,
+    name: T('🍩 도넛 펠트 캣 터널 (바스락 숨바꼭질)', '🍩 Felt Cat Tunnel (Hide & seek)')
+  });
+  // 둥근 펠트 터널 바디
+  R(x + 1, y + 2, 16, 10, '#64748b');
+  R(x + 2, y + 1, 14, 2, '#94a3b8');
+  // 터널 내부 어두운 입구 구멍
+  R(x + 4, y + 4, 10, 6, '#1e293b');
+  // 중앙 도넛 방석
+  R(x + 6, y + 5, 6, 4, '#f59e0b');
+  // 장난감 방울
+  P(x + 5, y + 4, tick(t, 450) ? '#fb7185' : '#f43f5e');
+}
 
 function drawCoffeeBar(x, y, t) {
   curFurnitureBoxes.push({ id: 'coffee_bar', x, y, w: 22, h: 24, name: T('☕ 에스프레소 머신 & 바', '☕ Espresso Bar') });
@@ -1565,10 +1857,25 @@ function updateSingleCat(cat, dt, ts) {
         cat.stateTimer = 10000 + Math.random() * 8000;
         cat.bubbleText = '📦 아늑하다냥';
         cat.bubbleTimer = 2500;
-      } else if (isFurnitureOwned('cat_scratch_post') && Math.hypot(6 + 8 - cat.x, WALL_H + 74 - cat.y) < 4) {
+      } else if (isFurnitureOwned('cat_scratch_post') && Math.hypot(6 + 8 - cat.x, WALL_H + 72 - cat.y) < 5) {
         cat.state = 'scratching';
         cat.stateTimer = 4500;
         cat.bubbleText = '🪵 벅벅벅!';
+        cat.bubbleTimer = 2500;
+      } else if (isFurnitureOwned('cat_wheel') && Math.hypot(6 + 4 - cat.x, WALL_H + 102 - cat.y) < 5) {
+        cat.state = 'loaf';
+        cat.stateTimer = 4500;
+        cat.bubbleText = '🎡 캣휠 전력질주 우다다!';
+        cat.bubbleTimer = 2500;
+      } else if (isFurnitureOwned('cat_tunnel') && Math.hypot(logicalW - 46 + 4 - cat.x, WALL_H + 52 - cat.y) < 5) {
+        cat.state = 'inBox';
+        cat.stateTimer = 6000;
+        cat.bubbleText = '🍩 터널 속 쏙 숨었다냥!';
+        cat.bubbleTimer = 2500;
+      } else if (isFurnitureOwned('bean_bag') && Math.hypot(logicalW - 46 + 3 - cat.x, WALL_H + 38 - cat.y) < 5) {
+        cat.state = 'loaf';
+        cat.stateTimer = 8000;
+        cat.bubbleText = '☁️ 푹신하다냥...';
         cat.bubbleTimer = 2500;
       } else {
         const roll = Math.random();
@@ -1651,15 +1958,27 @@ function updateSingleCat(cat, dt, ts) {
           cat.targetX = d.x + 10;
           cat.targetY = d.y + 48;
           cat.state = 'walk';
-        } else if (isFurnitureOwned('cat_tower') && Math.random() < 0.25) {
+        } else if (isFurnitureOwned('cat_tower') && Math.random() < 0.20) {
           startCatJump(cat, { x: logicalW - 22 + 4, y: WALL_H + 2 }, 'onTower');
-        } else if (isFurnitureOwned('cat_box') && Math.random() < 0.22) {
-          cat.targetX = 6 + 2;
-          cat.targetY = WALL_H + 60;
+        } else if (isFurnitureOwned('cat_wheel') && Math.random() < 0.18) {
+          cat.targetX = 6 + 4;
+          cat.targetY = WALL_H + 102;
           cat.state = 'walk';
-        } else if (isFurnitureOwned('cat_scratch_post') && Math.random() < 0.22) {
+        } else if (isFurnitureOwned('cat_tunnel') && Math.random() < 0.18) {
+          cat.targetX = logicalW - 46 + 4;
+          cat.targetY = WALL_H + 52;
+          cat.state = 'walk';
+        } else if (isFurnitureOwned('bean_bag') && Math.random() < 0.18) {
+          cat.targetX = logicalW - 46 + 3;
+          cat.targetY = WALL_H + 38;
+          cat.state = 'walk';
+        } else if (isFurnitureOwned('cat_box') && Math.random() < 0.15) {
+          cat.targetX = 6 + 2;
+          cat.targetY = WALL_H + 56;
+          cat.state = 'walk';
+        } else if (isFurnitureOwned('cat_scratch_post') && Math.random() < 0.15) {
           cat.targetX = 6 + 8;
-          cat.targetY = WALL_H + 74;
+          cat.targetY = WALL_H + 72;
           cat.state = 'walk';
         } else {
           walkToRandomFloor(cat);
@@ -2044,6 +2363,46 @@ function interactFurniture(b) {
   } else if (b.id === 'lounge_sofa') {
     playRetroSound('stretch');
     spawnHearts(b.x + 13, b.y + 6);
+  } else if (b.id === 'neon_sign') {
+    playRetroSound('test');
+    spawnHearts(b.x + 13, b.y + 6);
+    showToast(T('💡 네온사인이 화려하게 반짝입니다! KEEP CODING ✨', '💡 Neon sign glows brightly! KEEP CODING ✨'), '💡');
+  } else if (b.id === 'aquarium') {
+    playRetroSound('coin');
+    spawnHearts(b.x + 10, b.y + 8);
+    if (Math.random() < 0.3) {
+      addCoins(5, T('어항 조개 속 행운의 동전', 'Lucky coin in fish tank'));
+      playRetroSound('coin');
+      showToast(T('🐠 물고기들에게 밥을 주었습니다! 조개 속에서 🪙 5 코인을 발견했습니다!', '🐠 Fed the fish! Found 5 coins inside a seashell!'), '🐠');
+    } else {
+      showToast(T('🐠 뻐끔뻐끔! 열대어들이 먹이를 먹으며 기분 좋게 헤엄칩니다.', '🐠 Fed the fish! Swimming happily.'), '🐠');
+    }
+  } else if (b.id === 'server_rack') {
+    playRetroSound('arcade');
+    spawnHearts(b.x + 7, b.y + 12);
+    addCoins(5, T('서버 정기 점검 보너스', 'Server maintenance bonus'));
+    playRetroSound('coin');
+    showToast(T('🖧 서버 정기 점검 완료! 가동률 99.99% 정상 (+5🪙)', '🖧 Server maintenance complete! 99.99% Uptime (+5🪙)'), '🖧');
+  } else if (b.id === 'coffee_table') {
+    playRetroSound('coffee');
+    spawnHearts(b.x + 8, b.y + 6);
+    showToast(T('🍵 따뜻한 허브티 한 잔의 여유를 즐깁니다. 머리가 맑아집니다.', '🍵 Enjoying a hot cup of herbal tea.'), '🍵');
+  } else if (b.id === 'turntable') {
+    playRetroSound('coin');
+    spawnHearts(b.x + 7, b.y + 7);
+    showToast(T('🎵 치지직- 감미로운 로파이 코딩 비트가 사무실에 울려 퍼집니다.', '🎵 Playing sweet lofi coding beats on vinyl.'), '🎵');
+  } else if (b.id === 'bean_bag') {
+    playRetroSound('stretch');
+    spawnHearts(b.x + 9, b.y + 6);
+    showToast(T('☁️ 푹신푹신한 마약 빈백에 누워 잠시 피로를 풉니다.', '☁️ Sinking into the cozy bean bag.'), '🛋️');
+  } else if (b.id === 'cat_wheel') {
+    playRetroSound('arcade');
+    spawnHearts(b.x + 9, b.y + 10);
+    showToast(T('🎡 캣휠이 쌩쌩 신나게 돌아갑니다! 고양이들의 인기 1등 운동기구.', '🎡 Spun the cat wheel!'), '🎡');
+  } else if (b.id === 'cat_tunnel') {
+    playRetroSound('stretch');
+    spawnHearts(b.x + 9, b.y + 6);
+    showToast(T('🐾 바스락바스락! 고양이가 터널 속을 쏙 통과하며 놉니다.', '🐾 Rustle rustle! Cat runs through the tunnel.'), '🍩');
   }
 }
 
@@ -2125,11 +2484,13 @@ function drawWall(t) {
   drawPlant(pw + 30, WALL_H - 14);
   drawCooler(logicalW - 20, WALL_H - 26);
 
-  // 구매한 벽면 가구 렌더링
-  if (isFurnitureOwned('tech_bookshelf')) drawTechBookshelf(pw + 46, WALL_H - 27, t);
-  if (isFurnitureOwned('monstera_plant')) drawMonsteraPlant(pw + 64, WALL_H - 20, t);
-  if (isFurnitureOwned('coffee_bar')) drawCoffeeBar(logicalW - 44, WALL_H - 26, t);
+  // 구매한 벽면 가구 렌더링 (서로 겹치지 않게 좌표 분리)
+  if (isFurnitureOwned('tech_bookshelf')) drawTechBookshelf(pw + 44, WALL_H - 27, t);
+  if (isFurnitureOwned('monstera_plant')) drawMonsteraPlant(pw + 62, WALL_H - 20, t);
+  if (isFurnitureOwned('neon_sign')) drawNeonSign(pw + 78, 8, t);
+  if (isFurnitureOwned('aquarium')) drawAquarium(logicalW - 88, WALL_H - 26, t);
   if (isFurnitureOwned('vending_machine')) drawVendingMachine(logicalW - 66, WALL_H - 30, t);
+  if (isFurnitureOwned('coffee_bar')) drawCoffeeBar(logicalW - 44, WALL_H - 26, t);
 }
 
 function drawWhiteboard(x, y) {
@@ -2860,20 +3221,27 @@ function frame(ts) {
   curFurnitureBoxes = [];
   drawFloor();
   drawWall(ts);
-  // 구매한 바닥/휴게 가구 렌더링
+  // 구매한 바닥/휴게 가구 렌더링 (좌측 라운지 & 테크 존: 겹침 없이 2열 배치)
   if (isFurnitureOwned('arcade_cabinet')) drawArcadeCabinet(6, WALL_H + 4, ts);
+  if (isFurnitureOwned('server_rack')) drawServerRack(32, WALL_H + 4, ts);
   if (isFurnitureOwned('lounge_sofa')) drawLoungeSofa(6, WALL_H + 36, ts);
-  if (isFurnitureOwned('cat_box')) drawCatBox(6, WALL_H + 58, ts);
-  if (isFurnitureOwned('cat_scratch_post')) drawCatScratchPost(6, WALL_H + 74, ts);
+  if (isFurnitureOwned('coffee_table')) drawCoffeeTable(32, WALL_H + 36, ts);
+  if (isFurnitureOwned('cat_box')) drawCatBox(6, WALL_H + 56, ts);
+  if (isFurnitureOwned('turntable')) drawTurntable(32, WALL_H + 54, ts);
+  if (isFurnitureOwned('cat_scratch_post')) drawCatScratchPost(6, WALL_H + 72, ts);
+  if (isFurnitureOwned('cat_wheel')) drawCatWheel(6, WALL_H + 98, ts);
 
+  // 구매한 바닥/휴게 가구 렌더링 (우측 펫 플레이그라운드 존: 겹침 없이 2열 배치)
   if (isFurnitureOwned('cat_tower')) drawCatTower(logicalW - 22, WALL_H + 4, ts);
+  if (isFurnitureOwned('bean_bag')) drawBeanBag(logicalW - 46, WALL_H + 36, ts);
   if (isFurnitureOwned('cat_food_bowl')) drawCatFoodBowl(logicalW - 24, WALL_H + 36, ts);
+  if (isFurnitureOwned('cat_tunnel')) drawCatTunnel(logicalW - 46, WALL_H + 50, ts);
   if (isFurnitureOwned('cat_litter_box')) drawCatLitterBox(logicalW - 24, WALL_H + 50, ts);
 
-  // 🤝 전략 회의 테이블: 2개 이상 세션이 있을 때 렌더링 (고양이 식기/화장실과 겹치지 않도록 하단 영역으로 분리)
+  // 🤝 전략 회의 테이블: 2개 이상 세션이 있을 때 렌더링 (고양이 가구들과 겹치지 않도록 하단 영역 분리)
   if (data.sessions && data.sessions.length >= 2) {
     const meetX = Math.max(36, logicalW - 58);
-    const meetY = WALL_H + 68; // 고양이 화장실(WALL_H+50~63)과 완전히 분리
+    const meetY = WALL_H + 68;
     drawMeetingTable(meetX, meetY, ts);
   }
 
@@ -4755,6 +5123,20 @@ const ALL_ACHIEVEMENTS = [
     exp: 150,
     action: () => openShopModal(),
     check: () => getOwnedFurniture().length > 0 || !!getQuest('first_furniture'),
+  },
+  {
+    id: 'interior_master',
+    cat: 'mastery',
+    icon: '👑',
+    name: '오피스 인테리어 마스터',
+    en: 'Interior Master',
+    desc: '사무실 인테리어 및 고양이 가구를 8종 이상 수집하여 멋진 오피스를 완성하세요.',
+    enDesc: 'Collect 8 or more pieces of furniture and cat items.',
+    guide: '상점(🛋️)에서 가구 8종 이상 구매',
+    enGuide: 'Buy 8+ furniture items from the shop',
+    exp: 300,
+    action: () => openShopModal(),
+    check: () => getOwnedFurniture().length >= 8,
   },
   {
     id: 'coffee_break',
