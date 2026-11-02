@@ -70,7 +70,7 @@ internal sealed class RemoteHub
 
     private sealed record Listener(string Sid, TaskCompletionSource<string?> Tcs, DateTime SinceUtc);
 
-    private sealed record Approval(string Id, string Sid, string Kind, string Text, string? Detail, string[]? Options, DateTime SinceUtc, TaskCompletionSource<string?> Tcs);
+    private sealed record Approval(string Id, string Sid, string Kind, string Text, string? Detail, string[]? Options, string? Diff, DateTime SinceUtc, TaskCompletionSource<string?> Tcs);
 
     private sealed record QueuedMsg(string Text, bool FromPc);
 
@@ -153,7 +153,7 @@ internal sealed class RemoteHub
             if (!_away && !_petOpen) return [];
             var id = Convert.ToHexString(RandomNumberGenerator.GetBytes(5)).ToLowerInvariant();
             var kind = h.Tool == "AskUserQuestion" ? "question" : "tool";
-            me = new Approval(id, h.Sid, kind, h.ToolText ?? h.Tool, h.Detail, h.Options, DateTime.UtcNow,
+            me = new Approval(id, h.Sid, kind, h.ToolText ?? h.Tool, h.Detail, h.Options, h.Diff, DateTime.UtcNow,
                 new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously));
             _approvals[id] = me;
             Log(kind == "question" ? "question" : "ask", h.Sid, me.Detail ?? me.Text);
@@ -515,7 +515,7 @@ internal sealed class RemoteHub
                 foreach (var sid in ids)
                 {
                     var asks = _approvals.Values.Where(a => a.Sid == sid).OrderBy(a => a.SinceUtc)
-                        .Select(a => new { id = a.Id, kind = a.Kind, text = a.Text, detail = a.Detail, options = a.Options, t = SnapshotBuilder.Ms(a.SinceUtc) }).ToList();
+                        .Select(a => new { id = a.Id, kind = a.Kind, text = a.Text, detail = a.Detail, options = a.Options, diff = a.Diff, t = SnapshotBuilder.Ms(a.SinceUtc) }).ToList();
                     s[sid] = new
                     {
                         listen = _listeners.ContainsKey(sid),
@@ -580,7 +580,7 @@ internal sealed class RemoteHub
 
     // ───────────────────────── 그 밖 ─────────────────────────
 
-    private sealed record HookInput(string Event, string Sid, string? Tool, string? ToolText, string? Detail, string[]? Options, string? LastMessage);
+    private sealed record HookInput(string Event, string Sid, string? Tool, string? ToolText, string? Detail, string[]? Options, string? LastMessage, string? Diff);
 
     private static HookInput? ParseHook(byte[] body)
     {
@@ -595,6 +595,7 @@ internal sealed class RemoteHub
             var input = r.TryGetProperty("tool_input", out var inp) ? inp : default;
             string? detail;
             string[]? options = null;
+            string? diff = null;
             if (tool == "AskUserQuestion")
             {
                 (detail, options) = ParseQuestion(input);
@@ -604,9 +605,29 @@ internal sealed class RemoteHub
                 // 무엇을 허락하는지 알 수 있게: 명령은 그대로, 파일 도구는 경로
                 detail = tool is null ? null
                     : ToolCatalog.Str(input, "command") ?? ToolCatalog.Str(input, "file_path") ?? ToolCatalog.Str(input, "url") ?? ToolCatalog.Str(input, "path");
+
+                if (tool is "Edit" or "MultiEdit")
+                {
+                    var file = ToolCatalog.Str(input, "file_path") ?? ToolCatalog.Str(input, "path") ?? "";
+                    var oldStr = ToolCatalog.Str(input, "old_string") ?? "";
+                    var newStr = ToolCatalog.Str(input, "new_string") ?? "";
+                    if (!string.IsNullOrEmpty(oldStr) || !string.IsNullOrEmpty(newStr))
+                    {
+                        diff = BuildUnifiedDiff(file, oldStr, newStr);
+                    }
+                }
+                else if (tool is "Write")
+                {
+                    var file = ToolCatalog.Str(input, "file_path") ?? ToolCatalog.Str(input, "path") ?? "";
+                    var content = ToolCatalog.Str(input, "content") ?? "";
+                    if (!string.IsNullOrEmpty(content))
+                    {
+                        diff = BuildNewFileDiff(file, content);
+                    }
+                }
             }
             return new HookInput(ev, sid, tool, tool != null ? ToolCatalog.Describe(tool, input) : null,
-                detail != null ? ToolCatalog.Clip(detail, 600) : null, options, ToolCatalog.Str(r, "last_assistant_message"));
+                detail != null ? ToolCatalog.Clip(detail, 600) : null, options, ToolCatalog.Str(r, "last_assistant_message"), diff);
         }
         catch (JsonException) { return null; }
     }
@@ -652,6 +673,43 @@ internal sealed class RemoteHub
 
         var detail = questions.Count > 0 ? string.Join("\n", questions) : null;
         return (detail, opts.Count > 0 ? opts.ToArray() : null);
+    }
+
+    private static string BuildUnifiedDiff(string filePath, string oldStr, string newStr)
+    {
+        var sb = new StringBuilder();
+        var fname = Path.GetFileName(filePath);
+        if (string.IsNullOrEmpty(fname)) fname = filePath;
+        sb.AppendLine($"--- a/{fname}");
+        sb.AppendLine($"+++ b/{fname}");
+        var oldLines = oldStr.Replace("\r\n", "\n").Split('\n');
+        var newLines = newStr.Replace("\r\n", "\n").Split('\n');
+        sb.AppendLine($"@@ -1,{Math.Max(1, oldLines.Length)} +1,{Math.Max(1, newLines.Length)} @@");
+        foreach (var l in oldLines.Take(25))
+            sb.AppendLine("-" + l);
+        if (oldLines.Length > 25)
+            sb.AppendLine($"-[... {oldLines.Length - 25} lines omitted ...]");
+        foreach (var l in newLines.Take(25))
+            sb.AppendLine("+" + l);
+        if (newLines.Length > 25)
+            sb.AppendLine($"+[... {newLines.Length - 25} lines omitted ...]");
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string BuildNewFileDiff(string filePath, string content)
+    {
+        var sb = new StringBuilder();
+        var fname = Path.GetFileName(filePath);
+        if (string.IsNullOrEmpty(fname)) fname = filePath;
+        sb.AppendLine($"--- /dev/null");
+        sb.AppendLine($"+++ b/{fname} (new file)");
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        sb.AppendLine($"@@ -0,0 +1,{Math.Max(1, lines.Length)} @@");
+        foreach (var l in lines.Take(30))
+            sb.AppendLine("+" + l);
+        if (lines.Length > 30)
+            sb.AppendLine($"+[... {lines.Length - 30} lines omitted ...]");
+        return sb.ToString().TrimEnd();
     }
 
     private void Notify() => Changed?.Invoke();

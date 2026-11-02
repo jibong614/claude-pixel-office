@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.4.9';
+const PAGE_VERSION = '1.5.0';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -260,14 +260,50 @@ function playRetroSound(kind, force = false) {
   } else if (kind === 'send') {
     // 🚀 지시 전송: 짧고 가벼운 45ms 픽셀 블립 (880Hz -> 1320Hz)
     playSweep(ctx, 880, 1320, t0, 0.045, 'triangle', 0.10);
+  } else if (kind === 'coin') {
+    // 🪙 코인 획득: 마리오/RPG 풍 경쾌한 2단 상승 차임벨 (B5 -> E6)
+    playTone(ctx, 987.77, t0, 0.065, 'square', 0.12);
+    playTone(ctx, 1318.51, t0 + 0.07, 0.18, 'square', 0.15);
+  } else if (kind === 'buy') {
+    // 🛍️ 상점 구매 / 팡파레: 5음 상승 (C5 -> E5 -> G5 -> C6 -> E6)
+    playTone(ctx, 523.25, t0, 0.05, 'square', 0.11);
+    playTone(ctx, 659.25, t0 + 0.05, 0.05, 'square', 0.12);
+    playTone(ctx, 783.99, t0 + 0.10, 0.05, 'square', 0.13);
+    playTone(ctx, 1046.50, t0 + 0.15, 0.05, 'square', 0.14);
+    playTone(ctx, 1318.51, t0 + 0.20, 0.22, 'triangle', 0.16);
+  } else if (kind === 'cat') {
+    // 🐱 고양이 야옹: 귀여운 주파수 스윕 (880Hz -> 660Hz)
+    playSweep(ctx, 880, 660, t0, 0.18, 'triangle', 0.14);
+  } else if (kind === 'stretch') {
+    // 으라차 기지개: 상쾌한 2음 상승
+    playTone(ctx, 659.25, t0, 0.06, 'triangle', 0.10);
+    playTone(ctx, 880.00, t0 + 0.06, 0.09, 'triangle', 0.11);
+  } else if (kind === 'stop') {
+    // 🛑 비상정지: 하강 경고음 (440Hz -> 160Hz)
+    playSweep(ctx, 440, 160, t0, 0.16, 'sawtooth', 0.15);
+  } else if (kind === 'coffee') {
+    // ☕ 커피 따르기 / 마시기: 따뜻한 픽셀 멜로디
+    playTone(ctx, 587.33, t0, 0.05, 'triangle', 0.10);
+    playTone(ctx, 740.00, t0 + 0.06, 0.08, 'triangle', 0.12);
+  } else if (kind === 'arcade') {
+    // 🕹️ 아케이드 뿅뿅: 빠른 레이저 펄스
+    playSweep(ctx, 1200, 300, t0, 0.08, 'square', 0.12);
+    playSweep(ctx, 800, 1600, t0 + 0.09, 0.10, 'square', 0.12);
+  } else if (kind === 'vending') {
+    // 🥤 자판기 덜컹: 캔 떨어지는 둔탁한 소리 후 차랑
+    playTone(ctx, 220, t0, 0.06, 'sawtooth', 0.14);
+    playTone(ctx, 110, t0 + 0.07, 0.12, 'sawtooth', 0.16);
+    playTone(ctx, 880, t0 + 0.14, 0.06, 'square', 0.10);
   } else if (kind === 'test') {
-    // ▶ 미리듣기: ask 후 done
+    // ▶ 미리듣기: ask -> done -> coin 메들리
     playTone(ctx, 587.33, t0, 0.075, 'triangle', 0.15);
     playTone(ctx, 880.00, t0 + 0.08, 0.16, 'triangle', 0.18);
     playTone(ctx, 523.25, t0 + 0.35, 0.055, 'triangle', 0.12);
     playTone(ctx, 659.25, t0 + 0.405, 0.055, 'triangle', 0.13);
     playTone(ctx, 783.99, t0 + 0.46, 0.055, 'triangle', 0.14);
     playTone(ctx, 1046.50, t0 + 0.515, 0.22, 'triangle', 0.16);
+    playTone(ctx, 987.77, t0 + 0.80, 0.065, 'square', 0.12);
+    playTone(ctx, 1318.51, t0 + 0.87, 0.20, 'square', 0.15);
   }
 }
 
@@ -316,8 +352,25 @@ let selectedId = params.get('select');   // 화면 점검용: ?demo&select=demo-
 let hoverId = null;
 let curWhiteboardBox = null;
 
+let prevSessionsAct = new Map();
+
 function onSnapshot(snap) {
   if (!snap || !Array.isArray(snap.sessions)) return;
+
+  // 작업 완료 감지 시 코인 보상 & 야근 업적 확인
+  if (prevSessionsAct.size > 0) {
+    for (const s of snap.sessions) {
+      const prev = prevSessionsAct.get(s.id);
+      if (prev && ['writing', 'running', 'working', 'searching'].includes(prev) && ['idle', 'waiting', 'asking'].includes(s.act)) {
+        addCoins(15, T('작업 완료', 'Task completed'));
+        playRetroSound('coin');
+        const h = new Date().getHours();
+        if (h >= 22 || h < 6) markQuest('night_shift');
+      }
+    }
+  }
+  prevSessionsAct = new Map(snap.sessions.map((s) => [s.id, s.act]));
+
   data = snap;
   skew = (snap.now || Date.now()) - Date.now();
   if (PET_WINDOW) { renderPet(); return; }
@@ -678,6 +731,357 @@ function line(x0, y0, x1, y1, c) {
   }
 }
 
+// ───────────────────────────── 🛋️ 가구/인테리어 상점 & 코인 시스템 ─────────────────────────────
+
+const COIN_KEY = STORE_PREFIX + 'coins';
+const FURNITURE_KEY = STORE_PREFIX + 'furniture';
+
+function getCoins() {
+  const v = localStorage.getItem(COIN_KEY);
+  if (v === null) {
+    // 신규 환영 스타터 코인: 200 코인 지급
+    localStorage.setItem(COIN_KEY, '200');
+    return 200;
+  }
+  return parseInt(v, 10) || 0;
+}
+
+function addCoins(n, reason = '') {
+  if (n <= 0) return;
+  const cur = getCoins();
+  const next = cur + n;
+  localStorage.setItem(COIN_KEY, String(next));
+  updateCoinDisplay();
+}
+
+function spendCoins(n) {
+  const cur = getCoins();
+  if (cur < n) return false;
+  localStorage.setItem(COIN_KEY, String(cur - n));
+  updateCoinDisplay();
+  return true;
+}
+
+function updateCoinDisplay() {
+  const coins = getCoins();
+  const hudCoinsEl = $('hudCoins');
+  if (hudCoinsEl) hudCoinsEl.textContent = coins.toLocaleString();
+  const shopCoinsEl = $('shopCoinsTotal');
+  if (shopCoinsEl) shopCoinsEl.textContent = coins.toLocaleString();
+}
+
+function getOwnedFurniture() {
+  try {
+    return JSON.parse(localStorage.getItem(FURNITURE_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function isFurnitureOwned(id) {
+  return getOwnedFurniture().includes(id);
+}
+
+function buyFurniture(id) {
+  const item = SHOP_ITEMS.find((x) => x.id === id);
+  if (!item) return false;
+  const owned = getOwnedFurniture();
+  if (owned.includes(id)) return true;
+  if (!spendCoins(item.price)) {
+    alert(T(`코인이 부족합니다! (필요: 🪙 ${item.price} 코인)`, `Not enough coins! (Need: 🪙 ${item.price} coins)`));
+    return false;
+  }
+  owned.push(id);
+  localStorage.setItem(FURNITURE_KEY, JSON.stringify(owned));
+  playRetroSound('buy');
+  markQuest('first_furniture');
+  renderShopModal();
+  updateCoinDisplay();
+  return true;
+}
+
+const SHOP_ITEMS = [
+  {
+    id: 'coffee_bar',
+    name: '원두 에스프레소 머신 & 바',
+    enName: 'Espresso Bar',
+    price: 150,
+    icon: '☕',
+    desc: '갓 내린 원두 향이 솔솔! 클릭 시 따뜻한 커피를 내립니다.',
+    enDesc: 'Fresh espresso bar for the office. Click to brew hot coffee.',
+  },
+  {
+    id: 'vending_machine',
+    name: '레트로 음료 자판기',
+    enName: 'Retro Vending Machine',
+    price: 180,
+    icon: '🥤',
+    desc: '시원한 캔음료와 에너지 드링크가 가득. 클릭 시 덜컹 소리와 함께 음료가 나옵니다.',
+    enDesc: 'Filled with cold drinks and energy sodas. Click to vend a can.',
+  },
+  {
+    id: 'cat_tower',
+    name: '캣타워 & 사무실 고양이 나비',
+    enName: 'Cat Tower & Nabi',
+    price: 250,
+    icon: '🐱',
+    desc: '개발자의 최고의 힐링 친구! 캣타워 위에서 낮잠을 자고 클릭하면 야옹~ 웁니다.',
+    enDesc: 'The ultimate healing buddy! Snoozes on top and meows when clicked.',
+  },
+  {
+    id: 'arcade_cabinet',
+    name: '8비트 레트로 아케이드 오락기',
+    enName: 'Retro Arcade Cabinet',
+    price: 220,
+    icon: '🕹️',
+    desc: '휴식 시간에 스트리트 파이터 한 판! 클릭하면 신나는 8비트 게임 사운드가 울립니다.',
+    enDesc: 'Take a quick gaming break! Click for nostalgic 8-bit sound effects.',
+  },
+  {
+    id: 'tech_bookshelf',
+    name: '개발 서적 서가',
+    enName: 'Tech Bookshelf',
+    price: 120,
+    icon: '📚',
+    desc: '클린 코드, 리팩토링, 알고리즘 서적이 꽂혀 있어 개발 집중력을 높여줍니다.',
+    enDesc: 'Clean Code and algorithm classics to boost developer concentration.',
+  },
+  {
+    id: 'monstera_plant',
+    name: '대형 몬스테라 관엽식물',
+    enName: 'Monstera Plant',
+    price: 80,
+    icon: '🌿',
+    desc: '공기 정화와 눈의 피로를 풀어주는 싱그러운 대형 화분.',
+    enDesc: 'A lush green monstera pot to purify office air and refresh tired eyes.',
+  },
+  {
+    id: 'lounge_sofa',
+    name: '푹신한 패브릭 휴게 소파',
+    enName: 'Lounge Sofa',
+    price: 200,
+    icon: '🛋️',
+    desc: '휴식할 때 기분 좋게쉴 수 있는 편안한 2인용 패브릭 소파.',
+    enDesc: 'A cozy fabric sofa for the team to relax and brainstorm.',
+  },
+];
+
+let curFurnitureBoxes = [];
+
+// ── 가구별 픽셀아트 렌더링 ──
+
+function drawCoffeeBar(x, y, t) {
+  curFurnitureBoxes.push({ id: 'coffee_bar', x, y, w: 22, h: 24, name: T('☕ 에스프레소 머신 & 바', '☕ Espresso Bar') });
+  // 원목 카운터 베이스
+  R(x, y + 10, 22, 14, '#7c5230');
+  R(x, y + 10, 22, 2, '#9c6a42');
+  // 메탈 에스프레소 머신 본체
+  R(x + 2, y + 2, 12, 8, '#d4d8e0');
+  R(x + 3, y, 10, 2, '#9aa2b4');
+  // 듀얼 포터필터 & 드립 트레이
+  R(x + 4, y + 7, 2, 3, '#2a2a30');
+  R(x + 9, y + 7, 2, 3, '#2a2a30');
+  R(x + 3, y + 9, 10, 1, '#404550');
+  // 김 모락모락 애니메이션
+  const ph = (t / 340) | 0;
+  P(x + 5 + (ph % 2), y - 1 - (ph % 3), 'rgba(255,255,255,0.7)');
+  // 시럽 병 & 머그잔 적재
+  R(x + 16, y + 3, 2, 7, '#b8860b');
+  R(x + 19, y + 4, 2, 6, '#8b4513');
+  P(x + 15, y + 2, '#ffffff');
+}
+
+function drawVendingMachine(x, y, t) {
+  curFurnitureBoxes.push({ id: 'vending_machine', x, y, w: 18, h: 28, name: T('🥤 레트로 음료 자판기', '🥤 Retro Vending Machine') });
+  // 레드 캐비닛
+  R(x, y, 18, 28, '#dc2626');
+  R(x + 1, y - 1, 16, 1, '#ef4444');
+  // 음료 디스플레이 유리창
+  R(x + 2, y + 3, 14, 11, '#1e293b');
+  // 1열 캔음료 (블루, 그린, 오렌지, 옐로우)
+  P(x + 4, y + 5, '#38bdf8'); P(x + 7, y + 5, '#4ade80'); P(x + 10, y + 5, '#fb923c'); P(x + 13, y + 5, '#facc15');
+  // 2열 캔음료 (레드, 퍼플, 시안, 라임)
+  P(x + 4, y + 9, '#f43f5e'); P(x + 7, y + 9, '#a855f7'); P(x + 10, y + 9, '#38bdf8'); P(x + 13, y + 9, '#4ade80');
+  // 조명 깜빡임 효과
+  if (tick(t, 900)) R(x + 2, y + 3, 14, 1, 'rgba(255,255,255,0.4)');
+  // 동전 투입구 & 잔돈 반환 레버
+  P(x + 13, y + 16, '#ffd700'); P(x + 14, y + 18, '#22c55e');
+  // 하단 캔 배출구 플랩
+  R(x + 3, y + 21, 12, 5, '#1e1b2e');
+  R(x + 5, y + 21, 8, 1, '#94a3b8');
+}
+
+function drawCatTower(x, y, t) {
+  curFurnitureBoxes.push({ id: 'cat_tower', x, y, w: 18, h: 32, name: T('🐱 나비 (사무실 고양이)', '🐱 Nabi (Office Cat)') });
+  // 삼줄 기둥 & 받침대
+  R(x + 2, y + 28, 14, 4, '#a27b5c');
+  R(x + 7, y + 8, 4, 20, '#d7b38c');
+  for (let py = y + 9; py < y + 28; py += 3) R(x + 7, py, 4, 1, '#b88d66');
+  // 중간 발판 & 상단 캣타워 전망대
+  R(x + 3, y + 18, 12, 2, '#a27b5c');
+  R(x + 2, y + 7, 14, 3, '#a27b5c');
+  // 매달린 장난감 방울 (흔들림)
+  const sway = tick(t, 550) ? 1 : 0;
+  R(x + 4, y + 10, 1, 4, '#e2e8f0');
+  P(x + 4 + sway, y + 14, '#ef4444');
+
+  // 🐱 치즈태비 고양이 '나비' (식빵 굽기 자세)
+  R(x + 4, y + 2, 9, 5, '#f59e0b');
+  R(x + 7, y + 6, 5, 1, '#ffffff'); // 흰 양말/가슴털
+  // 쫑긋한 귀
+  P(x + 5, y + 1, '#d97706'); P(x + 10, y + 1, '#d97706');
+  // 행복하게 감은 눈 & 핑크 코
+  P(x + 7, y + 3, '#78350f'); P(x + 9, y + 3, '#78350f');
+  P(x + 8, y + 4, '#fb7185');
+  // 살랑살랑 흔드는 꼬리
+  const tailUp = tick(t, 450);
+  P(x + 13, y + 4, '#d97706');
+  P(x + 14, y + (tailUp ? 2 : 3), '#f59e0b');
+}
+
+function drawArcadeCabinet(x, y, t) {
+  curFurnitureBoxes.push({ id: 'arcade_cabinet', x, y, w: 18, h: 30, name: T('🕹️ 8비트 아케이드 오락기', '🕹️ 8-bit Arcade') });
+  // 네이비/퍼플 캐비닛 바디
+  R(x + 1, y, 16, 28, '#1e1b4b');
+  R(x + 2, y + 1, 14, 26, '#312e81');
+  // 상단 네온 마키 (불빛)
+  R(x + 3, y + 2, 12, 4, '#ec4899');
+  R(x + 4, y + 3, 10, 2, '#f472b6');
+  // CRT 모니터 (스페이스 인베이더 점멸)
+  R(x + 3, y + 7, 12, 10, '#020617');
+  const b = tick(t, 350) ? 2 : 0;
+  P(x + 6 + b, y + 10, '#22c55e'); P(x + 8 + b, y + 10, '#22c55e');
+  P(x + 7 + b, y + 11, '#4ade80');
+  P(x + 5, y + 14, '#38bdf8'); P(x + 11, y + 13, '#eab308');
+  // 컨트롤 패널 & 조이스틱
+  R(x + 2, y + 18, 14, 4, '#475569');
+  P(x + 5, y + 18, '#ef4444'); P(x + 5, y + 19, '#94a3b8');
+  P(x + 9, y + 19, '#3b82f6'); P(x + 12, y + 19, '#eab308');
+  // 코인 투입구 2개
+  R(x + 5, y + 23, 8, 4, '#0f172a');
+  P(x + 7, y + 24, '#f59e0b'); P(x + 10, y + 24, '#f59e0b');
+}
+
+function drawTechBookshelf(x, y, t) {
+  curFurnitureBoxes.push({ id: 'tech_bookshelf', x, y, w: 16, h: 25, name: T('📚 개발 서적 서가', '📚 Tech Bookshelf') });
+  // 오크 책장 프레임 & 뒤판
+  R(x, y, 16, 25, '#5c3a21');
+  R(x + 1, y + 1, 14, 23, '#3e2716');
+  // 3단 선반
+  R(x + 1, y + 8, 14, 2, '#7a4e2d');
+  R(x + 1, y + 16, 14, 2, '#7a4e2d');
+  R(x + 1, y + 23, 14, 2, '#7a4e2d');
+  // 1단 책들 (파란색, 빨간색, 금색 서적)
+  R(x + 2, y + 2, 2, 6, '#2563eb');
+  R(x + 5, y + 3, 3, 5, '#dc2626');
+  R(x + 9, y + 2, 2, 6, '#d97706');
+  R(x + 12, y + 4, 2, 4, '#16a34a');
+  // 2단 책들 (보라색 매뉴얼, 시안 바인더)
+  R(x + 2, y + 10, 4, 6, '#9333ea');
+  R(x + 7, y + 11, 2, 5, '#0284c7');
+  R(x + 10, y + 10, 3, 6, '#e11d48');
+  // 3단 (미니 트로피 & 책)
+  P(x + 3, y + 20, '#ffd700'); P(x + 3, y + 21, '#d97706');
+  R(x + 7, y + 19, 6, 4, '#64748b');
+}
+
+function drawMonsteraPlant(x, y, t) {
+  curFurnitureBoxes.push({ id: 'monstera_plant', x, y, w: 14, h: 20, name: T('🌿 몬스테라 관엽식물', '🌿 Monstera Plant') });
+  // 테라코타 화분
+  R(x + 2, y + 12, 10, 8, '#c2410c');
+  R(x + 1, y + 11, 12, 2, '#ea580c');
+  // 몬스테라 줄기
+  R(x + 5, y + 6, 1, 6, '#15803d');
+  R(x + 8, y + 4, 1, 8, '#166534');
+  // 큼직한 구멍 뚫린 몬스테라 잎들
+  R(x, y + 2, 5, 5, '#22c55e'); P(x + 2, y + 3, PAL.wall);
+  R(x + 5, y - 2, 6, 6, '#16a34a'); P(x + 7, y, PAL.wall);
+  R(x + 9, y + 2, 4, 5, '#4ade80');
+}
+
+function drawLoungeSofa(x, y, t) {
+  curFurnitureBoxes.push({ id: 'lounge_sofa', x, y, w: 26, h: 18, name: T('🛋️ 패브릭 휴게 소파', '🛋️ Lounge Sofa') });
+  // 소파 등받이
+  R(x + 2, y, 22, 8, '#0e7490');
+  R(x + 12, y, 1, 8, '#155e75');
+  // 푹신한 좌판 방석
+  R(x + 2, y + 8, 22, 6, '#06b6d4');
+  R(x + 12, y + 8, 1, 6, '#0891b2');
+  // 팔걸이 좌우
+  R(x, y + 3, 3, 11, '#155e75');
+  R(x + 23, y + 3, 3, 11, '#155e75');
+  // 원목 소파 다리
+  R(x + 3, y + 14, 2, 3, '#78350f');
+  R(x + 21, y + 14, 2, 3, '#78350f');
+  // 포인트 옐로우 쿠션
+  R(x + 4, y + 4, 4, 4, '#eab308');
+}
+
+// ── 가구 클릭 상호작용 및 파티클 ──
+
+let floatingHearts = [];
+
+function spawnHearts(px, py) {
+  for (let i = 0; i < 3; i++) {
+    floatingHearts.push({
+      x: px + (Math.random() * 8 - 4),
+      y: py,
+      birth: Date.now(),
+    });
+  }
+}
+
+function drawFloatingHearts(t) {
+  if (floatingHearts.length === 0) return;
+  const now = Date.now();
+  floatingHearts = floatingHearts.filter((h) => now - h.birth < 1600);
+  ctx.save();
+  for (const h of floatingHearts) {
+    const elapsed = (now - h.birth) / 1600;
+    const y = (h.y - elapsed * 20) * U;
+    const x = (h.x + Math.sin(elapsed * 7) * 2.5) * U;
+    const alpha = 1.0 - elapsed;
+    ctx.font = `${Math.round(11 * U)}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.fillText('💖', x, y);
+  }
+  ctx.restore();
+}
+
+function hitFurniture(cx, cy) {
+  const mx = cx / U, my = cy / U;
+  return curFurnitureBoxes.find((b) => mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) || null;
+}
+
+function interactFurniture(b) {
+  if (b.id === 'cat_tower') {
+    playRetroSound('cat');
+    spawnHearts(b.x + 8, b.y + 3);
+    markQuest('office_cat');
+  } else if (b.id === 'coffee_bar') {
+    playRetroSound('coffee');
+    spawnHearts(b.x + 11, b.y + 4);
+    markQuest('coffee_break');
+  } else if (b.id === 'arcade_cabinet') {
+    playRetroSound('arcade');
+    spawnHearts(b.x + 9, b.y + 8);
+  } else if (b.id === 'vending_machine') {
+    playRetroSound('vending');
+    spawnHearts(b.x + 9, b.y + 12);
+  } else if (b.id === 'tech_bookshelf') {
+    playRetroSound('coin');
+    addCoins(1, '책갈피 코인 발견');
+    spawnHearts(b.x + 8, b.y + 8);
+  } else if (b.id === 'monstera_plant') {
+    playRetroSound('coin');
+    spawnHearts(b.x + 7, b.y + 6);
+  } else if (b.id === 'lounge_sofa') {
+    playRetroSound('stretch');
+    spawnHearts(b.x + 13, b.y + 6);
+  }
+}
+
 // ───────────────────────────── 방: 바닥·벽·창문·장식 ─────────────────────────────
 
 function drawFloor() {
@@ -690,11 +1094,26 @@ function drawFloor() {
   }
 }
 
-function skyAt(h) {
+function getLightingKind() {
+  const mode = store.get('light_mode', 'auto');
+  if (mode === 'day' || mode === 'dusk' || mode === 'night' || mode === 'dawn') return mode;
+  const d = new Date();
+  return skyAtHour(d.getHours() + d.getMinutes() / 60).kind;
+}
+
+function skyAtHour(h) {
   if (h >= 7 && h < 17) return { top: '#7fc0ec', bottom: '#c4e6f8', kind: 'day' };
-  if (h >= 17 && h < 19.5) return { top: '#7a5e9c', bottom: '#f2a46a', kind: 'dusk' };
+  if (h >= 17 && h < 20.5) return { top: '#7a5e9c', bottom: '#f2a46a', kind: 'dusk' };
   if (h >= 5.5 && h < 7) return { top: '#9fc6e8', bottom: '#f5c79c', kind: 'dawn' };
   return { top: '#141a38', bottom: '#26305c', kind: 'night' };
+}
+
+function skyAt(h) {
+  const kind = getLightingKind();
+  if (kind === 'night') return { top: '#141a38', bottom: '#26305c', kind: 'night' };
+  if (kind === 'dusk') return { top: '#7a5e9c', bottom: '#f2a46a', kind: 'dusk' };
+  if (kind === 'dawn') return { top: '#9fc6e8', bottom: '#f5c79c', kind: 'dawn' };
+  return { top: '#7fc0ec', bottom: '#c4e6f8', kind: 'day' };
 }
 
 function drawWall(t) {
@@ -740,6 +1159,12 @@ function drawWall(t) {
 
   drawPlant(pw + 30, WALL_H - 14);
   drawCooler(logicalW - 20, WALL_H - 26);
+
+  // 구매한 벽면 가구 렌더링
+  if (isFurnitureOwned('tech_bookshelf')) drawTechBookshelf(pw + 46, WALL_H - 27, t);
+  if (isFurnitureOwned('monstera_plant')) drawMonsteraPlant(pw + 64, WALL_H - 20, t);
+  if (isFurnitureOwned('coffee_bar')) drawCoffeeBar(logicalW - 44, WALL_H - 26, t);
+  if (isFurnitureOwned('vending_machine')) drawVendingMachine(logicalW - 66, WALL_H - 30, t);
 }
 
 function drawWhiteboard(x, y) {
@@ -901,7 +1326,7 @@ function drawDesk(d, t) {
 
   R(x + 6, y + 51, 56, 2, 'rgba(0,0,0,0.18)');
   drawChair(x, y);
-  if (a.pose !== 'away') drawPerson(x, y, L, a.pose, t);
+  if (a.pose !== 'away') drawPerson(x, y, L, a.pose, t, s);
   drawDeskBody(x, y);
   drawMonitor(x + 36, y + 18, a.screen, t, hash(s.id));
   R(x + 26, y + 34, 9, 1, PAL.keyboard);
@@ -1020,7 +1445,15 @@ function drawMonitor(mx, my, screen, t, seed) {
 }
 
 // 사람: 머리(8×8)·몸통(9×11)·다리, 오른쪽(모니터 쪽)을 보고 앉아 있다
-function drawPerson(x, y, L, pose, t) {
+function idleActionOf(s, t) {
+  // 대기 중 자율 행동: 24초 주기 (14초 커피 홀짝 -> 5초 으라차 기지개 -> 5초 휴식)
+  const hashVal = s?.id ? hash(s.id) : 123;
+  const phase = ((t + hashVal * 137) % 24000) / 1000;
+  if (phase >= 14 && phase < 19) return 'stretch';
+  return 'sip';
+}
+
+function drawPerson(x, y, L, pose, t, s) {
   let hx = x + 12, hy = y + 20;
   let bx = x + 11, by = y + 28;
   if (pose === 'sleep') { hx = x + 18; hy = y + 27; bx = x + 12; by = y + 29; }
@@ -1038,30 +1471,37 @@ function drawPerson(x, y, L, pose, t) {
   R(bx, by, 9, 1, shade(L.shirt, 1.18));
   R(bx + 6, by + 1, 1, 9, shade(L.shirt, 0.82));
 
-  drawHead(hx, hy, L, pose, t);
-  drawArms(bx, by, L, pose, t);
+  const isStretching = pose === 'idle' && idleActionOf(s, t) === 'stretch';
+  drawHead(hx, hy, L, pose, t, isStretching);
+  drawArms(bx, by, L, pose, t, isStretching);
 }
 
-function drawHead(hx, hy, L, pose, t) {
+function drawHead(hx, hy, L, pose, t, isStretching = false) {
   R(hx, hy, 8, 8, L.skin);
   R(hx, hy - 1, 8, 3, L.hair);
   R(hx - 1, hy, 3, 6, L.hair);
   if (L.hairStyle === 1) R(hx + 5, hy + 2, 3, 1, L.hair);   // 앞머리
   if (L.hairStyle === 2) R(hx - 1, hy + 6, 2, 3, L.hair);   // 긴 머리
 
-  const closed = pose === 'sleep' || (t + L.blink) % 3200 < 130;
-  if (closed) R(hx + 5, hy + 4, 2, 1, '#3a2a22');
-  else R(hx + 6, hy + 3, 1, 2, '#2a1d17');
+  if (isStretching) {
+    // 기지개 켤 때 활짝 웃는 눈 (^ ^)
+    P(hx + 5, hy + 3, '#2a1d17'); P(hx + 7, hy + 3, '#2a1d17');
+    P(hx + 6, hy + 2, '#2a1d17');
+  } else {
+    const closed = pose === 'sleep' || (t + L.blink) % 3200 < 130;
+    if (closed) R(hx + 5, hy + 4, 2, 1, '#3a2a22');
+    else R(hx + 6, hy + 3, 1, 2, '#2a1d17');
+  }
 
   if (L.glasses) {
     R(hx + 5, hy + 2, 3, 1, '#2d2d38');
     R(hx + 5, hy + 5, 3, 1, '#2d2d38');
     P(hx + 5, hy + 3, '#2d2d38'); P(hx + 5, hy + 4, '#2d2d38');
   }
-  P(hx + 6, hy + 6, pose === 'raise' ? '#b0473b' : shade(L.skin, 0.8));   // 입
+  P(hx + 6, hy + 6, (pose === 'raise' || isStretching) ? '#b0473b' : shade(L.skin, 0.8));   // 입
 }
 
-function drawArms(bx, by, L, pose, t) {
+function drawArms(bx, by, L, pose, t, isStretching = false) {
   const sleeve = shade(L.shirt, 0.9), skin = L.skin;
   switch (pose) {
     case 'type':
@@ -1087,12 +1527,22 @@ function drawArms(bx, by, L, pose, t) {
       R(bx + 7, by - 2, 2, 2, skin);   // 턱 괸 손
       break;
     case 'idle': {
-      R(bx + 6, by + 4, 4, 2, sleeve);
-      R(bx + 10, by + 1, 3, 4, '#f2f2f2');
-      R(bx + 10, by + 1, 3, 1, '#6b3e22');
-      P(bx + 13, by + 2, '#f2f2f2'); P(bx + 13, by + 3, '#f2f2f2');
-      const ph = (t / 380) | 0;
-      for (let i = 0; i < 2; i++) P(bx + 11 + ((ph + i) % 2), by - 1 - ((ph + i * 2) % 4), 'rgba(255,255,255,0.55)');   // 김
+      if (isStretching) {
+        // \o/ 으라차 기지개: 양팔을 번쩍 위로 뻗음
+        const b = tick(t, 350) ? 1 : 0;
+        R(bx + 3, by - 6 + b, 2, 9, sleeve);  // 왼팔
+        R(bx + 3, by - 8 + b, 2, 2, skin);    // 왼손
+        R(bx + 8, by - 6 + b, 2, 9, sleeve);  // 오른팔
+        R(bx + 8, by - 8 + b, 2, 2, skin);    // 오른손
+      } else {
+        // ☕ 커피 머그잔 홀짝이기 & 모락모락 김
+        R(bx + 6, by + 4, 4, 2, sleeve);
+        R(bx + 10, by + 1, 3, 4, '#f2f2f2');
+        R(bx + 10, by + 1, 3, 1, '#6b3e22');
+        P(bx + 13, by + 2, '#f2f2f2'); P(bx + 13, by + 3, '#f2f2f2');
+        const ph = (t / 380) | 0;
+        for (let i = 0; i < 2; i++) P(bx + 11 + ((ph + i) % 2), by - 1 - ((ph + i * 2) % 4), 'rgba(255,255,255,0.55)');   // 김
+      }
       break;
     }
     case 'raise': {
@@ -1182,7 +1632,58 @@ function drawOverlay(t) {
   for (const d of desks) drawNameplate(d);
   for (const d of desks) if (d.s.id === selectedId || d.s.id === hoverId) drawSelection(d, d.s.id === selectedId);
   for (const d of desks) drawInternChips(d);
+  drawAmbientLighting(t);
+  drawFloatingHearts(t);
   for (const d of desks) drawDeskBubble(d, t);   // 말풍선은 맨 위에
+}
+
+function drawAmbientLighting(t) {
+  const kind = getLightingKind();
+  if (kind === 'day') return; // 주간은 자연광
+
+  const w = canvas.width, h = canvas.height;
+  ctx.save();
+
+  if (kind === 'dusk') {
+    // 🌅 노을: 따스한 주황빛 감성 틴트
+    ctx.fillStyle = 'rgba(255, 120, 40, 0.08)';
+    ctx.fillRect(0, 0, w, h);
+  } else if (kind === 'night') {
+    // 🌙 야간/야근 모드: 전체적으로 차분한 어두운 앰비언트 필터
+    // 일하고 있는 책상과 모니터에만 따스하고 집중도 높은 원뿔 스포트라이트 조명
+    ctx.fillStyle = 'rgba(10, 8, 24, 0.42)';
+    ctx.fillRect(0, 0, w, h);
+
+    // 모니터 & 책상 스포트라이트 투과
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const d of desks) {
+      const a = actOf(d.s);
+      const isWorking = a.busy || a.wait;
+      const spotX = (d.x + 36) * U;
+      const spotY = (d.y + 36) * U;
+      const radius = (isWorking ? 56 : 38) * U;
+      const grad = ctx.createRadialGradient(spotX, spotY, 4, spotX, spotY, radius);
+      grad.addColorStop(0, isWorking ? 'rgba(0, 0, 0, 0.78)' : 'rgba(0, 0, 0, 0.45)');
+      grad.addColorStop(0.5, isWorking ? 'rgba(0, 0, 0, 0.40)' : 'rgba(0, 0, 0, 0.18)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(spotX, spotY, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (isFurnitureOwned('arcade_cabinet')) {
+      const ax = 15 * U, ay = (WALL_H + 16) * U, ar = 32 * U;
+      const agrad = ctx.createRadialGradient(ax, ay, 2, ax, ay, ar);
+      agrad.addColorStop(0, 'rgba(0,0,0,0.6)');
+      agrad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = agrad;
+      ctx.beginPath();
+      ctx.arc(ax, ay, ar, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
 }
 
 function drawZoneLabel(z) {
@@ -1251,6 +1752,24 @@ function drawDeskBubble(d, t) {
 
   let text = `${s.icon} ${s.text}`;
   if (a.bubble === 'thought') text += '.'.repeat(1 + tick(t, 450, 3));
+  else if (s.act === 'idle' && (!s.text || s.text.trim() === '')) {
+    // 대기 중 랜덤 유머/생각 말풍선 (30초마다 7초간 등장)
+    const thoughts = [
+      '커피 한잔의 여유 ☕',
+      '기지개 쭉- 으라차! ✨',
+      '버그 없는 세상에서 살고 싶다 🌟',
+      '다음 지시를 기다리는 중 🚀',
+      '테스트 코드 통과했을까? 🧪',
+      '이번 주말엔 뭐 하지? 🎮',
+      '코드 리팩토링 각이다 🧹',
+    ];
+    const hashVal = hash(s.id);
+    const cycle = ((t + hashVal * 251) % 30000) / 1000;
+    if (cycle < 7) {
+      const idx = Math.floor((t + hashVal * 251) / 30000) % thoughts.length;
+      text = `💭 ${thoughts[idx]}`;
+    }
+  }
   drawBubble(cx, ay, text, BUBBLE[a.bubble] || BUBBLE.normal, t, CELL_W * U - 6);
 }
 
@@ -1344,8 +1863,14 @@ function frame(ts) {
   ensureLayout();
   syncDesks();
 
+  curFurnitureBoxes = [];
   drawFloor();
   drawWall(ts);
+  // 구매한 바닥/휴게 가구 렌더링
+  if (isFurnitureOwned('arcade_cabinet')) drawArcadeCabinet(6, WALL_H + 4, ts);
+  if (isFurnitureOwned('lounge_sofa')) drawLoungeSofa(6, WALL_H + 36, ts);
+  if (isFurnitureOwned('cat_tower')) drawCatTower(logicalW - 22, WALL_H + 4, ts);
+
   for (const z of zones) drawZone(z);
   for (const d of desks) drawDesk(d, ts);
 
@@ -1397,6 +1922,7 @@ function entryName(e) {
 const $ = (id) => document.getElementById(id);
 const summaryEl = $('summary'), emptyEl = $('empty'), tooltipEl = $('tooltip'), panelEl = $('panel');
 const btnAway = $('btnAway'), btnPin = $('btnPin'), btnHook = $('btnHook'), btnSettings = $('btnSettings'), btnPet = $('btnPet'), btnWidget = $('btnWidget'), btnToday = $('btnToday'), btnAchieve = $('btnAchieve');
+const btnShop = $('btnShop'), btnCoins = $('hudCoins')?.parentElement, shopModalEl = $('shopModal'), shopCloseBtn = $('shopClose'), shopGridEl = $('shopGrid');
 const settingsEl = $('settings'), settingsBody = $('sBody'), drawerTab = $('drawerTab');
 
 function refreshHud() {
@@ -1404,6 +1930,7 @@ function refreshHud() {
     document.body.style.setProperty('--hud-h', '0px');
     return;
   }
+  updateCoinDisplay();
   let busy = 0, wait = 0, rest = 0, away = 0;
   for (const s of data.sessions) {
     const a = actOf(s);
@@ -1703,7 +2230,11 @@ function ensurePetDom() {
       sendPetSay();
     }
   });
-  irow.append(petInputEl, petSendBtn);
+  const petVoiceBtn = elem('button', 'mini voice-btn', '🎙️');
+  petVoiceBtn.type = 'button';
+  petVoiceBtn.title = T('음성으로 지시하기 (Voice Prompt)', 'Voice-to-Prompt');
+  setupVoicePrompt(petVoiceBtn, petInputEl);
+  irow.append(petInputEl, petVoiceBtn, petSendBtn);
   const noteRow = elem('div', 'pet-note-row');
   petNoteEl = elem('div', 'pet-note');
   petCancelBtn = elem('button', 'cancel-q', T('취소', 'Cancel'));
@@ -1733,6 +2264,111 @@ function ensurePetDom() {
   petEl.replaceChildren(head, petAlertEl, petStageEl, petEmptyEl, petAsksEl, petFeedEl, petCmdWrap);
 }
 
+// ───────────────────────────── 📱 모바일 & 원격 제어: Diff 아코디언 & 음성 지시 ─────────────────────────────
+
+function makeDiffAccordion(diff) {
+  const diffWrap = elem('details', 'diff-accordion');
+  const diffSummary = elem('summary', 'diff-summary');
+
+  const diffLines = diff.split('\n');
+  let added = 0, removed = 0;
+  for (const line of diffLines) {
+    if (line.startsWith('+') && !line.startsWith('+++')) added++;
+    else if (line.startsWith('-') && !line.startsWith('---')) removed++;
+  }
+
+  const titleSpan = elem('span', 'diff-title', T('📄 변경 코드 미리보기 (Diff)', '📄 Code Diff Preview'));
+  const badge = elem('span', 'diff-badge');
+  if (added > 0) badge.append(elem('span', 'diff-add', `+${added}`));
+  if (removed > 0) badge.append(elem('span', 'diff-del', `-${removed}`));
+  diffSummary.append(titleSpan, badge);
+
+  const diffBox = elem('div', 'diff-box');
+  for (const line of diffLines) {
+    let cls = 'diff-line';
+    if (line.startsWith('+++') || line.startsWith('---')) cls += ' diff-hdr';
+    else if (line.startsWith('@@')) cls += ' diff-chunk';
+    else if (line.startsWith('+')) cls += ' diff-add-line';
+    else if (line.startsWith('-')) cls += ' diff-del-line';
+
+    diffBox.append(elem('div', cls, line));
+  }
+
+  diffWrap.append(diffSummary, diffBox);
+  return diffWrap;
+}
+
+function setupVoicePrompt(btnEl, targetInputEl) {
+  if (!btnEl || !targetInputEl) return;
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    btnEl.addEventListener('click', () => {
+      alert(T('이 브라우저/환경에서는 Web Speech 음성 인식을 지원하지 않습니다 (Chrome/Safari 권장).', 'Web Speech recognition is not supported in this environment (Chrome/Safari recommended).'));
+    });
+    return;
+  }
+
+  let recognition = null;
+  let isListening = false;
+
+  const stopListening = () => {
+    isListening = false;
+    btnEl.classList.remove('recording');
+    btnEl.textContent = '🎙️';
+    btnEl.title = T('음성으로 지시하기 (Voice-to-Prompt)', 'Voice-to-Prompt');
+  };
+
+  btnEl.addEventListener('click', () => {
+    if (isListening) {
+      if (recognition) recognition.stop();
+      return;
+    }
+
+    try {
+      recognition = new SpeechRecognition();
+      recognition.lang = LANG === 'en' ? 'en-US' : 'ko-KR';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        isListening = true;
+        btnEl.classList.add('recording');
+        btnEl.textContent = '🔴';
+        btnEl.title = T('듣는 중... (말씀을 마치면 자동으로 입력됩니다)', 'Listening... (auto-fills when you stop speaking)');
+        playRetroSound('send');
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript) {
+          targetInputEl.value = transcript;
+          targetInputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('SpeechRecognition error:', event.error);
+        stopListening();
+        if (event.error === 'not-allowed') {
+          alert(T('마이크 접근 권한이 허용되지 않았습니다. 브라우저 설정에서 마이크 권한을 확인해주세요.', 'Microphone access denied. Please allow microphone permissions.'));
+        }
+      };
+
+      recognition.onend = () => {
+        stopListening();
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.warn('SpeechRecognition start failed:', err);
+      stopListening();
+    }
+  });
+}
+
 function makePetAsk(sid, a) {
   const isQuestion = a.kind === 'question' || (Array.isArray(a.options) && a.options.length > 0);
   const el = elem('div', 'pet-ask');
@@ -1744,6 +2380,7 @@ function makePetAsk(sid, a) {
   );
   el.append(head);
   if (a.detail) el.append(elem('div', isQuestion ? 'qtxt' : 'cmd', a.detail));
+  if (a.diff) el.append(makeDiffAccordion(a.diff));
 
   const why = elem('input', 'field');
   why.type = 'text';
@@ -2151,6 +2788,7 @@ function markQuest(id) {
   if (ach) {
     showQuestToast(ach);
     playRetroSound('done');
+    addCoins(50, `도전 과제 달성: ${ach.name}`);
     if (achieveModalEl && !achieveModalEl.hidden) renderAchieveModal();
     if (selectedId) renderPanel();
   }
@@ -2483,6 +3121,60 @@ const ALL_ACHIEVEMENTS = [
     action: null,
     check: (s, stats) => stats.exp >= 5500,
   },
+  // 🛋️ 4. 오피스 라이프 & 인테리어 신규 도전 과제
+  {
+    id: 'first_furniture',
+    cat: 'mastery',
+    icon: '🛋️',
+    name: '인테리어 디자이너',
+    en: 'Interior Designer',
+    desc: '상점에서 첫 번째 가구나 소품을 구매하여 사무실을 꾸며보세요.',
+    enDesc: 'Buy your first furniture or decor from the shop to decorate your office.',
+    guide: '상단 🛋️ 버튼 ➔ 상점에서 마음에 드는 가구 구매',
+    enGuide: 'Click 🛋️ top HUD ➔ Buy any item in the shop',
+    exp: 150,
+    action: () => openShopModal(),
+    check: () => getOwnedFurniture().length > 0 || !!getQuest('first_furniture'),
+  },
+  {
+    id: 'coffee_break',
+    cat: 'mastery',
+    icon: '☕',
+    name: '커피 브레이크',
+    en: 'Coffee Break',
+    desc: '커피 바를 클릭하여 신선한 커피를 내리거나 대기 중 커피 타임을 가져보세요.',
+    enDesc: 'Click the Coffee Bar to brew fresh coffee or enjoy coffee time while idle.',
+    guide: '오피스에 설치된 ☕ 커피 머신을 직접 클릭',
+    enGuide: 'Click the ☕ Coffee Bar installed in the office',
+    exp: 100,
+    check: () => !!getQuest('coffee_break'),
+  },
+  {
+    id: 'office_cat',
+    cat: 'mastery',
+    icon: '🐱',
+    name: '집사의 탄생',
+    en: 'Cat Butler',
+    desc: '사무실 고양이 나비를 입양하고 캣타워 위의 나비를 쓰다듬어 보세요.',
+    enDesc: 'Adopt office cat Nabi and pet her on the cat tower.',
+    guide: '상점에서 캣타워 구매 ➔ 나비(🐱) 클릭',
+    enGuide: 'Buy Cat Tower from shop ➔ Click Nabi (🐱)',
+    exp: 200,
+    check: () => !!getQuest('office_cat'),
+  },
+  {
+    id: 'night_shift',
+    cat: 'mastery',
+    icon: '🌙',
+    name: '열정의 야근러',
+    en: 'Night Shift Legend',
+    desc: '밤 10시 이후 야근 조명 아래에서 AI 에이전트와 작업을 완료해보세요.',
+    enDesc: 'Complete a coding task with an AI agent after 10 PM under night shift lighting.',
+    guide: '22:00 ~ 06:00 시간대에 세션 작업 완료',
+    enGuide: 'Complete any task between 22:00 and 06:00',
+    exp: 250,
+    check: () => !!getQuest('night_shift'),
+  },
 ];
 
 function isAchieved(ach, sessions) {
@@ -2541,6 +3233,61 @@ function closeAchieveModal() {
   achieveModalEl.hidden = true;
 }
 
+function openShopModal() {
+  if (!shopModalEl) return;
+  shopModalEl.hidden = false;
+  if (!settingsEl.hidden) setSettingsOpen(false);
+  updateCoinDisplay();
+  renderShopModal();
+}
+
+function closeShopModal() {
+  if (!shopModalEl) return;
+  shopModalEl.hidden = true;
+}
+
+function renderShopModal() {
+  if (!shopGridEl) return;
+  shopGridEl.replaceChildren();
+  const owned = getOwnedFurniture();
+  const coins = getCoins();
+
+  for (const item of SHOP_ITEMS) {
+    const isOwned = owned.includes(item.id);
+    const canAfford = coins >= item.price;
+
+    const card = elem('div', `shop-card ${isOwned ? 'owned' : ''}`);
+
+    const top = elem('div', 'shop-card-top');
+    const icon = elem('div', 'shop-card-icon', item.icon);
+    const info = elem('div', 'shop-card-info');
+    const name = elem('div', 'shop-card-name', T(item.name, item.enName));
+    const desc = elem('div', 'shop-card-desc', T(item.desc, item.enDesc));
+    info.append(name, desc);
+    top.append(icon, info);
+
+    const foot = elem('div', 'shop-card-foot');
+    const price = elem('div', 'shop-price', `🪙 ${item.price} 코인`);
+    const btn = elem('button', `shop-btn ${isOwned ? 'owned' : ''}`);
+    btn.type = 'button';
+
+    if (isOwned) {
+      btn.textContent = T('✅ 배치 완료', '✅ Placed');
+      btn.disabled = true;
+    } else {
+      btn.textContent = canAfford ? T('구매하기', 'Buy') : T('코인 부족', 'Need Coins');
+      btn.disabled = !canAfford;
+      btn.addEventListener('click', () => {
+        buyFurniture(item.id);
+      });
+    }
+
+    foot.append(price, btn);
+    card.append(top, foot);
+    shopGridEl.append(card);
+  }
+}
+
 function renderAchieveModal() {
   if (!achieveModalEl || achieveModalEl.hidden) return;
   const sumEl = $('acSummary');
@@ -2584,7 +3331,7 @@ function renderAchieveModal() {
       { id: 'all', name: T(`🌟 전체 (${ALL_ACHIEVEMENTS.length})`, `🌟 All (${ALL_ACHIEVEMENTS.length})`) },
       { id: 'onboarding', name: T('🏢 오피스 기초 (12)', '🏢 Office Basics (12)') },
       { id: 'development', name: T('⚡ 실전 개발 (6)', '⚡ Dev & Tools (6)') },
-      { id: 'mastery', name: T('👑 승진 & 랭킹 (3)', '👑 Mastery (3)') },
+      { id: 'mastery', name: T('👑 마스터리 & 오피스 (7)', '👑 Mastery & Office (7)') },
     ];
     cats.forEach((c) => {
       const cBtn = elem('button', `ac-cat-btn ${achieveCurCat === c.id ? 'active' : ''}`, c.name);
@@ -3015,7 +3762,7 @@ function drawPetFrame(ts) {
   if (!s) return;
 
   const noBg = petNoBgOn();
-  const PW = 94, PH = noBg ? 50 : 64;   // 배경 숨김 시 윗 여백을 줄이고(50), 구석 방은 64로 직원 발밑부터 말풍선까지 균형 있게 배치
+  const PW = 94, PH = 64;   // 구석 방과 배경 숨김 모두 64로 두어 마우스 오버 시 상단 툴바가 말풍선을 가리지 않고 여백을 확보
   const dprNow = window.devicePixelRatio || 1;
   const cssWidth = Math.max(220, petStageEl.clientWidth || 266);
   const scale = cssWidth / PW;
@@ -3035,10 +3782,10 @@ function drawPetFrame(ts) {
 
   let deskObj;
   if (noBg) {
-    // 배경 숨김: drawDesk 안에서 모니터·머리가 y+18~19부터 시작하고 바닥 그림자가 y+53에 끝나므로,
-    // y = -7 로 올려 윗 여백(말풍선 자리)과 아랫 여백(의자·책상 다리 아래 4px)이 위아래 대칭이 되도록 배치
+    // 배경 숨김: 마우스 오버 시 상단 조작 바가 나타나도 [생각 중...] 등 말풍선을 가리지 않도록
+    // desk.y = 6 으로 배치하여 상단 툴바와 말풍선 사이에 깔끔한 여백을 확보
     const hasInterns = (s.interns || []).length > 0;
-    deskObj = { s, x: hasInterns ? 20 : 14, y: -7 };
+    deskObj = { s, x: hasInterns ? 20 : 14, y: 6 };
     drawDesk(deskObj, ts);
   } else {
     // 구석 방 배경: 벽·창문·시계·화분·마루·팀 카펫 + 직원·의자·책상·컴퓨터
@@ -3289,6 +4036,9 @@ if (btnAchieve) {
     }
   });
 }
+if (btnShop) btnShop.addEventListener('click', openShopModal);
+if (btnCoins) btnCoins.addEventListener('click', openShopModal);
+if (shopCloseBtn) shopCloseBtn.addEventListener('click', closeShopModal);
 btnPin.addEventListener('click', () => setPinned(!pinned));
 btnHook.addEventListener('click', toggleHooks);
 
@@ -3431,6 +4181,19 @@ const SETTINGS = [
         desc: T('화면에 맞춘 크기에서 작게·크게 바꿉니다. 크게 하면 넘치는 만큼 아래로 스크롤합니다.', 'Smaller or larger than fit-to-window. When larger, scroll down for the rest.'),
         options: [[-2, T('더 작게', 'Smallest')], [-1, T('작게', 'Smaller')], [0, T('맞춤', 'Fit')], [1, T('크게', 'Larger')], [2, T('더 크게', 'Largest')]],
         get: () => zoom, set: (v) => { zoom = v; store.set('zoom', v); layoutKey = ''; refreshSettings(); } },
+      { type: 'choice', name: T('사무실 조명 (낮/밤)', 'Office Lighting'),
+        desc: T('실제 시간 연동 또는 원하는 감성의 오피스 조명 분위기를 선택합니다.', 'Choose ambient lighting mode (Auto synced with PC clock, day, dusk, night shift).'),
+        options: [
+          ['auto', T('자동 (현재 시각 연동)', 'Auto (Sync clock)')],
+          ['day', T('낮 (상쾌한 낮)', 'Day')],
+          ['dusk', T('노을 (따스한 저녁)', 'Dusk')],
+          ['night', T('야근 (차분한 야경 조명)', 'Night Shift')],
+        ],
+        get: () => store.get('light_mode', 'auto'),
+        set: (v) => { store.set('light_mode', v); refreshSettings(); } },
+      { type: 'action', name: T('🛋️ 가구 & 소품 상점', '🛋️ Furniture Shop'),
+        desc: T('작업 완료와 도전 과제로 획득한 코인으로 사무실 인테리어 소품을 구매하고 배치합니다.', 'Buy and decorate the office with coins earned from tasks and quests.'),
+        label: () => T('상점 열기', 'Open Shop'), run: () => openShopModal() },
       { type: 'toggle', name: T('작게 보기(목록)', 'Compact view (list)'),
         desc: () => (REMOTE ? T('사무실 그림 대신 직원·상태를 한 줄씩 보여 줍니다. 상단 📋 버튼과 같습니다.', 'Shows one line per employee instead of the office picture. Same as the 📋 button.')
           : T('창을 작게 줄이고 직원·상태만 한 줄씩 보여 줍니다(맨 위에 떠 있음). 상단 📋 버튼과 같고, 크기·위치는 보통 창과 따로 기억합니다.',
@@ -4103,6 +4866,136 @@ btnSettings.addEventListener('click', () => setSettingsOpen(settingsEl.hidden));
 $('sClose').addEventListener('click', () => setSettingsOpen(false));
 settingsEl.addEventListener('click', (e) => { if (e.target === settingsEl) setSettingsOpen(false); });   // 팝업 바깥(어두운 곳)을 누르면 닫기
 
+// ───────────────────────────── 📱 캔버스 터치 핀치 줌 & 팬 & 더블 탭 포커스 ─────────────────────────────
+
+let canvasZoomScale = 1.0;
+let canvasPanX = 0, canvasPanY = 0;
+let touchState = {
+  active: false,
+  mode: 'none', // 'pan' | 'pinch'
+  startX: 0,
+  startY: 0,
+  initPanX: 0,
+  initPanY: 0,
+  initDist: 0,
+  initScale: 1.0,
+  lastTapTime: 0,
+};
+
+function applyCanvasTransform(animate = false) {
+  if (animate) canvas.style.transition = 'transform 0.22s ease-out';
+  else canvas.style.transition = 'none';
+
+  canvas.style.transformOrigin = '0 0';
+  canvas.style.transform = `translate3d(${canvasPanX}px, ${canvasPanY}px, 0) scale(${canvasZoomScale})`;
+}
+
+function resetCanvasZoom(animate = true) {
+  canvasZoomScale = 1.0;
+  canvasPanX = 0;
+  canvasPanY = 0;
+  applyCanvasTransform(animate);
+}
+
+function zoomToPoint(cx, cy, targetScale = 2.2) {
+  canvasZoomScale = targetScale;
+  canvasPanX = clamp(innerWidth / 2 - cx * targetScale, innerWidth - (cssW * targetScale), 0);
+  canvasPanY = clamp(innerHeight / 2 - cy * targetScale, innerHeight - (logicalH * U * targetScale), 0);
+  applyCanvasTransform(true);
+}
+
+function getCanvasPos(e) {
+  if (canvasZoomScale !== 1.0) {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      const normX = (e.clientX - rect.left) / rect.width;
+      const normY = (e.clientY - rect.top) / rect.height;
+      return { x: normX * cssW, y: normY * (logicalH * U) };
+    }
+  }
+  return { x: e.offsetX, y: e.offsetY };
+}
+
+canvas.addEventListener('touchstart', (e) => {
+  if (PET_WINDOW || widgetOn()) return;
+
+  const now = Date.now();
+  if (e.touches.length === 2) {
+    e.preventDefault();
+    touchState.mode = 'pinch';
+    touchState.initDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    touchState.initScale = canvasZoomScale;
+    touchState.initPanX = canvasPanX;
+    touchState.initPanY = canvasPanY;
+  } else if (e.touches.length === 1) {
+    touchState.active = true;
+    touchState.startX = e.touches[0].clientX;
+    touchState.startY = e.touches[0].clientY;
+    touchState.initPanX = canvasPanX;
+    touchState.initPanY = canvasPanY;
+
+    // 더블 탭 감지 (320ms 이내): 확대 리셋 또는 해당 위치 확대
+    if (now - touchState.lastTapTime < 320) {
+      e.preventDefault();
+      touchState.lastTapTime = 0;
+      if (canvasZoomScale > 1.2) {
+        resetCanvasZoom(true);
+      } else {
+        const rect = canvas.getBoundingClientRect();
+        const tapX = (e.touches[0].clientX - rect.left) / canvasZoomScale;
+        const tapY = (e.touches[0].clientY - rect.top) / canvasZoomScale;
+        zoomToPoint(tapX, tapY, 2.2);
+      }
+      return;
+    }
+    touchState.lastTapTime = now;
+    touchState.mode = canvasZoomScale > 1.05 ? 'pan' : 'none';
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  if (PET_WINDOW || widgetOn()) return;
+
+  if (touchState.mode === 'pinch' && e.touches.length === 2) {
+    e.preventDefault();
+    const curDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    if (touchState.initDist > 0) {
+      const factor = curDist / touchState.initDist;
+      canvasZoomScale = clamp(touchState.initScale * factor, 1.0, 3.5);
+      applyCanvasTransform(false);
+    }
+  } else if (touchState.mode === 'pan' && e.touches.length === 1 && canvasZoomScale > 1.05) {
+    e.preventDefault();
+    const dx = e.touches[0].clientX - touchState.startX;
+    const dy = e.touches[0].clientY - touchState.startY;
+    canvasPanX = touchState.initPanX + dx;
+    canvasPanY = touchState.initPanY + dy;
+    applyCanvasTransform(false);
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+  if (e.touches.length === 0) {
+    touchState.mode = 'none';
+    touchState.active = false;
+    if (canvasZoomScale <= 1.05) {
+      resetCanvasZoom(true);
+    }
+  } else if (e.touches.length === 1) {
+    touchState.mode = canvasZoomScale > 1.05 ? 'pan' : 'none';
+    touchState.startX = e.touches[0].clientX;
+    touchState.startY = e.touches[0].clientY;
+    touchState.initPanX = canvasPanX;
+    touchState.initPanY = canvasPanY;
+  }
+});
+
 function hitTest(px, py) {
   const lx = px / U, ly = py / U;
   return desks.find((d) => lx >= d.x && lx < d.x + CELL_W && ly >= d.y && ly < d.y + CELL_H) || null;
@@ -4116,7 +5009,8 @@ function hitWhiteboard(px, py) {
 }
 
 canvas.addEventListener('mousemove', (e) => {
-  const hitWb = hitWhiteboard(e.offsetX, e.offsetY);
+  const pos = getCanvasPos(e);
+  const hitWb = hitWhiteboard(pos.x, pos.y);
   if (hitWb) {
     hoverId = null;
     canvas.style.cursor = 'pointer';
@@ -4131,7 +5025,21 @@ canvas.addEventListener('mousemove', (e) => {
     tooltipEl.style.top = clamp(e.clientY + 14, 4, innerHeight - r.height - 4) + 'px';
     return;
   }
-  const hit = hitTest(e.offsetX, e.offsetY);
+  const fHit = hitFurniture(pos.x, pos.y);
+  if (fHit) {
+    hoverId = null;
+    canvas.style.cursor = 'pointer';
+    tooltipEl.replaceChildren();
+    const add = (tag, text, cls) => { const el = document.createElement(tag); el.textContent = text; if (cls) el.className = cls; tooltipEl.append(el); };
+    add('b', fHit.name || T('🛋️ 오피스 가구', '🛋️ Office Decor'));
+    add('div', T('클릭하여 상호작용하기', 'Click to interact'), 'dim');
+    tooltipEl.hidden = false;
+    const r = tooltipEl.getBoundingClientRect();
+    tooltipEl.style.left = clamp(e.clientX + 14, 4, viewW() - r.width - 4) + 'px';
+    tooltipEl.style.top = clamp(e.clientY + 14, 4, innerHeight - r.height - 4) + 'px';
+    return;
+  }
+  const hit = hitTest(pos.x, pos.y);
   hoverId = hit ? hit.s.id : null;
   canvas.style.cursor = hit ? 'pointer' : 'default';
   if (!hit) { tooltipEl.hidden = true; return; }
@@ -4157,11 +5065,17 @@ canvas.addEventListener('mousemove', (e) => {
 canvas.addEventListener('mouseleave', () => { hoverId = null; tooltipEl.hidden = true; });
 
 canvas.addEventListener('click', (e) => {
-  if (hitWhiteboard(e.offsetX, e.offsetY)) {
+  const pos = getCanvasPos(e);
+  if (hitWhiteboard(pos.x, pos.y)) {
     openWhiteboardModal();
     return;
   }
-  const hit = hitTest(e.offsetX, e.offsetY);
+  const fHit = hitFurniture(pos.x, pos.y);
+  if (fHit) {
+    interactFurniture(fHit);
+    return;
+  }
+  const hit = hitTest(pos.x, pos.y);
   if (hit && hit.s.id === selectedId && !panelEl.hidden) {   // 같은 직원을 다시 누르면 접기·펼치기
     setDrawerFolded(!drawerFolded);
     return;
@@ -4241,6 +5155,7 @@ document.addEventListener('keydown', (e) => {
     const inInput = e.target instanceof Element && e.target.matches('input, textarea, select');
     if (inInput) { e.target.blur(); return; }
     if (searchWrapEl && !searchWrapEl.hidden) { setSearchOpen(false, true); return; }
+    if (shopModalEl && !shopModalEl.hidden) { closeShopModal(); return; }
     if (!settingsEl.hidden) { setSettingsOpen(false); return; }
     selectedId = null;
     renderPanel();
@@ -4273,6 +5188,10 @@ document.addEventListener('keydown', (e) => {
   } else if (k === 'a') {
     e.preventDefault();
     if (btnAchieve) btnAchieve.click();
+  } else if (k === 's') {
+    e.preventDefault();
+    if (shopModalEl && !shopModalEl.hidden) closeShopModal();
+    else openShopModal();
   }
 });
 
@@ -4777,7 +5696,8 @@ async function postInbox(msg) {
 const remoteOf =(id) => (remoteState?.installed ? remoteState.s?.[id] || {} : null);
 const answered = new Map();      // 휴대폰에서 답한 승인 요청 → 누른 시각(PC에서 사라질 때까지 버튼을 잠근다)
 const askEls = new Map();        // 승인 요청 → 그 칸(다시 그려도 거절 이유 칸에 쓰던 글이 남게)
-const rAsksEl = $('rAsks'), sayEl = $('rSay');
+const rAsksEl = $('rAsks'), sayEl = $('rSay'), rVoiceBtn = $('rVoice');
+if (rVoiceBtn && sayEl) setupVoicePrompt(rVoiceBtn, sayEl);
 let sayFor = null;               // 지시 칸이 어느 세션 것인지
 let remoteNote = null;           // 방금 보낸 것의 안내 {sid, at, text}
 
@@ -4964,6 +5884,7 @@ function makeAsk(sid, a) {
   );
   el.append(head);
   if (a.detail) el.append(elem('div', isQuestion ? 'qtxt' : 'cmd', a.detail));
+  if (a.diff) el.append(makeDiffAccordion(a.diff));
 
   const btns = elem('div', 'btns');
   const why = elem('input', 'field');
@@ -5279,7 +6200,14 @@ function startDemo() {
 
   // 자리 비움 원격 견본: 한 직원은 명령 승인을 기다리고, 한 직원은 객관식 질문을 묻고, 한 직원은 지시를 받아 답했다
   remoteState = { installed: true, away: true, since: base - 600000, s: {
-    'demo-b1': { listen: false, asks: [{ id: 'demo-ask', kind: 'tool', text: T('빌드하는 중', 'Building'), detail: 'dotnet build -c Release', t: base - 40000 }] },
+    'demo-b1': { listen: false, asks: [{
+      id: 'demo-ask',
+      kind: 'tool',
+      text: T('코드 수정 승인 요청', 'Code Edit Approval'),
+      detail: 'CartService.cs',
+      diff: `--- a/CartService.cs\n+++ b/CartService.cs\n@@ -24,4 +24,7 @@\n-    public decimal GetTotal() => 0;\n+    public decimal GetTotal() {\n+        // 합계 및 할인율 계산 적용\n+        return Items.Sum(i => i.Price * i.Qty);\n+    }`,
+      t: base - 40000
+    }] },
     'demo-a2': { listen: false, asks: [{ id: 'demo-q1', kind: 'question', text: T('질문에 답해주세요!', 'Got a question!'),
       detail: T('버튼 강조 색상을 어떤 톤으로 통일할까요?', 'Which accent tone should we use for buttons?'),
       options: [T('보라색 (#7c6be0 · 기본)', 'Purple (#7c6be0 · default)'), T('민트색 (#3ccf91)', 'Mint (#3ccf91)'), T('앰버 골드 (#ffb347)', 'Amber gold (#ffb347)')],

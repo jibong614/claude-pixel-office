@@ -36,6 +36,8 @@
     <button id="btnWidget" title="작게 보기(목록) (단축키: W) — 직원·상태만 한 줄씩" data-en-title="Compact view (list) (Shortcut: W) — one line per employee">📋</button>
     <button id="btnToday" title="근무 일지 (단축키: R) — 일한 시간·지시·토큰·비용" data-en-title="Work log (Shortcut: R) — work time, prompts, tokens, cost">📊</button>
     <button id="btnAchieve" title="업적 도감 & 명예의 전당 (단축키: A) — 전사 업적·직급 랭킹" data-en-title="Achievements & Hall of Fame (Shortcut: A) — company achievements & leaderboard">🏆</button>
+    <button id="btnShop" title="가구 & 소품 상점 (단축키: S) — 코인으로 사무실 인테리어 꾸미기" data-en-title="Furniture & Decor Shop (Shortcut: S) — decorate office with coins">🛋️</button>
+    <button id="btnCoins" class="hud-coins" title="보유 코인 — 상점 열기" data-en-title="Current Coins — open shop">🪙 <span id="hudCoins">0</span></button>
     <button id="btnHook" hidden>🔕</button>
     <button id="btnAway" title="퇴근한 직원 보이기/숨기기">🚪</button>
     <button id="btnPin" title="항상 위에 표시">📌</button>
@@ -66,7 +68,7 @@
       <div id="rAsks"></div>
       <div id="rSayWrap">
         <textarea id="rSay" class="field" rows="3" maxlength="1000" placeholder="이 직원에게 보낼 지시 (같은 대화에서 이어서 일합니다)" data-en-ph="Instruction for this employee (continues in the same conversation)"></textarea>
-        <div class="rrow"><span id="rSaid" class="dim"></span><button id="rSend" class="mini" data-en="Send">보내기</button></div>
+        <div class="rrow"><span id="rSaid" class="dim"></span><button id="rVoice" type="button" class="mini voice-btn" title="음성으로 지시하기 (Voice Prompt)" data-en-title="Voice-to-Prompt">🎙️</button><button id="rSend" class="mini" data-en="Send">보내기</button></div>
       </div>
       <div id="rReplyWrap" hidden>
         <div id="rReplyHead" class="dim"></div>
@@ -212,6 +214,25 @@
   </div>
 
   <!-- 🏆 도전 과제 달성 알림 토스트 -->
+    <!-- 🛋️ 가구 & 인테리어 상점 모달 -->
+  <div id="shopModal" class="modal" hidden>
+    <div class="mbox shop-box" role="dialog" aria-modal="true" aria-labelledby="shopTitle">
+      <div class="mhead shop-head">
+        <div class="shop-head-info">
+          <h2 id="shopTitle" data-en="🛋️ Furniture & Decor Shop">🛋️ 오피스 인테리어 & 가구 상점</h2>
+          <span id="shopSummary" class="shop-summary" data-en="Decorate your office with coins earned from coding & quests!">작업 완료 및 도전 과제로 모은 코인으로 사무실을 아늑하게 꾸며보세요!</span>
+        </div>
+        <div class="shop-coin-badge">
+          🪙 <span id="shopCoinsTotal">0</span> <span data-en="Coins">코인</span>
+        </div>
+        <button id="shopClose" class="close" title="닫기" data-en-title="Close">✕</button>
+      </div>
+      <div class="shop-body" id="shopBody">
+        <div id="shopGrid" class="shop-grid"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="questToast" class="quest-toast" hidden></div>
 
   <!-- QR 코드(휴대폰 보기 설정용) — qrcode-generator 1.4.4, MIT, Kazuhiko Arase -->
