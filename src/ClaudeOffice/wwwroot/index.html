@@ -37,6 +37,8 @@
     <button id="btnToday" title="근무 일지 (단축키: R) — 일한 시간·지시·토큰·비용" data-en-title="Work log (Shortcut: R) — work time, prompts, tokens, cost">📊</button>
     <button id="btnAchieve" title="업적 도감 & 명예의 전당 (단축키: A) — 전사 업적·직급 랭킹" data-en-title="Achievements & Hall of Fame (Shortcut: A) — company achievements & leaderboard">🏆</button>
     <button id="btnShop" title="가구 & 소품 상점 (단축키: S) — 코인으로 사무실 인테리어 꾸미기" data-en-title="Furniture & Decor Shop (Shortcut: S) — decorate office with coins">🛋️</button>
+    <button id="btnBroadcast" title="전체 세션 브로드캐스트 지시 (단축키: B) — 모든 활성 세션에 일괄 전달" data-en-title="Broadcast to all sessions (Shortcut: B)">📢</button>
+    <button id="btnNightShift" title="야간 당직 모드 (단축키: N) — 야간 자율 모니터링 & 아침 브리핑 요약" data-en-title="Night Shift Mode (Shortcut: N)">🌙</button>
     <button id="btnCoins" class="hud-coins" title="보유 코인 — 상점 열기" data-en-title="Current Coins — open shop">🪙 <span id="hudCoins">0</span></button>
     <button id="btnHook" hidden>🔕</button>
     <button id="btnAway" title="퇴근한 직원 보이기/숨기기">🚪</button>
@@ -60,7 +62,9 @@
     <div id="pMain">
     <h2 id="pName"></h2>
     <div id="pTitle" class="dim"></div>
-    <div class="pbar"><div id="pState" class="state"></div><button id="pPet" class="mini" title="이 직원을 바탕화면 미니펫으로 꺼내기" data-en-title="Show this employee as the desktop MiniPet" data-en="🐾 MiniPet">🐾 미니펫</button></div>
+    <div class="pbar"><div id="pState" class="state"></div><button id="pFocusConsoleTop" class="mini btn-console-jump" title="이 직원의 터미널/VS Code 창으로 즉시 점프 (단축키: Alt+1~9)" data-en-title="Jump to this session's terminal/VS Code window (Alt+1~9)" data-en="⚡ Console Jump">⚡ 콘솔 점프</button><button id="pPet" class="mini" title="이 직원을 바탕화면 미니펫으로 꺼내기" data-en-title="Show this employee as the desktop MiniPet" data-en="🐾 MiniPet">🐾 미니펫</button></div>
+    <!-- 📊 대화 기억량 (컨텍스트 윈도우 잔여량 게이지 & 압축 경고) -->
+    <div id="pCtxMeter" class="ctx-meter-card"></div>
     <!-- 휴대폰 지시·승인: 승인 요청(승인·거절)·Claude 의 마지막 답·지시 보내기. 휴대폰 화면(과 견본)에서, Claude Code 와 연결했을 때만 -->
     <section id="pRemote" hidden>
       <h3 data-en="📱 Instruct & approve from the phone">📱 휴대폰 지시·승인</h3>
@@ -176,18 +180,27 @@
     </div>
   </div>
 
-  <!-- 전사 화이트보드 칸반 모달 -->
+  <!-- 전사 화이트보드 3열 칸반 모달 -->
   <div id="whiteboardModal" class="modal" hidden>
     <div class="mbox wb-box" role="dialog" aria-modal="true" aria-labelledby="wbTitle">
       <div class="mhead wb-head">
         <div class="wb-head-info">
-          <h2 id="wbTitle" data-en="📋 Team Whiteboard">📋 전사 화이트보드</h2>
+          <h2 id="wbTitle" data-en="📋 Team Whiteboard &amp; Kanban">📋 화이트보드 3열 칸반</h2>
           <span id="wbSummary" class="wb-summary">전체 할 일 요약</span>
         </div>
-        <button id="wbClose" class="close" title="닫기" data-en-title="Close">✕</button>
+        <div class="wb-head-tools">
+          <div class="wb-view-tabs">
+            <button id="wbTabKanban" class="wb-tab-btn active" data-en="🗂️ Kanban">🗂️ 3열 칸반</button>
+            <button id="wbTabSession" class="wb-tab-btn" data-en="📑 By Employee">📑 직원별 목록</button>
+          </div>
+          <button id="wbClose" class="close" title="닫기" data-en-title="Close">✕</button>
+        </div>
+      </div>
+      <div id="wbFilterBar" class="wb-filter-bar">
+        <!-- 세션별 필터 칩 동적 생성 -->
       </div>
       <div class="wb-body" id="wbBody">
-        <!-- 세션별 할 일 카드 동적 생성 -->
+        <!-- 3열 칸반 그리드 또는 세션별 카드 동적 생성 -->
       </div>
     </div>
   </div>
@@ -229,6 +242,98 @@
       </div>
       <div class="shop-body" id="shopBody">
         <div id="shopGrid" class="shop-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📢 전체 세션 브로드캐스트 지시 모달 -->
+  <div id="broadcastModal" class="modal" hidden>
+    <div class="mbox bc-box" role="dialog" aria-modal="true" aria-labelledby="bcTitle">
+      <div class="mhead bc-head">
+        <div class="bc-head-info">
+          <h2 id="bcTitle" data-en="📢 Broadcast to All Sessions">📢 전체 세션 브로드캐스트 지시</h2>
+          <span id="bcSummary" class="bc-summary" data-en="Send instructions simultaneously to all active AI sessions">모든 활성 AI 세션에 한 번에 지시를 전달합니다</span>
+        </div>
+        <button id="bcClose" class="close" title="닫기" data-en-title="Close">✕</button>
+      </div>
+      <div class="bc-body">
+        <div class="bc-targets-wrap">
+          <div class="bc-targets-head">
+            <span class="bc-lbl" data-en="Target Sessions">전송 대상 세션</span>
+            <div class="bc-targets-tools">
+              <button type="button" id="bcSelectAll" class="mini-chip" data-en="Select All">전체 선택</button>
+              <button type="button" id="bcDeselectAll" class="mini-chip" data-en="Clear All">선택 해제</button>
+            </div>
+          </div>
+          <div id="bcSessionList" class="bc-session-list"></div>
+        </div>
+        <div class="bc-presets-wrap">
+          <span class="bc-lbl" data-en="Quick Prompts">빠른 명령어</span>
+          <div class="bc-presets">
+            <button type="button" class="bc-preset-btn" data-prompt="/compact" data-en="📦 /compact">📦 /compact (문맥 압축)</button>
+            <button type="button" class="bc-preset-btn" data-prompt="모든 단위 테스트를 실행하고 결과를 요약해줘." data-en="🧪 Run Tests">🧪 단위 테스트 실행</button>
+            <button type="button" class="bc-preset-btn" data-prompt="git status 및 변경된 파일 목록을 점검해줘." data-en="🔍 Git Status">🔍 Git 상태 점검</button>
+            <button type="button" class="bc-preset-btn" data-prompt="작업을 잠시 멈추고 현재 진행 상황을 보고해줘." data-en="⏸️ Status Report">⏸️ 진행 상황 보고</button>
+          </div>
+        </div>
+        <div class="bc-input-wrap">
+          <label for="bcPromptInput" class="bc-lbl" data-en="Instruction">전송할 지시 내용</label>
+          <textarea id="bcPromptInput" class="field bc-textarea" rows="3" placeholder="모든 세션에 전달할 지시를 입력하세요 (예: /compact 후 빌드 확인)" data-en-ph="Enter instruction for all selected sessions..."></textarea>
+        </div>
+        <div class="bc-actions">
+          <span id="bcStatusMsg" class="bc-status-msg"></span>
+          <button type="button" id="bcSendBtn" class="primary bc-send-btn" data-en="📢 Send to Sessions">📢 전체 세션에 전송</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🌙 야간 당직 모니터링 & 아침 브리핑 모달 -->
+  <div id="nightShiftModal" class="modal" hidden>
+    <div class="mbox ns-box" role="dialog" aria-modal="true" aria-labelledby="nsTitle">
+      <div class="mhead ns-head">
+        <div class="ns-head-info">
+          <h2 id="nsTitle" data-en="🌙 Night Shift &amp; Morning Briefing">🌙 야간 당직 &amp; 아침 브리핑</h2>
+          <span id="nsSummary" class="ns-summary" data-en="Overnight autonomous monitoring &amp; morning productivity report">야간 무인 모니터링 및 밤샘 작업 요약 브리핑</span>
+        </div>
+        <button id="nsClose" class="close" title="닫기" data-en-title="Close">✕</button>
+      </div>
+      <div class="ns-body">
+        <div class="ns-status-card">
+          <div class="ns-status-main">
+            <div class="ns-status-icon" id="nsStatusIcon">🌙</div>
+            <div class="ns-status-info">
+              <div class="ns-status-title" id="nsStatusTitle">야간 당직 대기 중</div>
+              <div class="ns-status-desc" id="nsStatusDesc">당직 모드를 켜면 야간 작업 내역을 자동 집계하고 아침 브리핑을 작성합니다.</div>
+            </div>
+          </div>
+          <button type="button" id="nsToggleBtn" class="ns-toggle-btn" data-en="Turn On Night Shift">🌙 당직 모드 켜기</button>
+        </div>
+        <div class="ns-stats-grid">
+          <div class="ns-stat-card">
+            <span class="ns-stat-lbl" data-en="Active Time">🕒 가동 시간</span>
+            <span class="ns-stat-val" id="nsStatTime">0시간 0분</span>
+          </div>
+          <div class="ns-stat-card">
+            <span class="ns-stat-lbl" data-en="Tasks Handled">⚡ 처리된 작업</span>
+            <span class="ns-stat-val" id="nsStatTasks">0건</span>
+          </div>
+          <div class="ns-stat-card">
+            <span class="ns-stat-lbl" data-en="Coins Earned">🪙 야간 코인</span>
+            <span class="ns-stat-val" id="nsStatCoins">+0</span>
+          </div>
+          <div class="ns-stat-card">
+            <span class="ns-stat-lbl" data-en="Tokens Saved">📉 토큰 절감량</span>
+            <span class="ns-stat-val" id="nsStatTokens">0 Tok</span>
+          </div>
+        </div>
+        <div class="ns-report-wrap">
+          <div class="ns-report-head">
+            <span class="ns-lbl" data-en="☀️ Morning Briefing Summary">☀️ 아침 업무 브리핑 요약</span>
+            <button type="button" id="nsCopyBtn" class="mini-chip" data-en="📋 Copy Markdown">📋 리포트 복사</button>
+          </div>
+          <div id="nsReportContent" class="ns-report-content"></div>
+        </div>
       </div>
     </div>
   </div>

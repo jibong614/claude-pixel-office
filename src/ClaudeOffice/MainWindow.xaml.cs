@@ -851,6 +851,32 @@ public partial class MainWindow : Window
                         _remote.SayFromPc(sId, sText);
                     }
                     break;
+                case "broadcast-say":
+                {
+                    if (!App.DemoMode && root.TryGetProperty("text", out var bTxt) && bTxt.GetString() is { Length: > 0 } broadcastText)
+                    {
+                        int sentCount = 0;
+                        if (_watcher.LastSnapshot is { } bSnap)
+                        {
+                            using var snapDoc = JsonDocument.Parse(bSnap);
+                            if (snapDoc.RootElement.TryGetProperty("sessions", out var sessArr))
+                            {
+                                foreach (var sItem in sessArr.EnumerateArray())
+                                {
+                                    var sid = sItem.TryGetProperty("id", out var sidProp) ? sidProp.GetString() : null;
+                                    var act = sItem.TryGetProperty("act", out var actProp) ? actProp.GetString() : null;
+                                    if (!string.IsNullOrEmpty(sid) && act != "away")
+                                    {
+                                        _remote.SayFromPc(sid, broadcastText);
+                                        sentCount++;
+                                    }
+                                }
+                            }
+                        }
+                        Post(JsonSerializer.Serialize(new { type = "broadcast-result", count = sentCount }));
+                    }
+                    break;
+                }
                 case "pet-cancel-say":
                     if (!App.DemoMode && root.TryGetProperty("sid", out var cancelSid) && cancelSid.GetString() is { Length: > 0 } cSid)
                     {
@@ -1093,7 +1119,7 @@ public partial class MainWindow : Window
     private static readonly HashSet<string> TerminalOrIdeProcesses = new(StringComparer.OrdinalIgnoreCase)
     {
         "Code", "Cursor", "Windsurf", "WindowsTerminal", "pwsh", "powershell", "cmd",
-        "mintty", "wezterm-gui", "alacritty", "wt", "devenv", "rider64", "idea64", "claude",
+        "mintty", "wezterm-gui", "alacritty", "wt", "devenv", "rider64", "idea64", "claude", "aider", "node",
     };
 
     /// <summary>세션의 작업 폴더명·세션명·실행 위치(VS Code/터미널)를 바탕으로 해당 실행 창을 찾아 맨 앞으로 활성화한다.</summary>

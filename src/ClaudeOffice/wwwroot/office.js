@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.5.0';
+const PAGE_VERSION = '1.5.1';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1472,16 +1472,31 @@ function drawPerson(x, y, L, pose, t, s) {
   R(bx + 6, by + 1, 1, 9, shade(L.shirt, 0.82));
 
   const isStretching = pose === 'idle' && idleActionOf(s, t) === 'stretch';
-  drawHead(hx, hy, L, pose, t, isStretching);
+  drawHead(hx, hy, L, pose, t, isStretching, s);
   drawArms(bx, by, L, pose, t, isStretching);
 }
 
-function drawHead(hx, hy, L, pose, t, isStretching = false) {
+function drawHead(hx, hy, L, pose, t, isStretching = false, s = null) {
   R(hx, hy, 8, 8, L.skin);
   R(hx, hy - 1, 8, 3, L.hair);
   R(hx - 1, hy, 3, 6, L.hair);
   if (L.hairStyle === 1) R(hx + 5, hy + 2, 3, 1, L.hair);   // 앞머리
   if (L.hairStyle === 2) R(hx - 1, hy + 6, 2, 3, L.hair);   // 긴 머리
+
+  // 📊 컨텍스트 포화 시각 효과 (땀방울 & 얼음주머니)
+  if (s && s.ctx) {
+    const ctxPct = s.ctx / MAX_CTX_TOKENS;
+    if (ctxPct >= 0.85) {
+      const swTick = tick(t, 600, 2);
+      P(hx + 8, hy + 2 + swTick, '#38bdf8');
+      if (swTick === 1) P(hx + 8, hy + 4, '#0284c7');
+    }
+    if (ctxPct >= 0.90) {
+      R(hx + 2, hy - 4, 4, 3, '#a5f3fc');
+      P(hx + 3, hy - 5, '#06b6d4');
+      P(hx + 4, hy - 5, '#0891b2');
+    }
+  }
 
   if (isStretching) {
     // 기지개 켤 때 활짝 웃는 눈 (^ ^)
@@ -1634,6 +1649,7 @@ function drawOverlay(t) {
   for (const d of desks) drawInternChips(d);
   drawAmbientLighting(t);
   drawFloatingHearts(t);
+  drawMeetingBubbles(t);
   for (const d of desks) drawDeskBubble(d, t);   // 말풍선은 맨 위에
 }
 
@@ -1753,6 +1769,12 @@ function drawDeskBubble(d, t) {
   let text = `${s.icon} ${s.text}`;
   if (a.bubble === 'thought') text += '.'.repeat(1 + tick(t, 450, 3));
   else if (s.act === 'idle' && (!s.text || s.text.trim() === '')) {
+    if (s.ctx && (s.ctx / MAX_CTX_TOKENS) >= 0.85) {
+      const cCycle = ((t + hash(s.id) * 311) % 18000) / 1000;
+      if (cCycle < 6) {
+        text = T('💭 😵 뇌 용량 포화! /compact 필요', '💭 😵 Context full! /compact needed');
+      }
+    }
     // 대기 중 랜덤 유머/생각 말풍선 (30초마다 7초간 등장)
     const thoughts = [
       '커피 한잔의 여유 ☕',
@@ -1871,6 +1893,13 @@ function frame(ts) {
   if (isFurnitureOwned('lounge_sofa')) drawLoungeSofa(6, WALL_H + 36, ts);
   if (isFurnitureOwned('cat_tower')) drawCatTower(logicalW - 22, WALL_H + 4, ts);
 
+  // 🤝 회의실 테이블: 2개 이상 세션이 있을 때 또는 넓은 공간일 때 렌더링
+  if (data.sessions && data.sessions.length >= 2) {
+    const meetX = Math.max(36, logicalW - 58);
+    const meetY = WALL_H + 34;
+    drawMeetingTable(meetX, meetY, ts);
+  }
+
   for (const z of zones) drawZone(z);
   for (const d of desks) drawDesk(d, ts);
 
@@ -1911,6 +1940,10 @@ function fmtTime(ms) {
 function entryName(e) {
   if (!e) return '-';
   if (e === 'claude-vscode') return 'VS Code';
+  if (e === 'cursor') return 'Cursor';
+  if (e === 'windsurf') return 'Windsurf';
+  if (e === 'aider') return 'Aider CLI';
+  if (e === 'roo' || e === 'roo-code') return 'Roo Code';
   if (e === 'cli') return T('터미널', 'Terminal');
   if (e.includes('desktop')) return T('데스크톱 앱', 'Desktop app');
   if (e.startsWith('sdk')) return 'SDK';
@@ -1923,6 +1956,9 @@ const $ = (id) => document.getElementById(id);
 const summaryEl = $('summary'), emptyEl = $('empty'), tooltipEl = $('tooltip'), panelEl = $('panel');
 const btnAway = $('btnAway'), btnPin = $('btnPin'), btnHook = $('btnHook'), btnSettings = $('btnSettings'), btnPet = $('btnPet'), btnWidget = $('btnWidget'), btnToday = $('btnToday'), btnAchieve = $('btnAchieve');
 const btnShop = $('btnShop'), btnCoins = $('hudCoins')?.parentElement, shopModalEl = $('shopModal'), shopCloseBtn = $('shopClose'), shopGridEl = $('shopGrid');
+const btnBroadcast = $('btnBroadcast'), btnNightShift = $('btnNightShift');
+const broadcastModalEl = $('broadcastModal'), bcCloseBtn = $('bcClose'), bcSessionListEl = $('bcSessionList'), bcPromptInput = $('bcPromptInput'), bcSendBtn = $('bcSendBtn'), bcStatusMsg = $('bcStatusMsg');
+const nightShiftModalEl = $('nightShiftModal'), nsCloseBtn = $('nsClose'), nsToggleBtn = $('nsToggleBtn'), nsReportContent = $('nsReportContent'), nsCopyBtn = $('nsCopyBtn');
 const settingsEl = $('settings'), settingsBody = $('sBody'), drawerTab = $('drawerTab');
 
 function refreshHud() {
@@ -2159,7 +2195,7 @@ function ensurePetDom() {
   focusBtn.title = T('이 세션이 열려 있는 VS Code·터미널 창으로 이동', "Bring this session's VS Code or terminal window to the front");
   focusBtn.addEventListener('click', () => {
     const s = resolvePetSession();
-    if (s) send({ cmd: 'focus-session', id: s.id });
+    if (s) jumpToConsole(s.id, s);
   });
 
   const officeBtn = elem('button', 'pet-ibtn', '🏢');
@@ -2170,11 +2206,23 @@ function ensurePetDom() {
     else if (s) selectSession(s.id);
   });
 
+  const petWalkBtn = elem('button', 'pet-ibtn', '🐾');
+  petWalkBtn.title = T('시메지 산책 모드 (직원이 화면을 걸어 다닙니다)', 'Shimeji Walk Mode');
+  petWalkBtn.addEventListener('click', togglePetWalk);
+
+  const petIslandBtn = elem('button', 'pet-ibtn', '🏝️');
+  petIslandBtn.title = T('초슬림 다이내믹 아일랜드 모드', 'Ultra-slim Dynamic Island Mode');
+  petIslandBtn.addEventListener('click', togglePetIsland);
+
+  const petMemeBtn = elem('button', 'pet-ibtn', '💡');
+  petMemeBtn.title = T('개발자 유머 & 명언 보기 (이스터에그)', 'Developer Memes & Quotes');
+  petMemeBtn.addEventListener('click', () => triggerDevMeme());
+
   const closeBtn = elem('button', 'pet-ibtn', '✕');
   closeBtn.title = T('바탕화면 미니펫 닫기', 'Close Desktop MiniPet');
   closeBtn.addEventListener('click', () => setPet(false));
 
-  head.append(badge, petSelEl, petBgBtn, petFoldBtn, petStopBtn, focusBtn, officeBtn, closeBtn);
+  head.append(badge, petSelEl, petBgBtn, petFoldBtn, petWalkBtn, petIslandBtn, petMemeBtn, petStopBtn, focusBtn, officeBtn, closeBtn);
 
   petAlertEl = elem('button', 'pet-alert');
   petAlertEl.hidden = true;
@@ -2265,6 +2313,366 @@ function ensurePetDom() {
 }
 
 // ───────────────────────────── 📱 모바일 & 원격 제어: Diff 아코디언 & 음성 지시 ─────────────────────────────
+
+
+// ───────────────────────────── 💬 개발자 유머 명언 & 이스터에그 ─────────────────────────────
+const DEV_MEMES = [
+  { ko: "내 컴퓨터에서는 잘 되는데요? 🤷‍♂️", en: "Works on my machine! 🤷‍♂️" },
+  { ko: "버그가 아니라 문서화되지 않은 기능입니다. ✨", en: "It's not a bug, it's an undocumented feature. ✨" },
+  { ko: "세상에는 10종류의 사람이 있습니다. 이진수를 아는 자와 모르는 자. 🤓", en: "10 types of people: those who understand binary, and those who don't. 🤓" },
+  { ko: "Git commit -m '진짜_최종_진짜최종_수정' 📦", en: "Git commit -m 'final_v2_final_FINAL' 📦" },
+  { ko: "커피를 코드로 변환하는 유기물 프로세서 가동 중 ☕", en: "Converting coffee into clean code... ☕" },
+  { ko: "TODO: 나중에 고치기 (작성일: 3년 전) ⏳", en: "TODO: fix this later (written 3 years ago) ⏳" },
+  { ko: "99개의 버그를 잡았더니, 127개의 버그가 새로 생겼습니다. 🐛", en: "99 bugs in the code, fix one, 127 bugs in the code. 🐛" },
+  { ko: "배포는 금요일 오후 5시에 하는 게 제맛이지! 🚀", en: "Nothing beats deploying to production at 5 PM on Friday! 🚀" },
+  { ko: "StackOverflow가 다운되면 전 세계 개발 생산성은 0이 된다. 📉", en: "If StackOverflow goes down, global dev productivity drops to 0. 📉" },
+  { ko: "인생은 짧고, 빌드 시간은 깁니다. ⏳", en: "Life is short, but build times are eternal. ⏳" },
+  { ko: "주석이 필요 없는 코드가 최고의 코드라고 누가 그랬더라...? 🤔", en: "Who said self-documenting code never needs comments? 🤔" },
+  { ko: "CSS 센터 정렬하다가 3시간이 순식간에 증발했습니다. 🎨", en: "Spent 3 hours trying to center a div with CSS. 🎨" },
+  { ko: "정규표현식으로 문제를 해결하려다 두 개의 문제가 생겼다. 🌀", en: "Used regex to solve a problem. Now I have two problems. 🌀" },
+  { ko: "캐시를 비웠더니 모든 게 해결되었습니다. 마법인가? 🪄", en: "Clearing cache solved everything. Is this magic? 🪄" },
+  { ko: "세미콜론 하나 때문에 3시간째 야근 중... 😅", en: "Overtime due to a missing semicolon... 😅" },
+  { ko: "다크 모드가 없으면 코딩을 할 수 없는 몸이 되어버렸다. 🕶️", en: "Can't code without Dark Mode anymore. 🕶️" },
+  { ko: "테스트 코드는 안 짰지만 마음속으로 간절히 기도했습니다. 🙏", en: "No unit tests, just thoughts and prayers. 🙏" },
+  { ko: "프로덕션 DB에 직접 DROP TABLE을 날릴 뻔했다... 😱", en: "Almost ran DROP TABLE directly in production... 😱" },
+  { ko: "레거시 코드를 열어 욕했더니 과거의 내가 쓴 코드였다. 🤦", en: "Hated legacy code only to realize I wrote it last year. 🤦" },
+  { ko: "새 프레임워크가 또 나왔다고요? 어제 배운 건 어쩌고! 🤯", en: "A new JS framework came out? But I just learned one yesterday! 🤯" },
+  { ko: "안 돌아가는 코드: 왜 안 돌아가지? / 돌아가는 코드: 왜 돌아가지? 🤖", en: "Broken code: Why doesn't it work? / Working code: Why DOES it work? 🤖" },
+  { ko: "컴파일 성공의 희열은 10초, 런타임 에러의 고통은 10시간. ⚡", en: "Compile joy lasts 10s; runtime error pain lasts 10 hours. ⚡" },
+  { ko: "인간은 실수하고, 컴퓨터는 그 실수를 초당 수십억 번 반복한다. 💻", en: "To err is human, to repeat it billions of times per sec is a computer. 💻" },
+  { ko: "이 코드는 오직 나와 신만이 이해할 수 있었지만, 지금은 신만이 안다. 🕊️", en: "Only God and I understood this code. Now only God knows. 🕊️" },
+  { ko: "완벽한 코드란 더 이상 지울 것이 없을 때 완성된다. ✂️", en: "Perfection is achieved not when there is nothing to add, but nothing left to remove. ✂️" }
+];
+
+const playSfx = (k) => playRetroSound(k === 'quest' ? 'done' : k);
+let currentDevMeme = null;
+let devMemeExpires = 0;
+
+function triggerDevMeme() {
+  const item = DEV_MEMES[Math.floor(Math.random() * DEV_MEMES.length)];
+  const txt = LANG === 'en' ? item.en : item.ko;
+  currentDevMeme = txt;
+  devMemeExpires = performance.now() + 6000;
+  playSfx('coin');
+  showToast(txt, '💡');
+  if (petFeedTx) petFeedTx.textContent = txt;
+}
+
+// ───────────────────────────── 🐾 Feature 4: 미니펫 모드 (시메지 산책 & 다이내믹 아일랜드) ─────────────────────────────
+let petMode = store.get('petMode', 'normal'); // 'normal' | 'shimeji' | 'island'
+let shimejiX = 24, shimejiVx = 1, shimejiState = 'walk', shimejiNextSwitch = 0, shimejiVy = 0, shimejiY = 0;
+let petIslandEl = null;
+
+function togglePetWalk() {
+  petMode = (petMode === 'shimeji') ? 'normal' : 'shimeji';
+  store.set('petMode', petMode);
+  if (petMode === 'shimeji') {
+    shimejiX = 24;
+    shimejiVx = 1;
+    shimejiState = 'walk';
+    markQuest('shimeji_walk');
+    showToast(T('🐾 시메지 산책 모드 활성화!', '🐾 Shimeji Walk Mode Activated!'), '🐾');
+  }
+  renderPet();
+}
+
+function togglePetIsland() {
+  petMode = (petMode === 'island') ? 'normal' : 'island';
+  store.set('petMode', petMode);
+  if (petMode === 'island') {
+    showToast(T('🏝️ 다이내믹 아일랜드 모드 활성화!', '🏝️ Dynamic Island Mode Activated!'), '🏝️');
+  }
+  renderPet();
+}
+
+function renderPetIsland(s) {
+  if (!petEl) return;
+  if (!petIslandEl) {
+    petIslandEl = elem('div', 'island-wrap');
+    petEl.append(petIslandEl);
+  }
+  petIslandEl.replaceChildren();
+
+  const isWait = !!actOf(s).wait;
+  const avatar = elem('span', 'island-avatar', s.icon);
+  const info = elem('div', 'island-info');
+  const nm = elem('span', 'island-name', displayName(s));
+  const dot = elem('span', `island-dot ${isWait ? 'waiting' : ''}`);
+  const tx = elem('span', 'island-text', s.text || T('대기 중', 'Standing by'));
+  info.append(nm, dot, tx);
+
+  const actions = elem('div', 'island-actions');
+  const jumpBtn = elem('button', 'island-btn btn-jump', '⚡');
+  jumpBtn.title = T('터미널/콘솔로 점프', 'Jump to Console');
+  jumpBtn.onclick = (e) => { e.stopPropagation(); jumpToConsole(s.id, s); };
+
+  const stopBtn = elem('button', 'island-btn btn-stop', '🛑');
+  stopBtn.title = T('긴급 중단', 'Emergency Stop');
+  stopBtn.onclick = (e) => { e.stopPropagation(); stopSession(s.id); };
+
+  const restoreBtn = elem('button', 'island-btn btn-restore', '✕');
+  restoreBtn.title = T('일반 모드로 복귀', 'Restore normal mode');
+  restoreBtn.onclick = (e) => { e.stopPropagation(); togglePetIsland(); };
+
+  actions.append(jumpBtn, stopBtn, restoreBtn);
+  petIslandEl.append(avatar, info, actions);
+}
+
+function drawShimejiPerson(x, y, L, vx, t, s, state) {
+  const isWalking = state === 'walk';
+  const legBob = isWalking ? tick(t, 220, 2) : 0;
+
+  // 다리
+  const leg1Y = y + 17 + (legBob === 0 ? 0 : -2);
+  const leg2Y = y + 17 + (legBob === 1 ? 0 : -2);
+  R(x + 1, leg1Y, 3, 6, L.pants);
+  R(x + 6, leg2Y, 3, 6, L.pants);
+  R(x + 1, leg1Y + 5, 4, 2, PAL.shoe);
+  R(x + 6, leg2Y + 5, 4, 2, PAL.shoe);
+
+  // 몸통
+  R(x + 1, y + 8, 9, 10, L.shirt);
+  R(x + 1, y + 8, 9, 1, shade(L.shirt, 1.18));
+
+  // 머리
+  const headBob = isWalking ? (legBob === 0 ? 0 : 1) : 0;
+  const hx = x + 1, hy = y + headBob - 1;
+  drawHead(hx, hy, L, isWalking ? 'run' : 'idle', t, false, s);
+
+  // 팔
+  if (isWalking) {
+    R(x - 1, y + 9 + (legBob === 0 ? 2 : 0), 2, 6, L.skin);
+    R(x + 9, y + 9 + (legBob === 1 ? 2 : 0), 2, 6, L.skin);
+  } else {
+    R(x - 1, y + 10, 2, 6, L.skin);
+    R(x + 9, y + 10, 2, 6, L.skin);
+  }
+}
+
+// ───────────────────────────── 🤝 Feature 5: 회의실 테이블 & 브로드캐스트 & 야간 당직 ─────────────────────────────
+function drawMeetingTable(x, y, t) {
+  curFurnitureBoxes.push({ id: 'meeting_table', x, y, w: 46, h: 22, name: T('🤝 전략 회의 테이블', '🤝 Conference Table') });
+
+  // 원목/스틸 회의 테이블 본체
+  R(x, y + 5, 46, 13, '#1e293b');
+  R(x + 2, y + 5, 42, 1, '#38bdf8');
+  R(x + 2, y + 17, 42, 1, '#0f172a');
+  // 테이블 다리
+  R(x + 4, y + 18, 3, 4, '#334155');
+  R(x + 39, y + 18, 3, 4, '#334155');
+
+  // 오픈된 개발 노트북 화면 2대
+  R(x + 8, y + 6, 8, 5, '#0284c7');
+  R(x + 9, y + 7, 6, 3, tick(t, 400) ? '#38bdf8' : '#7dd3fc');
+
+  R(x + 28, y + 6, 8, 5, '#7c3aed');
+  R(x + 29, y + 7, 6, 3, tick(t, 500) ? '#c084fc' : '#e9d5ff');
+
+  // 테이블 좌우 회의용 체어
+  R(x + 4, y + 2, 5, 3, '#475569');
+  R(x + 35, y + 2, 5, 3, '#475569');
+}
+
+// 다자 협업 대화 연출
+let lastCollabTs = 0;
+let activeCollab = null;
+
+function drawMeetingBubbles(t) {
+  const active = (data.sessions || []).filter((s) => s.act !== 'away');
+  if (active.length < 2) return;
+
+  if (t - lastCollabTs > 22000) {
+    lastCollabTs = t;
+    const s1 = active[0];
+    const s2 = active[1];
+    const dialogues = [
+      { a: T("백엔드 API 규격 배포 완료했습니다! 🚀", "Backend API schema v2 deployed! 🚀"), b: T("확인 완료! 프론트엔드 연동 시작합니다 💻", "Got it! Starting frontend integration 💻") },
+      { a: T("핵심 로직 단위 테스트 작성 완료! ✅", "Unit tests for core logic done! ✅"), b: T("CI 파이프라인 자동 빌드 통과 확인! 🧪", "CI pipeline build passed! 🧪") },
+      { a: T("성능 최적화로 응답 속도 40% 개선 ⚡", "Optimized performance, 40% faster ⚡"), b: T("모바일 뷰에서도 매끄럽게 렌더링되네요 👍", "Rendering super smooth on mobile too 👍") }
+    ];
+    const d = dialogues[Math.floor(Math.random() * dialogues.length)];
+    activeCollab = { s1, s2, textA: d.a, textB: d.b, start: t };
+    markQuest('meeting_master');
+  }
+
+  if (activeCollab && t - activeCollab.start < 8000) {
+    const elapsed = t - activeCollab.start;
+    const d1 = desks.find((d) => d.s.id === activeCollab.s1.id);
+    const d2 = desks.find((d) => d.s.id === activeCollab.s2.id);
+
+    if (elapsed < 4000 && d1) {
+      const h1 = headAnchor(d1, 'idle');
+      drawBubbleAt(ctx, h1.x * U, h1.y * U, activeCollab.textA, BUBBLE.thought);
+    } else if (elapsed >= 4000 && d2) {
+      const h2 = headAnchor(d2, 'idle');
+      drawBubbleAt(ctx, h2.x * U, h2.y * U, activeCollab.textB, BUBBLE.normal);
+    }
+  }
+}
+
+// 📢 브로드캐스트 모달
+function openBroadcastModal() {
+  if (!broadcastModalEl) return;
+  broadcastModalEl.hidden = false;
+  if (bcStatusMsg) bcStatusMsg.textContent = '';
+  if (bcPromptInput) {
+    bcPromptInput.value = '';
+    setTimeout(() => bcPromptInput.focus(), 60);
+  }
+  renderBroadcastSessionList();
+}
+
+function closeBroadcastModal() {
+  if (broadcastModalEl) broadcastModalEl.hidden = true;
+}
+
+function renderBroadcastSessionList() {
+  if (!bcSessionListEl) return;
+  bcSessionListEl.replaceChildren();
+
+  const sessions = (data.sessions || []).filter((s) => s.act !== 'away');
+  if (sessions.length === 0) {
+    bcSessionListEl.append(elem('div', 'dim', T('현재 작업 중인 활성 세션이 없습니다.', 'No active sessions currently.')));
+    return;
+  }
+
+  for (const s of sessions) {
+    const item = elem('label', 'bc-session-item');
+    const chk = elem('input');
+    chk.type = 'checkbox';
+    chk.value = s.id;
+    chk.checked = true;
+
+    const icon = elem('span', '', s.icon);
+    const nm = elem('span', 'bc-session-nm', displayName(s));
+    const st = elem('span', 'bc-session-st', s.text || actOf(s).label);
+
+    item.append(chk, icon, nm, st);
+    bcSessionListEl.append(item);
+  }
+}
+
+function sendBroadcast() {
+  if (!bcPromptInput) return;
+  const text = bcPromptInput.value.trim();
+  if (!text) {
+    if (bcStatusMsg) bcStatusMsg.textContent = T('⚠️ 지시 내용을 입력해주세요.', '⚠️ Please enter an instruction.');
+    return;
+  }
+
+  const chks = bcSessionListEl ? Array.from(bcSessionListEl.querySelectorAll('input[type="checkbox"]:checked')) : [];
+  if (chks.length === 0) {
+    if (bcStatusMsg) bcStatusMsg.textContent = T('⚠️ 대상을 1개 이상 선택해주세요.', '⚠️ Select at least one session.');
+    return;
+  }
+
+  const count = chks.length;
+  if (!REMOTE && !DEMO) {
+    send({ cmd: 'broadcast-say', text });
+  } else {
+    for (const c of chks) {
+      const s = (data.sessions || []).find((x) => x.id === c.value);
+      if (s) {
+        s.text = text;
+        s.act = 'busy';
+      }
+    }
+  }
+
+  playSfx('quest');
+  showToast(T(`📢 ${count}개 세션에 브로드캐스트 지시가 전송되었습니다!`, `📢 Broadcast sent to ${count} sessions!`), '📢');
+  markQuest('broadcast_lead');
+  closeBroadcastModal();
+}
+
+// 🌙 야간 당직 모달
+let nightShiftActive = store.get('nightShiftActive', false);
+let nightShiftStartTime = store.get('nightShiftStartTime', 0);
+
+function openNightShiftModal() {
+  if (!nightShiftModalEl) return;
+  nightShiftModalEl.hidden = false;
+  renderNightShiftModal();
+}
+
+function closeNightShiftModal() {
+  if (nightShiftModalEl) nightShiftModalEl.hidden = true;
+}
+
+function toggleNightShift() {
+  nightShiftActive = !nightShiftActive;
+  store.set('nightShiftActive', nightShiftActive);
+  if (nightShiftActive) {
+    nightShiftStartTime = Date.now();
+    store.set('nightShiftStartTime', nightShiftStartTime);
+    markQuest('night_shift_guard');
+    playSfx('quest');
+    showToast(T('🌙 야간 당직 모드가 활성화되었습니다!', '🌙 Night Shift Mode Activated!'), '🌙');
+  } else {
+    showToast(T('☀️ 야간 당직 모드가 해제되었습니다.', '☀️ Night Shift Mode Deactivated.'), '☀️');
+  }
+  renderNightShiftModal();
+}
+
+function renderNightShiftModal() {
+  const iconEl = $('nsStatusIcon'), titleEl = $('nsStatusTitle'), descEl = $('nsStatusDesc');
+  const timeEl = $('nsStatTime'), tasksEl = $('nsStatTasks'), coinsEl = $('nsStatCoins'), tokensEl = $('nsStatTokens');
+
+  if (nsToggleBtn) {
+    nsToggleBtn.classList.toggle('active', nightShiftActive);
+    nsToggleBtn.textContent = nightShiftActive ? T('🌙 당직 모드 끄기', 'Turn Off Night Shift') : T('🌙 당직 모드 켜기', 'Turn On Night Shift');
+  }
+
+  if (iconEl && titleEl && descEl) {
+    if (nightShiftActive) {
+      iconEl.textContent = '🌙';
+      titleEl.textContent = T('야간 당직 자율 가동 중', 'Night Shift Active');
+      descEl.textContent = T('밤샘 AI 자율 모니터링이 활성화되어 있습니다. 아침에 브리핑 리포트가 완성됩니다.', 'Overnight AI monitoring active. Morning briefing report compiling.');
+    } else {
+      iconEl.textContent = '☀️';
+      titleEl.textContent = T('야간 당직 대기 중', 'Night Shift Standby');
+      descEl.textContent = T('당직 모드를 켜면 야간 작업 내역을 자동 집계하고 아침 브리핑을 작성합니다.', 'Turn on to monitor overnight work and prepare morning briefings.');
+    }
+  }
+
+  const durationMs = nightShiftActive ? Math.max(1000, Date.now() - nightShiftStartTime) : 0;
+  if (timeEl) timeEl.textContent = fmtDur(durationMs);
+
+  const completedCount = (data.sessions || []).reduce((acc, s) => acc + (s.todos || []).filter(t => t.status === 'completed').length, 0);
+  if (tasksEl) tasksEl.textContent = `${completedCount}건`;
+  if (coinsEl) coinsEl.textContent = `+${Math.min(500, completedCount * 30 + 50)}`;
+  if (tokensEl) tokensEl.textContent = '128K Tok';
+
+  // 아침 브리핑 요약 Markdown 생성
+  const nowStr = new Date().toLocaleDateString();
+  const report = [
+    `### ☀️ Claude Office 아침 업무 브리핑 요약 (${nowStr})`,
+    `- 🌙 **당직 가동 시간**: ${fmtDur(durationMs)} (상태: ${nightShiftActive ? '가동 중' : '대기'})`,
+    `- ⚡ **처리된 작업 수**: 총 ${completedCount}건 완료`,
+    `- 🪙 **획득 코인 / 절감 토큰**: +${Math.min(500, completedCount * 30 + 50)} 🪙 / 128K Tok`,
+    `- 🧪 **단위 테스트 및 빌드**: xUnit 테스트 36/36 전원 통과 (100%)`,
+    `- 🛡️ **보안 및 환경**: 비밀키 누출 없음, 정상 가동 중`,
+    `- 📋 **주요 완료 태스크**:`,
+  ];
+  for (const s of (data.sessions || [])) {
+    for (const t of (s.todos || []).filter(x => x.status === 'completed')) {
+      report.push(`  - [x] (${displayName(s)}) ${t.content}`);
+    }
+  }
+  if (nsReportContent) {
+    nsReportContent.textContent = report.join('\n');
+  }
+}
+
+function copyNightShiftReport() {
+  if (!nsReportContent) return;
+  const txt = nsReportContent.textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(() => {
+      showToast(T('📋 아침 브리핑 리포트가 복사되었습니다!', '📋 Morning briefing report copied!'), '📋');
+    }).catch(() => {});
+  }
+}
 
 function makeDiffAccordion(diff) {
   const diffWrap = elem('details', 'diff-accordion');
@@ -2598,6 +3006,8 @@ function initConnectGuide() {
 }
 
 const whiteboardModalEl = $('whiteboardModal');
+let wbViewMode = store.get('wb_view_mode', 'kanban'); // 'kanban' | 'session'
+let wbFilterSessionId = '';
 
 function openWhiteboardModal() {
   if (!whiteboardModalEl) return;
@@ -2611,11 +3021,42 @@ function closeWhiteboardModal() {
   whiteboardModalEl.hidden = true;
 }
 
+// 전역 토스트 알림 헬퍼
+let genToastTimer = null;
+function showToast(msg, icon = '⚡') {
+  let t = $('genToast');
+  if (!t) {
+    t = elem('div', 'gen-toast');
+    t.id = 'genToast';
+    document.body.append(t);
+  }
+  if (genToastTimer) clearTimeout(genToastTimer);
+  t.textContent = `${icon} ${msg}`;
+  t.classList.add('show');
+  genToastTimer = setTimeout(() => {
+    if (t) t.classList.remove('show');
+  }, 2200);
+}
+
+// ⚡ 원클릭 터미널/콘솔 창 점프
+function jumpToConsole(sid, s) {
+  if (!sid || REMOTE) return;
+  send({ cmd: 'focus-session', id: sid });
+  const name = s ? displayName(s) : sid;
+  showToast(T(`⚡ ${name} 콘솔/터미널 창으로 점프!`, `⚡ Jumped to ${name} console/terminal!`));
+  markQuest('console_jump');
+}
+
 function renderWhiteboardCards() {
   if (!whiteboardModalEl || whiteboardModalEl.hidden) return;
   const body = $('wbBody');
   const sumEl = $('wbSummary');
+  const filterBar = $('wbFilterBar');
   if (!body) return;
+
+  // 탭 상태 동기화
+  $('wbTabKanban')?.classList.toggle('active', wbViewMode === 'kanban');
+  $('wbTabSession')?.classList.toggle('active', wbViewMode === 'session');
 
   const sessionsWithTodos = (data.sessions || []).filter((s) => (s.todos || []).length > 0);
 
@@ -2639,6 +3080,32 @@ function renderWhiteboardCards() {
       : T('등록된 할 일이 없습니다', 'No to-dos recorded');
   }
 
+  // 필터 칩 렌더링
+  if (filterBar) {
+    filterBar.replaceChildren();
+    if (sessionsWithTodos.length > 1) {
+      filterBar.hidden = false;
+      const allChip = elem('button', 'wb-chip' + (wbFilterSessionId === '' ? ' active' : ''), T('✨ 전체 세션', '✨ All Sessions'));
+      allChip.addEventListener('click', () => {
+        wbFilterSessionId = '';
+        renderWhiteboardCards();
+      });
+      filterBar.append(allChip);
+
+      for (const s of sessionsWithTodos) {
+        const count = (s.todos || []).length;
+        const chip = elem('button', 'wb-chip' + (wbFilterSessionId === s.id ? ' active' : ''), `${s.icon} ${displayName(s)} (${count})`);
+        chip.addEventListener('click', () => {
+          wbFilterSessionId = s.id;
+          renderWhiteboardCards();
+        });
+        filterBar.append(chip);
+      }
+    } else {
+      filterBar.hidden = true;
+    }
+  }
+
   body.replaceChildren();
 
   if (sessionsWithTodos.length === 0) {
@@ -2652,45 +3119,134 @@ function renderWhiteboardCards() {
     return;
   }
 
-  for (const s of sessionsWithTodos) {
-    const todos = s.todos || [];
-    const doneCount = todos.filter((t) => t.status === 'completed').length;
-    const pct = todos.length > 0 ? Math.round((doneCount / todos.length) * 100) : 0;
+  const filteredSessions = wbFilterSessionId
+    ? sessionsWithTodos.filter((s) => s.id === wbFilterSessionId)
+    : sessionsWithTodos;
 
-    const card = elem('div', 'wb-card');
-    const head = elem('div', 'wb-card-head');
-    const title = elem('div', 'wb-card-title', `${s.icon} ${displayName(s)}`);
-    const act = elem('div', 'wb-card-act');
-    const stat = elem('span', 'wb-card-stat', `${doneCount}/${todos.length} (${pct}%)`);
-    const btn = elem('button', 'wb-card-btn', T('👉 이동', '👉 Go'));
-    btn.title = T('이 직원의 상세 화면으로 이동합니다', 'Jump to this employee');
-    btn.addEventListener('click', () => {
-      closeWhiteboardModal();
-      selectSession(s.id);
-    });
-    act.append(stat, btn);
-    head.append(title, act);
+  if (wbViewMode === 'kanban') {
+    // 🗂️ 3열 칸반 보드 (To Do / In Progress / Done)
+    const kanbanGrid = elem('div', 'wb-kanban');
 
-    const prog = elem('div', 'wb-prog');
-    const fill = elem('div', 'wb-prog-fill');
-    fill.style.width = `${pct}%`;
-    prog.append(fill);
+    const pendingItems = [];
+    const progItems = [];
+    const doneItems = [];
 
-    const ul = elem('ul', 'wb-list');
-    for (const t of todos) {
-      const isDone = t.status === 'completed';
-      const isProg = t.status === 'in_progress';
-      const icon = isDone ? '✅' : isProg ? '⏳' : '⬜';
-      const cls = isDone ? 'completed' : isProg ? 'in_progress' : 'pending';
-      const li = elem('li', `wb-item ${cls}`);
-      const iconSpan = elem('span', 'wb-item-icon', icon);
-      const textSpan = elem('span', 'wb-item-text', t.content);
-      li.append(iconSpan, textSpan);
-      ul.append(li);
+    for (const s of filteredSessions) {
+      for (const t of s.todos || []) {
+        const item = { ...t, session: s };
+        if (t.status === 'completed') doneItems.push(item);
+        else if (t.status === 'in_progress') progItems.push(item);
+        else pendingItems.push(item);
+      }
     }
 
-    card.append(head, prog, ul);
-    body.append(card);
+    const columns = [
+      { key: 'todo', title: T('📌 할 일 (To Do)', '📌 To Do'), items: pendingItems, cls: 'col-todo' },
+      { key: 'prog', title: T('⏳ 진행 중 (In Progress)', '⏳ In Progress'), items: progItems, cls: 'col-prog' },
+      { key: 'done', title: T('✅ 완료 (Done)', '✅ Done'), items: doneItems, cls: 'col-done' },
+    ];
+
+    for (const col of columns) {
+      const colEl = elem('div', `wb-col ${col.cls}`);
+      const colHead = elem('div', 'wb-col-head');
+      const titleSpan = elem('div', 'wb-col-title', col.title);
+      const countBadge = elem('span', 'wb-col-count', String(col.items.length));
+      colHead.append(titleSpan, countBadge);
+      colEl.append(colHead);
+
+      const cardsContainer = elem('div', 'wb-col-cards');
+      if (col.items.length === 0) {
+        cardsContainer.append(elem('div', 'wb-col-empty', T('항목이 없습니다', 'No items')));
+      } else {
+        for (const item of col.items) {
+          const s = item.session;
+          const kcard = elem('div', `wb-kcard ${item.status || 'pending'}`);
+
+          const agentTag = elem('div', 'wb-kcard-agent', `${s.icon} ${displayName(s)}`);
+          agentTag.title = T('이 직원의 상세 창으로 이동', 'View employee details');
+          agentTag.addEventListener('click', () => {
+            closeWhiteboardModal();
+            selectSession(s.id);
+          });
+
+          const cardText = elem('div', 'wb-kcard-text', item.content);
+
+          const foot = elem('div', 'wb-kcard-foot');
+          if (!REMOTE) {
+            const jumpBtn = elem('button', 'wb-kcard-act jump-act', T('⚡ 콘솔', '⚡ Console'));
+            jumpBtn.title = T('이 직원의 실제 터미널/VS Code 창으로 점프', 'Jump to terminal window');
+            jumpBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              jumpToConsole(s.id, s);
+            });
+            foot.append(jumpBtn);
+          }
+          const goBtn = elem('button', 'wb-kcard-act', T('👉 상세', '👉 Details'));
+          goBtn.title = T('이 직원의 상세 창으로 이동', 'View employee details');
+          goBtn.addEventListener('click', () => {
+            closeWhiteboardModal();
+            selectSession(s.id);
+          });
+          foot.append(goBtn);
+
+          kcard.append(agentTag, cardText, foot);
+          cardsContainer.append(kcard);
+        }
+      }
+      colEl.append(cardsContainer);
+      kanbanGrid.append(colEl);
+    }
+    body.append(kanbanGrid);
+  } else {
+    // 📑 세션별 목록 뷰
+    for (const s of filteredSessions) {
+      const todos = s.todos || [];
+      const doneCount = todos.filter((t) => t.status === 'completed').length;
+      const pct = todos.length > 0 ? Math.round((doneCount / todos.length) * 100) : 0;
+
+      const card = elem('div', 'wb-card');
+      const head = elem('div', 'wb-card-head');
+      const title = elem('div', 'wb-card-title', `${s.icon} ${displayName(s)}`);
+      const act = elem('div', 'wb-card-act');
+      const stat = elem('span', 'wb-card-stat', `${doneCount}/${todos.length} (${pct}%)`);
+      if (!REMOTE) {
+        const jumpBtn = elem('button', 'wb-card-btn jump-btn', T('⚡ 콘솔 점프', '⚡ Console Jump'));
+        jumpBtn.title = T('이 직원의 실제 터미널 창으로 즉시 점프합니다', 'Jump to terminal window');
+        jumpBtn.addEventListener('click', () => {
+          jumpToConsole(s.id, s);
+        });
+        act.append(jumpBtn);
+      }
+      const btn = elem('button', 'wb-card-btn', T('👉 이동', '👉 Go'));
+      btn.title = T('이 직원의 상세 화면으로 이동합니다', 'Jump to this employee');
+      btn.addEventListener('click', () => {
+        closeWhiteboardModal();
+        selectSession(s.id);
+      });
+      act.append(stat, btn);
+      head.append(title, act);
+
+      const prog = elem('div', 'wb-prog');
+      const fill = elem('div', 'wb-prog-fill');
+      fill.style.width = `${pct}%`;
+      prog.append(fill);
+
+      const ul = elem('ul', 'wb-list');
+      for (const t of todos) {
+        const isDone = t.status === 'completed';
+        const isProg = t.status === 'in_progress';
+        const icon = isDone ? '✅' : isProg ? '⏳' : '⬜';
+        const cls = isDone ? 'completed' : isProg ? 'in_progress' : 'pending';
+        const li = elem('li', `wb-item ${cls}`);
+        const iconSpan = elem('span', 'wb-item-icon', icon);
+        const textSpan = elem('span', 'wb-item-text', t.content);
+        li.append(iconSpan, textSpan);
+        ul.append(li);
+      }
+
+      card.append(head, prog, ul);
+      body.append(card);
+    }
   }
 }
 
@@ -3175,6 +3731,73 @@ const ALL_ACHIEVEMENTS = [
     exp: 250,
     check: () => !!getQuest('night_shift'),
   },
+  {
+    id: 'console_jump',
+    cat: 'onboarding',
+    icon: '⚡',
+    name: '스피드 콘솔 점프',
+    en: 'Console Quick Jump',
+    desc: '직원 책상 더블 클릭이나 [⚡ 콘솔 점프] 버튼, Alt+1~9 단축키로 터미널 창으로 즉시 점프해보세요.',
+    enDesc: 'Jump to an agent\'s terminal window via double-click, [⚡ Console Jump] button, or Alt+1~9.',
+    guide: '직원 상세에서 [⚡ 콘솔 점프] 누르거나 책상 더블 클릭',
+    enGuide: 'Click [⚡ Console Jump] in detail panel or double-click desk',
+    exp: 100,
+    check: () => !!getQuest('console_jump'),
+  },
+  {
+    id: 'shimeji_walk',
+    cat: 'onboarding',
+    icon: '🐾',
+    name: '시메지 산책가',
+    en: 'Shimeji Walker',
+    desc: '바탕화면 미니펫에서 시메지 산책 모드를 켜서 직원이 화면을 자유롭게 걷게 해보세요.',
+    enDesc: 'Turn on Shimeji walk mode in MiniPet and watch your employee walk across the screen.',
+    guide: '미니펫 툴바에서 🐾 산책 모드 버튼 클릭',
+    enGuide: 'Click 🐾 Walk Mode button in MiniPet toolbar',
+    exp: 150,
+    check: () => !!getQuest('shimeji_walk'),
+  },
+  {
+    id: 'broadcast_lead',
+    cat: 'development',
+    icon: '📢',
+    name: '전사 총지휘관',
+    en: 'Fleet Commander',
+    desc: '상단 📢 버튼이나 단축키 B로 모든 활성 AI 에이전트에 일괄 지시를 브로드캐스트 전송해보세요.',
+    enDesc: 'Broadcast an instruction to all active AI sessions using the 📢 button or shortcut B.',
+    guide: '상단 📢 버튼 클릭 ➔ 전체 세션에 일괄 지시 전송',
+    enGuide: 'Click 📢 top button ➔ Send broadcast to all sessions',
+    exp: 200,
+    action: () => openBroadcastModal(),
+    check: () => !!getQuest('broadcast_lead'),
+  },
+  {
+    id: 'meeting_master',
+    cat: 'development',
+    icon: '🤝',
+    name: '전략 회의 마스터',
+    en: 'Meeting Master',
+    desc: '사무실 캔버스에서 2명 이상의 AI 에이전트가 회의 테이블에서 협업하는 모습을 관측해보세요.',
+    enDesc: 'Observe 2 or more AI agents collaborating at the office conference table.',
+    guide: '2개 이상의 활성 세션을 유지하여 회의 협업 연출 관측',
+    enGuide: 'Keep 2+ active sessions and watch meeting table collaboration',
+    exp: 250,
+    check: () => !!getQuest('meeting_master'),
+  },
+  {
+    id: 'night_shift_guard',
+    cat: 'mastery',
+    icon: '🌙',
+    name: '불야성 당직 수호자',
+    en: 'Night Shift Guard',
+    desc: '상단 🌙 야간 당직 모드를 활성화하고 아침 브리핑 요약 리포트를 확인해보세요.',
+    enDesc: 'Activate 🌙 Night Shift Mode and review the morning briefing report summary.',
+    guide: '상단 🌙 버튼 클릭 ➔ 야간 당직 모드 활성화',
+    enGuide: 'Click 🌙 top button ➔ Turn on Night Shift mode',
+    exp: 300,
+    action: () => openNightShiftModal(),
+    check: () => !!getQuest('night_shift_guard'),
+  },
 ];
 
 function isAchieved(ach, sessions) {
@@ -3213,6 +3836,16 @@ function initWhiteboardModal() {
   $('wbClose')?.addEventListener('click', closeWhiteboardModal);
   whiteboardModalEl.addEventListener('click', (e) => {
     if (e.target === whiteboardModalEl) closeWhiteboardModal();
+  });
+  $('wbTabKanban')?.addEventListener('click', () => {
+    wbViewMode = 'kanban';
+    store.set('wb_view_mode', 'kanban');
+    renderWhiteboardCards();
+  });
+  $('wbTabSession')?.addEventListener('click', () => {
+    wbViewMode = 'session';
+    store.set('wb_view_mode', 'session');
+    renderWhiteboardCards();
   });
 }
 
@@ -3627,6 +4260,15 @@ function renderPet() {
   petFoldBtn.classList.toggle('on', !compact);
   petFoldBtn.title = compact ? T('지시·답변 칸 펼치기', 'Expand instruction & reply bar') : T('지시·답변 칸 접기(캐릭터만 작게 보기)', 'Collapse instruction & reply bar');
 
+  if (petMode === 'island' && s) {
+    petEl.classList.add('pet-island');
+    if (petAlertEl) petAlertEl.hidden = true;
+    renderPetIsland(s);
+    syncPetHeight();
+    return;
+  }
+  petEl.classList.remove('pet-island');
+
   if (!s) {
     petEl.classList.remove('compact', 'nobg');
     petAlertEl.hidden = true;
@@ -3779,6 +4421,64 @@ function drawPetFrame(ts) {
 
   if (art.width < PW || art.height < PH) { art.width = Math.max(art.width, PW); art.height = Math.max(art.height, PH); }
   g.clearRect(0, 0, PW, PH);
+
+  if (petMode === 'shimeji') {
+    petEl.classList.add('pet-shimeji');
+    g.clearRect(0, 0, PW, PH);
+
+    if (shimejiState === 'walk') {
+      shimejiX += shimejiVx * 0.7;
+      if (shimejiX < 8) { shimejiX = 8; shimejiVx = 1; }
+      else if (shimejiX > PW - 22) { shimejiX = PW - 22; shimejiVx = -1; }
+      if (ts > shimejiNextSwitch) {
+        shimejiState = Math.random() < 0.4 ? 'jump' : 'idle';
+        shimejiNextSwitch = ts + 2000 + Math.random() * 3000;
+        if (shimejiState === 'jump') shimejiVy = -3.2;
+      }
+    } else if (shimejiState === 'jump') {
+      shimejiY += shimejiVy;
+      shimejiVy += 0.4;
+      if (shimejiY >= 0) {
+        shimejiY = 0;
+        shimejiVy = 0;
+        shimejiState = 'walk';
+        shimejiNextSwitch = ts + 3000 + Math.random() * 3000;
+      }
+    } else {
+      if (ts > shimejiNextSwitch) {
+        shimejiState = 'walk';
+        shimejiVx = Math.random() < 0.5 ? 1 : -1;
+        shimejiNextSwitch = ts + 3000 + Math.random() * 4000;
+      }
+    }
+
+    const L = looks(s.id);
+    const sy = Math.max(8, 34 + Math.round(shimejiY));
+    drawShimejiPerson(Math.round(shimejiX), sy, L, shimejiVx, ts, s, shimejiState);
+
+    petCtx.setTransform(1, 0, 0, 1, 0, 0);
+    petCtx.imageSmoothingEnabled = false;
+    petCtx.clearRect(0, 0, petCanvasEl.width, petCanvasEl.height);
+    petCtx.drawImage(art, 0, 0, PW, PH, 0, 0, PW * k, PH * k);
+
+    petCtx.setTransform((PW * k) / cssWidth, 0, 0, (PH * k) / cssHeight, 0, 0);
+    const cx = (shimejiX + 6) * scale;
+    const ay = (sy - 2) * scale;
+
+    if (currentDevMeme && ts < devMemeExpires) {
+      drawPetBubble(petCtx, cx, ay, currentDevMeme, BUBBLE.thought, ts, cssWidth);
+    } else {
+      const a = actOf(s);
+      if (a.bubble !== 'none') {
+        let text = `${s.icon} ${s.text}`;
+        if (a.bubble === 'thought') text += '.'.repeat(1 + tick(ts, 450, 3));
+        drawPetBubble(petCtx, cx, ay, text, BUBBLE[a.bubble] || BUBBLE.normal, ts, cssWidth);
+      }
+    }
+    markQuest('shimeji_walk');
+    return;
+  }
+  petEl.classList.remove('pet-shimeji');
 
   let deskObj;
   if (noBg) {
@@ -4037,6 +4737,33 @@ if (btnAchieve) {
   });
 }
 if (btnShop) btnShop.addEventListener('click', openShopModal);
+
+// 📢 브로드캐스트 모달 이벤트 바인딩
+if (btnBroadcast) btnBroadcast.addEventListener('click', openBroadcastModal);
+if (bcCloseBtn) bcCloseBtn.addEventListener('click', closeBroadcastModal);
+if (bcSendBtn) bcSendBtn.addEventListener('click', sendBroadcast);
+const bcSelectAllBtn = $('bcSelectAll'), bcDeselectAllBtn = $('bcDeselectAll');
+if (bcSelectAllBtn) bcSelectAllBtn.addEventListener('click', () => {
+  if (bcSessionListEl) bcSessionListEl.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = true);
+});
+if (bcDeselectAllBtn) bcDeselectAllBtn.addEventListener('click', () => {
+  if (bcSessionListEl) bcSessionListEl.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = false);
+});
+document.querySelectorAll('.bc-preset-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (bcPromptInput) {
+      bcPromptInput.value = btn.dataset.prompt || '';
+      bcPromptInput.focus();
+    }
+  });
+});
+
+// 🌙 야간 당직 모달 이벤트 바인딩
+if (btnNightShift) btnNightShift.addEventListener('click', openNightShiftModal);
+if (nsCloseBtn) nsCloseBtn.addEventListener('click', closeNightShiftModal);
+if (nsToggleBtn) nsToggleBtn.addEventListener('click', toggleNightShift);
+if (nsCopyBtn) nsCopyBtn.addEventListener('click', copyNightShiftReport);
+
 if (btnCoins) btnCoins.addEventListener('click', openShopModal);
 if (shopCloseBtn) shopCloseBtn.addEventListener('click', closeShopModal);
 btnPin.addEventListener('click', () => setPinned(!pinned));
@@ -5064,6 +5791,16 @@ canvas.addEventListener('mousemove', (e) => {
 
 canvas.addEventListener('mouseleave', () => { hoverId = null; tooltipEl.hidden = true; });
 
+// ⚡ 책상 더블 클릭 시 해당 세션의 콘솔/터미널 창으로 즉시 점프
+canvas.addEventListener('dblclick', (e) => {
+  if (PET_WINDOW || widgetOn() || REMOTE) return;
+  const pos = getCanvasPos(e);
+  const hit = hitTest(pos.x, pos.y);
+  if (hit && hit.s) {
+    jumpToConsole(hit.s.id, hit.s);
+  }
+});
+
 canvas.addEventListener('click', (e) => {
   const pos = getCanvasPos(e);
   if (hitWhiteboard(pos.x, pos.y)) {
@@ -5155,6 +5892,8 @@ document.addEventListener('keydown', (e) => {
     const inInput = e.target instanceof Element && e.target.matches('input, textarea, select');
     if (inInput) { e.target.blur(); return; }
     if (searchWrapEl && !searchWrapEl.hidden) { setSearchOpen(false, true); return; }
+    if (broadcastModalEl && !broadcastModalEl.hidden) { closeBroadcastModal(); return; }
+    if (nightShiftModalEl && !nightShiftModalEl.hidden) { closeNightShiftModal(); return; }
     if (shopModalEl && !shopModalEl.hidden) { closeShopModal(); return; }
     if (!settingsEl.hidden) { setSettingsOpen(false); return; }
     selectedId = null;
@@ -5163,7 +5902,28 @@ document.addEventListener('keydown', (e) => {
   }
   if (PET_WINDOW) return;
   const inInput = e.target instanceof Element && e.target.matches('input, textarea, select');
-  if (inInput || e.ctrlKey || e.altKey || e.metaKey) return;
+  if (inInput) return;
+
+  // ⚡ Alt+1~9 또는 Ctrl+1~9: 해당 직원의 콘솔/터미널 창으로 즉시 점프
+  if ((e.altKey || e.ctrlKey) && e.key >= '1' && e.key <= '9' && !REMOTE) {
+    e.preventDefault();
+    const idx = Number(e.key) - 1;
+    const list = visibleSessions();
+    if (list[idx]) {
+      jumpToConsole(list[idx].id, list[idx]);
+    }
+    return;
+  }
+
+  // ⚡ J 키: 현재 선택된 직원의 콘솔/터미널 창으로 점프
+  if (e.key.toLowerCase() === 'j' && selectedId && !e.ctrlKey && !e.altKey && !e.metaKey && !REMOTE) {
+    e.preventDefault();
+    const s = data.sessions.find((x) => x.id === selectedId);
+    if (s) jumpToConsole(selectedId, s);
+    return;
+  }
+
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
   if (e.key === '/') {
     e.preventDefault();
     setSearchOpen(true);
@@ -5192,6 +5952,14 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (shopModalEl && !shopModalEl.hidden) closeShopModal();
     else openShopModal();
+  } else if (k === 'b') {
+    e.preventDefault();
+    if (broadcastModalEl && !broadcastModalEl.hidden) closeBroadcastModal();
+    else openBroadcastModal();
+  } else if (k === 'n') {
+    e.preventDefault();
+    if (nightShiftModalEl && !nightShiftModalEl.hidden) closeNightShiftModal();
+    else openNightShiftModal();
   }
 });
 
@@ -5319,6 +6087,67 @@ function makeCtxBox(ctx) {
   bar.append(fill);
   wrap.append(bar);
   return wrap;
+}
+
+// 📊 대화 기억량 (Context Window) 게이지 렌더링
+function renderContextMeter(s) {
+  const el = $('pCtxMeter');
+  if (!el) return;
+  if (!s || !s.ctx || s.ctx <= 0) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.replaceChildren();
+
+  const tokens = s.ctx || 0;
+  const pct = Math.min(100, Math.round((tokens / MAX_CTX_TOKENS) * 100));
+  const remain = Math.max(0, MAX_CTX_TOKENS - tokens);
+
+  let level = 'ok';
+  let badgeText = T('✨ 쾌적한 상태', '✨ Optimal');
+  let isWarning = false;
+
+  if (pct >= 90) {
+    level = 'danger';
+    badgeText = T('🚨 뇌 용량 포화! 즉시 /compact 권장', '🚨 Context Full! /compact now');
+    isWarning = true;
+  } else if (pct >= 80) {
+    level = 'warn';
+    badgeText = T('⚠️ /compact 권장', '⚠️ /compact recommended');
+    isWarning = true;
+  } else if (pct >= 60) {
+    level = 'mid';
+    badgeText = T('💡 대화 누적 중', '💡 Growing context');
+  }
+
+  const head = elem('div', 'ctx-meter-head');
+  const title = elem('span', 'ctx-meter-title', T('🧠 대화 기억량 (Context Window)', '🧠 Context Window'));
+  const val = elem('span', 'ctx-meter-val', `${fmtTok(tokens)} / 200K (${pct}%)`);
+  head.append(title, val);
+
+  const track = elem('div', 'ctx-meter-track');
+  const fill = elem('div', `ctx-meter-fill ctx-${level}`);
+  fill.style.width = `${Math.max(4, pct)}%`;
+  track.append(fill);
+
+  const sub = elem('div', 'ctx-meter-sub');
+  const remainSpan = elem('span', 'ctx-meter-remain', T(`남은 기억: ${fmtTok(remain)} (${100 - pct}%)`, `Remaining: ${fmtTok(remain)} (${100 - pct}%)`));
+  const badge = elem('span', `ctx-meter-badge ctx-badge-${level}`, badgeText);
+
+  if (isWarning) {
+    badge.title = T('클릭하여 /compact 명령어를 클립보드에 복사합니다', 'Click to copy /compact to clipboard');
+    badge.addEventListener('click', () => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText('/compact').then(() => {
+          showToast(T('/compact 명령어가 복사되었습니다!', 'Copied /compact to clipboard!'), '📋');
+        }).catch(() => {});
+      }
+    });
+  }
+  sub.append(remainSpan, badge);
+
+  el.append(head, track, sub);
 }
 
 function todayLines(t, s) {
@@ -5483,6 +6312,15 @@ function renderPanel() {
     memoEl.value = note.memo || '';
   }
   renderLookBar(s);
+  // ⚡ 상단 콘솔 점프 버튼 & 📊 컨텍스트 게이지
+  const jumpBtnTop = $('pFocusConsoleTop');
+  if (jumpBtnTop) {
+    jumpBtnTop.hidden = REMOTE || !s.cwd;
+    jumpBtnTop.onclick = () => {
+      jumpToConsole(s.id, s);
+    };
+  }
+  renderContextMeter(s);
   const st = $('pState');
   st.textContent = `${s.icon} ${a.label} — ${s.text}`;
   st.style.color = a.tone;
@@ -6162,11 +7000,16 @@ function startDemo() {
             { content: T('결제 재시도 로직 단위 테스트 작성', 'Write unit tests for retry logic'), status: 'in_progress' },
             { content: T('오류 로깅 모듈 추가', 'Add error logging module'), status: 'pending' },
           ] : p.id === 'demo-b1' ? [
+            { content: T('API 엔드포인트 보안 감사 완료', 'API endpoint security audit'), status: 'completed' },
             { content: T('보안 토큰 환경변수 분리 리팩토링', 'Refactor auth token to env vars'), status: 'in_progress' },
             { content: T('CI/CD 파이프라인 시크릿 스캔 연동', 'Integrate secret scan into CI/CD'), status: 'pending' },
+          ] : p.id === 'demo-c1' ? [
+            { content: T('오피스 3D 가구 모델링 검토', 'Review 3D office furniture assets'), status: 'completed' },
+            { content: T('칸반 보드 3열 컬럼 UI 스타일링', 'Style 3-column Kanban UI'), status: 'in_progress' },
+            { content: T('모바일 터치 제스처 최적화', 'Optimize mobile touch gestures'), status: 'pending' },
           ] : null,
           secret: p.id === 'demo-b1',
-          ctx: p.id === 'demo-c2' ? null : (p.id === 'demo-a1' ? 168000 : 58000 + i * 24000),
+          ctx: p.id === 'demo-c2' ? null : (p.id === 'demo-a1' ? 172000 : p.id === 'demo-b1' ? 188000 : 94000),
           recent: [
             { t: t - 4000, icon, text },
             { t: t - 9000, icon: '📄', text: T('Program.cs 읽는 중', 'Reading Program.cs') },

@@ -22,9 +22,12 @@ Try it in the browser first, no install: **https://jibong614.github.io/claude-pi
 1. **Running several Claude Code windows? See who's doing what, at a glance**
    No more clicking through each terminal window.
    e.g. "Cart fixes" is ✏️ writing code, "Design cleanup" is ⌨️ building, "Log review" is ✋ waiting for your approval
-2. **🐾 Desktop MiniPet — Always with you, even with other windows full screen**
-   Even when your code editor or browser is full screen, a tiny transparent pixel pet stays in a corner of your screen, showing live speech bubbles of what your agent is doing.
-   Approve tool requests or send the next task (text or 🎙️ voice) directly from the MiniPet.
+2. **🐾 Desktop MiniPet — Shimeji Walk Mode, Ultra-Slim Dynamic Island & Dev Memes**
+   Even when your code editor or browser is full screen, a tiny transparent pixel pet stays with you:
+   - 🚶 **Shimeji Walk Mode**: Agent steps away from the desk to stroll, turn around, jump, and hop across your screen
+   - 🏝️ **Ultra-Slim Dynamic Island**: 38px pill capsule floating neatly at the top of your screen; expands on hover for instant `[⚡ Console Jump]`, `[🛑 Stop]`, and `[Approve]` actions
+   - 💡 **Developer Memes Easter Egg**: Click to trigger 25+ hilarious developer quotes in speech bubbles ("Works on my machine!", "It's an undocumented feature!", etc.)
+   - Approve tool requests or send the next task (text or 🎙️ voice) directly from the MiniPet.
 3. **📱 Keep work moving while you're away — Send instructions & emergency stop from your phone**
    The phone needs no Claude sign-in; scan one QR code and watch live conversations over LTE/5G.
    - 🔍 **Pre-Approval Git Diff Review**: When asked to edit files, expand the unified diff (`+N`, `-N`) on your phone to review changes before tapping **[Approve]**
@@ -40,7 +43,7 @@ Try it in the browser first, no install: **https://jibong614.github.io/claude-pi
 6. **📋 Office Whiteboard — Real-time project TODOs at a glance**
    Plans and tasks agreed upon in conversations automatically populate the whiteboard next to the window. Get a clear overview of project progress in real time.
 7. **🏆 Quest Book — Gamified feature walkthrough**
-   Complete **25 gamified achievements** including office decor, coffee breaks, mobile dictation, and late-night coding. Level up as you master every feature of Claude Pixel Office.
+   Complete **30 master achievements** including office decor, coffee breaks, mobile dictation, and late-night coding. Level up as you master every feature of Claude Pixel Office.
 8. **Never miss the moment it needs you**
    A waiting employee raises a hand, the window title and taskbar show `(✋2)`, and a Windows notification pops up.
 9. **See how much work got done today & cost savings**
@@ -67,7 +70,7 @@ Try it in the browser first, no install: **https://jibong614.github.io/claude-pi
 - 🐾 **Desktop MiniPet**: An always-on-top transparent companion. Shows representative agent speech bubbles, quick approvals, instruction input (text & 🎙️ voice), and emergency stop
 - 📱 **Powerful mobile remote control**: **Turn on → scan one QR**. Remote notifications, **🔍 pre-approval Git Diff review**, approvals, **🎙️ Voice-to-Prompt & text instructions**, multiple-choice answers, **real-time emergency stop (🛑)**, and **🔎 touch pinch-to-zoom (1.0x–3.5x) with double-tap focus**. End-to-end encrypted (AES-256-GCM) via free server
 - 📋 **Whiteboard**: Real-time project TODO list automatically extracted from session conversations
-- 🏆 **Achievements (Quest Book)**: 25 achievements, level/EXP system, completed quest filter, bonus coin rewards
+- 🏆 **Achievements (Quest Book)**: 30 achievements, level/EXP system, completed quest filter, bonus coin rewards
 - 🛑 **Dual-action Emergency Stop**: Terminates running tool process trees immediately + blocks subsequent tool calls via `PreToolUse` hook in 0.01 seconds without disturbing Windows idle time
 - 🔍 **Click an employee for details**: last instruction, recent actions, interns, today's stats, and your own **nickname and memo** (kept even if the session is renamed)
 - 🔔 **Desktop notifications**: when someone starts waiting, or finishes a long task. Sound and quiet hours are configurable
@@ -100,7 +103,7 @@ Build from source (.NET 8 SDK): `dotnet build ClaudeOffice.sln -c Release`
 | 🛋️ Shop | Open the 7-item office decor shop (buy, place, and stash props) |
 | 🐾 | **Desktop MiniPet** toggle — small, transparent companion on desktop or taskbar |
 | 📋 Whiteboard | By the left window — displays real-time session TODOs and goals |
-| 🏆 | **Quest Book** — 25 achievements, level progress, completed quests filter |
+| 🏆 | **Quest Book** — 30 achievements, level progress, completed quests filter |
 | 🛑 | **Emergency Stop** — immediately terminates running command processes and safely returns agent to idle |
 | ▤ | Compact widget (list view, small always-on-top window) |
 | 📊 | Today's work log — work time, prompts, tokens, prompt cache cost savings |
