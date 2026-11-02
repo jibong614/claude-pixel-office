@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.6.7';
+const PAGE_VERSION = '1.6.8';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -3775,6 +3775,7 @@ function showIslandToast(text, icon = '🏝️', durationMs = 2500) {
 function togglePetWalk() {
   petMode = (petMode === 'shimeji') ? 'normal' : 'shimeji';
   store.set('petMode', petMode);
+  petEl.classList.toggle('pet-shimeji', petMode === 'shimeji');
   if (petMode === 'shimeji') {
     shimejiX = 24;
     shimejiVx = 1;
@@ -5847,6 +5848,7 @@ function renderPet() {
     petIslandEl.hidden = true;
     petIslandEl.replaceChildren();
   }
+  petEl.classList.toggle('pet-shimeji', petMode === 'shimeji');
 
   if (!s) {
     petEl.classList.remove('compact', 'nobg');

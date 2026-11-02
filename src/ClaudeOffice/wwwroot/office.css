@@ -1628,7 +1628,8 @@ body.pet-window .quest-toast {
   left: 8px;
   right: 8px;
   width: auto;
-  max-width: calc(100% - 16px);
+  max-width: 284px;
+  margin: 0 auto;
   padding: 8px 12px;
   gap: 8px;
   border-radius: 8px;
