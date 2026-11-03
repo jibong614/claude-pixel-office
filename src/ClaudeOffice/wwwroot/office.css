@@ -3896,7 +3896,7 @@ body.pet-float #pet.pet-island {
   line-height: 1.6;
 }
 
-/* 💼 오피스 모드 적용 시 게임/꾸미기 요소 전면 숨김 */
+/* 💼 오피스 모드 적용 시 게임/꾸미기 요소 전면 숨김 및 클린 비즈니스 위젯 */
 body.mode-office canvas#office {
   display: none !important;
 }
@@ -3918,18 +3918,76 @@ body.mode-office #pPet {
 body.mode-office #questToast {
   display: none !important;
 }
-body.mode-office #pet.pet-island .island-avatar {
-  display: none !important;
-}
-body.mode-office #pet.pet-island .btn-restore {
-  display: none !important;
-}
-body.mode-office #pet.pet-island .island-pet-walk {
-  display: none !important;
-}
-body.mode-office #pet:not(.pet-island) {
-  display: none !important;
-}
 body.mode-office .cat-speech-bubble {
+  display: none !important;
+}
+
+/* 💼 오피스 모드 위젯: 픽셀 그래픽(캐릭터·방) 제거 및 요약/지시/답변 상시 표시 */
+body.mode-office canvas#petCanvas {
+  display: none !important;
+}
+body.mode-office .pet-stage {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  min-height: 0 !important;
+  line-height: normal !important;
+  cursor: default !important;
+  margin: 0 !important;
+}
+body.mode-office .pet-bar {
+  background: #141724 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+  padding: 8px 10px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
+body.mode-office .pet-bar:hover {
+  background: #1c2032 !important;
+}
+body.mode-office #pet {
+  background: #0d0f17 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6) !important;
+  padding: 8px 10px !important;
+  width: 320px !important;
+  box-sizing: border-box !important;
+}
+body.mode-office .pet-head {
+  padding: 0 0 6px 0 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  margin-bottom: 6px !important;
+}
+body.mode-office .pet-feed:not([hidden]) {
+  display: block !important;
+  background: #131622 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 6px !important;
+  padding: 6px 8px !important;
+  margin: 6px 0 !important;
+}
+body.mode-office .pet-cmd,
+body.mode-office #pet.compact .pet-cmd {
+  display: flex !important;
+  margin-top: 6px !important;
+}
+body.mode-office .btn-pet-fold {
+  display: none !important;
+}
+body.mode-office .btn-pet-walk {
+  display: none !important;
+}
+body.mode-office .btn-pet-bg {
+  display: none !important;
+}
+body.mode-office .btn-pet-meme {
+  display: none !important;
+}
+body.mode-office .btn-pet-island {
+  display: none !important;
+}
+body.mode-office .pet-shimeji {
   display: none !important;
 }

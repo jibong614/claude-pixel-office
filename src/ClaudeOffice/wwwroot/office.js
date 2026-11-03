@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.7.7';
+const PAGE_VERSION = '1.7.8';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -121,14 +121,15 @@ function setAppMode(mode) {
   store.set('appMode', mode);
   applyAppMode();
   if (appMode === 'office') {
-    if (typeof petMode !== 'undefined' && petMode !== 'island') {
-      petMode = 'island';
-      store.set('petMode', 'island');
+    if (typeof petMode !== 'undefined' && petMode === 'shimeji') {
+      petMode = 'normal';
+      store.set('petMode', 'normal');
     }
   }
   if (typeof refreshHud === 'function') refreshHud();
   if (typeof refreshSettings === 'function') refreshSettings();
   if (typeof renderCleanOffice === 'function') renderCleanOffice();
+  if (typeof renderPet === 'function') renderPet();
   if (typeof redraw === 'function') redraw(true);
 }
 
@@ -141,11 +142,12 @@ function applyAppMode() {
   if (cleanView) cleanView.hidden = !isOffice;
   if (canvas) canvas.hidden = isOffice;
   if (isOffice) {
-    if (typeof petMode !== 'undefined' && petMode !== 'island') {
-      petMode = 'island';
-      store.set('petMode', 'island');
+    if (typeof petMode !== 'undefined' && petMode === 'shimeji') {
+      petMode = 'normal';
+      store.set('petMode', 'normal');
     }
     if (typeof renderCleanOffice === 'function') renderCleanOffice();
+    if (typeof renderPet === 'function') renderPet();
   }
 }
 
@@ -4002,19 +4004,19 @@ function ensurePetDom() {
   petDomBuilt = true;
 
   const head = elem('div', 'pet-head');
-  const badge = elem('span', 'pet-badge', '🪟');
+  const badge = elem('span', 'pet-badge', (appMode === 'office') ? '💼' : '🪟');
   badge.title = T('드래그해 위치 이동', 'Drag to move');
   petSelEl = elem('select', 'pet-sel');
   petSelEl.title = T('대표 직원 선택(바탕화면 미니위젯에 표시할 세션)', 'Choose representative employee');
   petSelEl.addEventListener('change', () => setPetSession(petSelEl.value));
 
-  petBgBtn = elem('button', 'pet-ibtn', '🖼️');
+  petBgBtn = elem('button', 'pet-ibtn btn-pet-bg', '🖼️');
   petBgBtn.addEventListener('click', () => setPetNoBg(!petNoBgOn()));
 
-  petFoldBtn = elem('button', 'pet-ibtn', '💬');
+  petFoldBtn = elem('button', 'pet-ibtn btn-pet-fold', '💬');
   petFoldBtn.addEventListener('click', () => setPetCompact(!petCompactOn()));
 
-  petStopBtn = elem('button', 'pet-ibtn btn-stop', '🛑');
+  petStopBtn = elem('button', 'pet-ibtn btn-stop btn-pet-stop', '🛑');
   petStopBtn.title = T('현재 세션에 긴급 중단(Ctrl+C) 신호를 보냅니다', 'Send emergency stop (Ctrl+C) to this session');
   petStopBtn.addEventListener('click', () => {
     const s = resolvePetSession();
@@ -4042,19 +4044,19 @@ function ensurePetDom() {
     else if (s) selectSession(s.id);
   });
 
-  const petWalkBtn = elem('button', 'pet-ibtn', '🐾');
+  const petWalkBtn = elem('button', 'pet-ibtn btn-pet-walk', '🐾');
   petWalkBtn.title = T('산책 모드 (직원이 자유롭게 걸어 다닙니다)', 'Walk Mode (employee walks freely)');
   petWalkBtn.addEventListener('click', togglePetWalk);
 
-  const petIslandBtn = elem('button', 'pet-ibtn', '🏝️');
+  const petIslandBtn = elem('button', 'pet-ibtn btn-pet-island', '🏝️');
   petIslandBtn.title = T('초슬림 다이내믹 아일랜드 모드', 'Ultra-slim Dynamic Island Mode');
   petIslandBtn.addEventListener('click', togglePetIsland);
 
-  const petMemeBtn = elem('button', 'pet-ibtn', '💡');
+  const petMemeBtn = elem('button', 'pet-ibtn btn-pet-meme', '💡');
   petMemeBtn.title = T('개발자 유머 & 명언 보기 (설정에서 1시간마다 자동 띄우기 가능)', 'Developer Memes & Quotes (auto icebreaker configurable in settings)');
   petMemeBtn.addEventListener('click', () => triggerDevMeme());
 
-  const closeBtn = elem('button', 'pet-ibtn', '✕');
+  const closeBtn = elem('button', 'pet-ibtn btn-pet-close', '✕');
   closeBtn.title = T('바탕화면 미니위젯 닫기', 'Close Desktop MiniWidget');
   closeBtn.addEventListener('click', () => setPet(false));
 
@@ -6579,12 +6581,15 @@ function sendPetSay() {
 
 function renderPet() {
   if (!WIDGET_WINDOW && !(DEMO && petOn())) return;
-  if (appMode === 'office') petMode = 'island';
+  if (appMode === 'office' && petMode === 'shimeji') petMode = 'normal';
   ensurePetDom();
+
+  const badgeEl = petEl ? petEl.querySelector('.pet-badge') : null;
+  if (badgeEl) badgeEl.textContent = (appMode === 'office') ? '💼' : '🪟';
 
   const pref = petSessionPref();
   const s = resolvePetSession();
-  const compact = petCompactOn();
+  const compact = (appMode === 'office') ? false : petCompactOn();
   const noBg = petNoBgOn();
 
   // 세션 선택 드롭다운 갱신: 바 안에는 깔끔하게 직원 이름만 넣고, 상태는 하단 상태 바에 표시
@@ -6746,8 +6751,8 @@ function syncPetHeight() {
   } else {
     h = Math.ceil(petEl.getBoundingClientRect().height);
   }
-  const minH = (petMode === 'island') ? 40 : 120;
-  const targetW = (petMode === 'island') ? 440 : 300;
+  const minH = (petMode === 'island') ? 40 : ((appMode === 'office') ? 80 : 120);
+  const targetW = (petMode === 'island') ? 440 : ((appMode === 'office') ? 320 : 300);
   const hChanged = h >= 40 && Math.abs(h - lastPetH) > 1;
   const wChanged = lastPetW !== targetW;
   if (hChanged || wChanged) {
@@ -6759,7 +6764,7 @@ function syncPetHeight() {
 
 /** 바탕화면 구석의 작은 방(또는 배경 숨김 시 직원·의자·책상·컴퓨터만)을 그린다. */
 function drawPetFrame(ts) {
-  if (!petCanvasEl || !petCtx) return;
+  if (!petCanvasEl || !petCtx || appMode === 'office') return;
   const s = resolvePetSession();
   if (!s) return;
 
