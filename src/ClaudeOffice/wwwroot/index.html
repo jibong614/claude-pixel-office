@@ -71,7 +71,22 @@
     <div id="pTitle" class="dim"></div>
     <div class="pbar"><div id="pState" class="state"></div><button id="pFocusConsoleTop" class="mini btn-console-jump" title="이 직원의 터미널/VS Code 창으로 즉시 점프 (단축키: Alt+1~9)" data-en-title="Jump to this session's terminal/VS Code window (Alt+1~9)" data-en="⚡ Console Jump">⚡ 콘솔 점프</button><button id="pPet" class="mini" title="이 직원을 바탕화면 미니펫으로 꺼내기" data-en-title="Show this employee as the desktop MiniPet" data-en="🐾 MiniPet">🐾 미니펫</button></div>
 
-    <!-- 핵심 업무: 지시와 답변 -->
+    <!-- 1) 휴대폰/PC 지시·승인 (기본 노출) -->
+    <section id="pRemote" hidden>
+      <h3 data-en="📱 Instruct & approve from the phone">📱 휴대폰 지시·승인</h3>
+      <div id="rStatus" class="rstatus"></div>
+      <div id="rAsks"></div>
+      <div id="rSayWrap">
+        <textarea id="rSay" class="field" rows="3" maxlength="1000" placeholder="이 직원에게 보낼 지시 (같은 대화에서 이어서 일합니다)" data-en-ph="Instruction for this employee (continues in the same conversation)"></textarea>
+        <div class="rrow"><span id="rSaid" class="dim"></span><button id="rVoice" type="button" class="mini voice-btn" title="음성으로 지시하기 (Voice Prompt)" data-en-title="Voice-to-Prompt">🎙️</button><button id="rSend" class="mini" data-en="Send">보내기</button></div>
+      </div>
+      <div id="rReplyWrap" hidden>
+        <div id="rReplyHead" class="dim"></div>
+        <p id="rReply" class="prompt reply"></p>
+      </div>
+    </section>
+
+    <!-- 2) 핵심 업무: 지시와 답변 -->
     <section class="p-card-primary">
       <h3 data-en="Last prompt">마지막 지시</h3>
       <p id="pPrompt" class="prompt"></p>
@@ -81,33 +96,23 @@
       </section>
     </section>
 
-    <!-- 별명 & 메모 -->
+    <!-- 3) 최근 작업 내역 (기본 노출) -->
+    <h3 data-en="Recent Work">최근 작업 내역</h3>
+    <ul id="pLog"></ul>
+
+    <!-- 4) 메모 -->
     <h3 data-en="Nickname · Memo">메모</h3>
     <textarea id="pMemo" class="field" rows="2" placeholder="이 세션에 대한 메모 (쓰는 대로 저장됩니다)" data-en-ph="Memo about this session (saved as you type)"></textarea>
 
-    <!-- 상세 개발 정보 아코디언 (기본 접힘) -->
+    <!-- 5) 상세 개발 정보 아코디언 (기본 접힘) -->
     <details id="pDetails" class="p-details-box">
       <summary class="p-details-summary">
-        <span class="p-sum-txt">🛠️ 상세 개발 정보 (시스템·로그·통계)</span>
+        <span class="p-sum-txt">🛠️ 상세 개발 정보 (환경·모델·통계)</span>
         <span class="p-sum-arrow">▼</span>
       </summary>
       <div class="p-details-content">
         <!-- 📊 대화 기억량 (컨텍스트 윈도우 잔여량 게이지 & 압축 경고) -->
         <div id="pCtxMeter" class="ctx-meter-card"></div>
-        <!-- 휴대폰 지시·승인 -->
-        <section id="pRemote" hidden>
-          <h3 data-en="📱 Instruct & approve from the phone">📱 휴대폰 지시·승인</h3>
-          <div id="rStatus" class="rstatus"></div>
-          <div id="rAsks"></div>
-          <div id="rSayWrap">
-            <textarea id="rSay" class="field" rows="3" maxlength="1000" placeholder="이 직원에게 보낼 지시 (같은 대화에서 이어서 일합니다)" data-en-ph="Instruction for this employee (continues in the same conversation)"></textarea>
-            <div class="rrow"><span id="rSaid" class="dim"></span><button id="rVoice" type="button" class="mini voice-btn" title="음성으로 지시하기 (Voice Prompt)" data-en-title="Voice-to-Prompt">🎙️</button><button id="rSend" class="mini" data-en="Send">보내기</button></div>
-          </div>
-          <div id="rReplyWrap" hidden>
-            <div id="rReplyHead" class="dim"></div>
-            <p id="rReply" class="prompt reply"></p>
-          </div>
-        </section>
         <h3 data-en="Nickname">별명</h3>
         <input id="pNick" class="field" type="text" maxlength="30" autocomplete="off" spellcheck="false">
         <div id="pSync" class="dim"></div>
@@ -126,8 +131,6 @@
           <h3 data-en="Interns (Subagents)">인턴 (서브에이전트)</h3>
           <ul id="pInterns"></ul>
         </section>
-        <h3 data-en="Recent Work">최근 작업 내역</h3>
-        <ul id="pLog"></ul>
         <div id="pId" class="dim mono"></div>
       </div>
     </details>
