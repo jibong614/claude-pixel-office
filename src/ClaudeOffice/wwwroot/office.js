@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.7.1';
+const PAGE_VERSION = '1.7.2';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -2204,7 +2204,7 @@ function drawPixelCat(cat, t) {
       R(rx, y + dy, w, h, c);
     };
 
-    if (cat.state === 'loaf' || cat.state === 'sit' || cat.state === 'onMonitor' || cat.state === 'onTower') {
+    if (cat.state === 'loaf' || cat.state === 'sit' || cat.state === 'onMonitor' || cat.state === 'onTower' || cat.state === 'onDesk') {
       const breath = tick(t, 800) ? 1 : 0;
       cR(1, 2 - breath, 5, 3, pal.base);
       cR(4, 1 - breath, 3, 3, pal.base);
@@ -2288,11 +2288,23 @@ function drawPixelCat(cat, t) {
       cP(0 - tailWag, 1 - bob, pal.base);
 
       if (isWalk) {
-        cP(4 + (step === 0 ? 1 : step === 2 ? -1 : 0), 5, pal.white);
-        cP(2 + (step === 1 ? 1 : step === 3 ? -1 : 0), 5, pal.white);
+        const fstep = (step === 0 ? 1 : step === 2 ? -1 : 0);
+        const bstep = (step === 1 ? 1 : step === 3 ? -1 : 0);
+        if (bob === 1) {
+          cP(4, 4, pal.base);
+          cP(2, 4, pal.base);
+        }
+        cP(4 + fstep, 5, pal.white);
+        cP(4 + fstep, 6, pal.white);
+        cP(2 + bstep, 5, pal.white);
+        cP(2 + bstep, 6, pal.white);
       } else {
-        cP(2, 5, pal.white);
+        cP(4, 4, pal.base);
         cP(4, 5, pal.white);
+        cP(4, 6, pal.white);
+        cP(2, 4, pal.base);
+        cP(2, 5, pal.white);
+        cP(2, 6, pal.white);
       }
     }
     return;
@@ -2309,7 +2321,7 @@ function drawPixelCat(cat, t) {
       R(rx, y + dy, w, h, c);
     };
 
-    if (cat.state === 'loaf' || cat.state === 'sit' || cat.state === 'onMonitor' || cat.state === 'onTower') {
+    if (cat.state === 'loaf' || cat.state === 'sit' || cat.state === 'onMonitor' || cat.state === 'onTower' || cat.state === 'onDesk') {
       const breath = tick(t, 900) ? 1 : 0;
       cR(1, 2 - breath, 6, 3, pal.base);
       cR(5, 1 - breath, 4, 3, pal.base);
@@ -2391,11 +2403,25 @@ function drawPixelCat(cat, t) {
       cP(0, -bob - tailWag, pal.base);
 
       if (isWalk) {
-        cP(7 + (step === 0 ? 1 : step === 2 ? -1 : 0), 5, pal.white);
-        cP(3 + (step === 1 ? 1 : step === 3 ? -1 : 0), 5, pal.white);
+        const fstep = (step === 0 ? 1 : step === 2 ? -1 : 0);
+        const bstep = (step === 1 ? 1 : step === 3 ? -1 : 0);
+        cP(7, 4 - bob, pal.base);
+        if (bob === 1) cP(7, 4, pal.base);
+        cP(7 + fstep, 5, pal.base);
+        cP(7 + fstep, 6, pal.white);
+
+        cP(3, 4 - bob, pal.base);
+        if (bob === 1) cP(3, 4, pal.base);
+        cP(3 + bstep, 5, pal.base);
+        cP(3 + bstep, 6, pal.white);
       } else {
-        cP(3, 5, pal.white);
-        cP(7, 5, pal.white);
+        cP(7, 4, pal.base);
+        cP(7, 5, pal.base);
+        cP(7, 6, pal.white);
+
+        cP(3, 4, pal.base);
+        cP(3, 5, pal.base);
+        cP(3, 6, pal.white);
       }
     }
     return;
@@ -2411,7 +2437,7 @@ function drawPixelCat(cat, t) {
     R(rx, y + dy, w, h, c);
   };
 
-  if (cat.state === 'loaf' || cat.state === 'sit' || cat.state === 'onMonitor' || cat.state === 'onTower') {
+  if (cat.state === 'loaf' || cat.state === 'sit' || cat.state === 'onMonitor' || cat.state === 'onTower' || cat.state === 'onDesk') {
     const breath = tick(t, 1000) ? 1 : 0;
     cR(2, 2 - breath, 8, 4, pal.base);
     cR(7, 1 - breath, 4, 4, pal.base);
@@ -2486,13 +2512,33 @@ function drawPixelCat(cat, t) {
     cR(7, 3 - bob, 3, 2, pal.white);
 
     if (isWalk) {
-      cP(9 + (step === 0 ? 1 : step === 2 ? -1 : 0), 5, pal.white);
-      cP(8 + (step === 2 ? 1 : step === 0 ? -1 : 0), 5, pal.base);
-      cP(4 + (step === 1 ? 1 : step === 3 ? -1 : 0), 5, pal.white);
-      cP(3 + (step === 3 ? 1 : step === 1 ? -1 : 0), 5, pal.base);
+      const fstep = (step === 0 ? 1 : step === 2 ? -1 : 0);
+      const bstep = (step === 1 ? 1 : step === 3 ? -1 : 0);
+      // 앞다리 쌍 (몸통 연결 + 워킹 양말)
+      cR(8, 4 - bob, 2, 1, pal.base);
+      if (bob === 1) cR(8, 4, 2, 1, pal.base);
+      cP(9 + fstep, 5, pal.base);
+      cP(9 + fstep, 6, pal.white);
+      cP(8 - fstep, 5, pal.dark);
+      cP(8 - fstep, 6, pal.white);
+
+      // 뒷다리 쌍 (몸통 연결 + 워킹 양말)
+      cR(3, 4 - bob, 2, 1, pal.base);
+      if (bob === 1) cR(3, 4, 2, 1, pal.base);
+      cP(4 + bstep, 5, pal.base);
+      cP(4 + bstep, 6, pal.white);
+      cP(3 - bstep, 5, pal.dark);
+      cP(3 - bstep, 6, pal.white);
     } else {
-      cR(4, 5, 2, 1, pal.white);
-      cR(8, 5, 2, 1, pal.white);
+      // 앞다리 (2px 너비, 바닥까지 닿는 2px 양말)
+      cR(8, 4, 2, 1, pal.base);
+      cR(8, 5, 2, 1, pal.base);
+      cR(8, 6, 2, 1, pal.white);
+
+      // 뒷다리 (2px 너비, 바닥까지 닿는 2px 양말)
+      cR(4, 4, 2, 1, pal.base);
+      cR(4, 5, 2, 1, pal.base);
+      cR(4, 6, 2, 1, pal.white);
     }
 
     const tailWag = tick(t, 280) ? 1 : 0;
