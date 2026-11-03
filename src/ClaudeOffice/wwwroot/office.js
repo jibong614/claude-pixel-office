@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.7.2';
+const PAGE_VERSION = '1.7.3';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -2120,21 +2120,19 @@ function updateSingleCat(cat, dt, ts) {
         startCatJump(cat, { x: floorX, y: floorY }, 'walk');
         cat.targetDesk = null;
       } else if (cat.state === 'eating') {
-        const curPortions = typeof officeCatState.foodPortions === 'number' ? officeCatState.foodPortions : (officeCatState.foodEmpty ? 0 : 10);
-        const nextPortions = Math.max(0, curPortions - 1);
-        officeCatState.foodPortions = nextPortions;
-        officeCatState.foodEmpty = (nextPortions <= 0);
+        officeCatState.foodPortions = 10;
+        officeCatState.foodEmpty = false;
         saveOfficeCatState();
         cat.hungerTimer = 300000 + Math.random() * 240000; // 5~9분 주기
-        cat.bubbleText = nextPortions > 0 ? `🐟 냠냠 맛있다냥! (${nextPortions}/10)` : '🐟 냠냠 잘 먹었다냥! (빈 그릇)';
+        cat.bubbleText = T('🐟 오독오독 맛있다냥! ✨', '🐟 Munch munch yummy! ✨');
         cat.bubbleTimer = 2500;
         spawnHearts(cat.x + 4, cat.y - 2);
         walkToRandomFloor(cat);
       } else if (cat.state === 'pooping') {
-        officeCatState.poopCount = Math.min(10, (officeCatState.poopCount || 0) + 1);
+        officeCatState.poopCount = 0;
         saveOfficeCatState();
         cat.poopTimer = 360000 + Math.random() * 240000; // 6~10분 주기
-        cat.bubbleText = '✨ 시원하다냥!';
+        cat.bubbleText = T('✨ 시원하다냥!', '✨ Feels so fresh!');
         cat.bubbleTimer = 2500;
         walkToRandomFloor(cat);
       } else {
@@ -2580,38 +2578,10 @@ function drawCatOverlays(t) {
       drawBubble(cat.x * U, (cat.y - 8) * U, cat.bubbleText, BUBBLE.normal, t, 130);
     }
   }
-
-  // 화장실에 똥이 있으면 떠오르는 💩 인디케이터
-  if (isFurniturePlaced('cat_litter_box') && (state.poopCount || 0) > 0) {
-    const lx = (logicalW - 24 + 10) * U;
-    const ly = (WALL_H + 50 - 6 + Math.sin(t / 240) * 2) * U;
-    ctx.save();
-    ctx.font = `bold ${Math.round(10 * U)}px ${FONT}`;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#fde68a';
-    ctx.shadowColor = 'rgba(0,0,0,0.6)';
-    ctx.shadowBlur = 4;
-    ctx.fillText(`💩 +${(officeCatState.poopCount || 0) * 10}🪙 (${officeCatState.poopCount}/10)`, lx, ly);
-    ctx.restore();
-  }
-
-  // 밥그릇이 비었으면 반짝이는 🥣 인디케이터
-  if (isFurniturePlaced('cat_food_bowl') && state.foodEmpty) {
-    const fx = (logicalW - 24 + 8) * U;
-    const fy = (WALL_H + 36 - 6 + Math.sin(t / 280) * 1.5) * U;
-    ctx.save();
-    ctx.font = `bold ${Math.round(9 * U)}px ${FONT}`;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#6ee7b7';
-    ctx.shadowColor = 'rgba(0,0,0,0.6)';
-    ctx.shadowBlur = 4;
-    ctx.fillText(T('🥣 사료 채우기 (+5🪙)', '🥣 Refill (+5🪙)'), fx, fy);
-    ctx.restore();
-  }
 }
 
 function drawCatFoodBowl(x, y, t) {
-  const portions = typeof officeCatState.foodPortions === 'number' ? officeCatState.foodPortions : (officeCatState.foodEmpty ? 0 : 10);
+  const portions = 10;
   curFurnitureBoxes.push({
     id: 'cat_food_bowl',
     x: x - 2, y: y - 8, w: 20, h: 18,
@@ -2722,26 +2692,20 @@ function cleanCatLitter(b) {
     showToast(T('🚽 PC와 연동된 고양이 화장실입니다 ✨', '🚽 Synced with PC cat litter box ✨'), '🚽');
     return;
   }
-  if (count > 0) {
-    const reward = count * 10;
-    officeCatState.poopCount = 0;
-    officeCatState.poopCleanedTotal = (officeCatState.poopCleanedTotal || 0) + count;
-    officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + Math.min(10, 1 + count));
-    saveOfficeCatState();
-    const activeCats = getAdoptedCatTypes();
-    for (const cType of activeCats) {
-      addCatGrowthBonus(cType, 1);
-    }
-    addCoins(reward, T('고양이 화장실 청소', 'Cleaned cat litter'));
-    shareToApp();
-    playRetroSound('coin');
-    spawnHearts(b.x + 10, b.y + 4);
-    showToast(T(`🧹 화장실 청소 완료! 감자/맛동산 ${count}개를 수거하여 🪙 ${reward} 코인을 받았습니다!`, `🧹 Cleaned ${count} poops! Earned 🪙 ${reward} coins!`), '🚽');
-    markQuest('poop_cleaner');
-  } else {
-    playRetroSound('stretch');
-    showToast(T('✨ 화장실 모래가 뽀송뽀송 깨끗합니다! (0/10)', '✨ The litter box is clean and fresh! (0/10)'), '✨');
+  officeCatState.poopCount = 0;
+  officeCatState.poopCleanedTotal = (officeCatState.poopCleanedTotal || 0) + 1;
+  officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 5);
+  saveOfficeCatState();
+  const activeCats = getAdoptedCatTypes();
+  for (const cType of activeCats) {
+    addCatGrowthBonus(cType, 1);
   }
+  addCoins(10, T('고양이 화장실 청소', 'Cleaned cat litter'));
+  shareToApp();
+  playRetroSound('coin');
+  spawnHearts(b.x + 10, b.y + 4);
+  showToast(T('🧹 화장실 모래를 뽀송뽀송하게 정리했습니다! 💖 (+10🪙)', '🧹 Refilled and cleaned cat litter box! 💖 (+10🪙)'), '🚽');
+  markQuest('poop_cleaner');
 }
 
 function refillCatFood(b) {
@@ -2751,32 +2715,26 @@ function refillCatFood(b) {
     showToast(T('🥣 PC와 연동된 고양이 식기입니다 🐟', '🥣 Synced with PC cat food bowl 🐟'), '🥣');
     return;
   }
-  const curPortions = typeof officeCatState.foodPortions === 'number' ? officeCatState.foodPortions : (officeCatState.foodEmpty ? 0 : 10);
-  if (curPortions < 10 || officeCatState.foodEmpty) {
-    officeCatState.foodPortions = 10;
-    officeCatState.foodEmpty = false;
-    officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 2);
-    saveOfficeCatState();
-    const activeCats = getAdoptedCatTypes();
-    for (const cType of activeCats) {
-      addCatGrowthBonus(cType, 1);
+  officeCatState.foodPortions = 10;
+  officeCatState.foodEmpty = false;
+  officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 5);
+  saveOfficeCatState();
+  const activeCats = getAdoptedCatTypes();
+  for (const cType of activeCats) {
+    addCatGrowthBonus(cType, 1);
+  }
+  addCoins(5, T('사료 리필 보너스', 'Refilled food bonus'));
+  shareToApp();
+  playRetroSound('coin');
+  spawnHearts(b.x + 8, b.y + 3);
+  showToast(T('🥣 고양이들에게 신선한 참치캔 간식을 주었습니다! 💖 (+5🪙)', '🥣 Treated cats with yummy tuna! 💖 (+5🪙)'), '🐟');
+  const sims = getActiveCatSims();
+  for (const cat of sims) {
+    if (cat.hungerTimer <= 20000 && cat.state !== 'eating') {
+      cat.targetX = Math.max(10, logicalW - 24 - 8);
+      cat.targetY = WALL_H + 37;
+      cat.state = 'walk';
     }
-    addCoins(5, T('사료 리필 보너스', 'Refilled food bonus'));
-    shareToApp();
-    playRetroSound('coin');
-    spawnHearts(b.x + 8, b.y + 3);
-    showToast(T('🥣 신선한 사료를 가득(10회분) 채웠습니다! (+5🪙)', '🥣 Filled food bowl with 10 servings! (+5🪙)'), '🥣');
-    const sims = getActiveCatSims();
-    for (const cat of sims) {
-      if (cat.hungerTimer <= 20000 && cat.state !== 'eating') {
-        cat.targetX = Math.max(10, logicalW - 24 - 8);
-        cat.targetY = WALL_H + 37;
-        cat.state = 'walk';
-      }
-    }
-  } else {
-    spawnHearts(b.x + 8, b.y + 3);
-    showToast(T('🥣 사료가 아직 넉넉하게 남아있습니다 (10/10회분)!', '🥣 Food bowl is still full (10/10 servings)!'), '🥣');
   }
 }
 
@@ -3843,8 +3801,8 @@ function renderWidget() {
   head.append(elem('b', '', officeTitle()), elem('span', '', wait ? `✋ ${wait}` : `👥 ${list.filter((s) => s.act !== 'away').length}`),
     elem('span', 'sp'));
   if (REMOTE) head.append(elem('span', '', remoteLabel()));
-  const big = elem('button', '', T('⤢ 크게', '⤢ Expand'));
-  big.title = T('사무실 그림으로 보기', 'Back to the office picture');
+  const big = elem('button', '', T('🏢 사무실 복귀 (W)', '🏢 Return to Office (W)'));
+  big.title = T('사무실 화면으로 돌아가기 (단축키: W)', 'Back to the office view (Shortcut: W)');
   big.addEventListener('click', () => setWidget(false));
   head.append(big);
 
@@ -5930,25 +5888,59 @@ function renderShopModal() {
 
         const decorOwned = owned.filter((id) => !SHOP_ITEMS.find((it) => it.id === id)?.catType);
         if (decorOwned.length > 0 && !REMOTE) {
-          const anyPlaced = decorOwned.some((id) => isFurniturePlaced(id));
-          const masterBtn = elem('button', 'shop-batch-toggle-btn', anyPlaced ? T('📦 가구 전체 보관', '📦 Store All Furniture') : T('🛋️ 가구 전체 배치', '🛋️ Place All Furniture'));
-          masterBtn.type = 'button';
-          masterBtn.title = anyPlaced ? T('모든 가구를 보관함에 넣어 사무실을 깔끔하게 정리합니다', 'Store all furniture into inventory') : T('보관 중인 모든 가구를 사무실에 다시 배치합니다', 'Place all stored furniture back into office');
-          masterBtn.addEventListener('click', () => {
-            if (anyPlaced) {
-              setDisabledFurniture(decorOwned);
-              showToast(T('📦 모든 가구를 보관함에 정리했습니다.', '📦 All furniture stored into inventory.'), '📦');
-              playRetroSound('click');
-            } else {
-              setDisabledFurniture([]);
-              store.set('showFurniture', true);
-              showToast(T('🛋️ 모든 가구를 사무실에 다시 배치했습니다! ✨', '🛋️ All furniture placed back in office! ✨'), '🛋️');
-              playRetroSound('buy');
-            }
+          const btnGroup = elem('div', 'shop-preset-wrap');
+
+          const btnOffice = elem('button', 'shop-preset-btn', T('🏢 오피스 세트', '🏢 Office Preset'));
+          btnOffice.type = 'button';
+          btnOffice.title = T('일반 사무실 인테리어(커피머신·자판기·소파 등) 위주로 깔끔하게 배치합니다', 'Place standard office decor');
+          btnOffice.addEventListener('click', () => {
+            const catPlay = ['cat_wheel', 'cat_tunnel', 'cat_tower', 'cat_box', 'cat_scratch_post'];
+            setDisabledFurniture(decorOwned.filter((id) => catPlay.includes(id)));
+            store.set('showFurniture', true);
+            showToast(T('🏢 오피스 세트로 테마를 변경했습니다.', '🏢 Switched to Office preset.'), '🏢');
+            playRetroSound('buy');
             renderShopModal();
             refreshSettings();
           });
-          header.append(left, masterBtn);
+
+          const btnCat = elem('button', 'shop-preset-btn', T('🐱 냥이 카페 세트', '🐱 Cat Cafe Preset'));
+          btnCat.type = 'button';
+          btnCat.title = T('고양이 놀이기구와 휴식 가구 위주로 아늑하게 배치합니다', 'Place cat playground & lounge');
+          btnCat.addEventListener('click', () => {
+            const officeHeavy = ['arcade_cabinet', 'server_rack', 'neon_sign', 'aquarium', 'tech_bookshelf', 'turntable'];
+            setDisabledFurniture(decorOwned.filter((id) => officeHeavy.includes(id)));
+            store.set('showFurniture', true);
+            showToast(T('🐱 냥이 카페 세트로 테마를 변경했습니다.', '🐱 Switched to Cat Cafe preset.'), '🐱');
+            playRetroSound('cat');
+            renderShopModal();
+            refreshSettings();
+          });
+
+          const btnAll = elem('button', 'shop-preset-btn', T('✨ 풀 세트', '✨ Place All'));
+          btnAll.type = 'button';
+          btnAll.title = T('보유한 모든 가구를 사무실에 가득 배치합니다', 'Place all owned furniture');
+          btnAll.addEventListener('click', () => {
+            setDisabledFurniture([]);
+            store.set('showFurniture', true);
+            showToast(T('✨ 모든 가구를 배치했습니다!', '✨ All furniture placed!'), '✨');
+            playRetroSound('buy');
+            renderShopModal();
+            refreshSettings();
+          });
+
+          const btnMinimal = elem('button', 'shop-preset-btn', T('📦 미니멀 (모두 비우기)', '📦 Store All'));
+          btnMinimal.type = 'button';
+          btnMinimal.title = T('모든 가구를 보관함에 넣어 책상만 남깁니다', 'Store all into inventory');
+          btnMinimal.addEventListener('click', () => {
+            setDisabledFurniture(decorOwned);
+            showToast(T('📦 모든 가구를 보관함에 정리했습니다.', '📦 All furniture stored.'), '📦');
+            playRetroSound('click');
+            renderShopModal();
+            refreshSettings();
+          });
+
+          btnGroup.append(btnOffice, btnCat, btnAll, btnMinimal);
+          header.append(left, btnGroup);
         } else {
           header.append(left);
         }
@@ -6949,7 +6941,29 @@ if (shopCoinBadgeEl) {
   });
 }
 btnPin.addEventListener('click', () => setPinned(!pinned));
-btnHook.addEventListener('click', toggleHooks);
+if (btnHook) btnHook.addEventListener('click', toggleHooks);
+
+// ⋯ 상단 HUD 더보기 메뉴 제어
+const btnMore = $('btnMore'), hudMoreMenuEl = $('hudMoreMenu');
+if (btnMore && hudMoreMenuEl) {
+  btnMore.addEventListener('click', (e) => {
+    e.stopPropagation();
+    hudMoreMenuEl.hidden = !hudMoreMenuEl.hidden;
+    btnMore.classList.toggle('on', !hudMoreMenuEl.hidden);
+  });
+  document.addEventListener('click', (e) => {
+    if (!hudMoreMenuEl.hidden && !hudMoreMenuEl.contains(e.target) && e.target !== btnMore) {
+      hudMoreMenuEl.hidden = true;
+      btnMore.classList.remove('on');
+    }
+  });
+  hudMoreMenuEl.querySelectorAll('.more-item').forEach((b) => {
+    b.addEventListener('click', () => {
+      hudMoreMenuEl.hidden = true;
+      btnMore.classList.remove('on');
+    });
+  });
+}
 
 // Claude Code 연결 = 상태 알림(data.hooks)과 휴대폰 지시·승인(remoteState.installed)을 한 번에 넣고 뺀다(앱이 확인 창을 띄운다)
 const claudeConnected = () => !!data.hooks && data.hooks.state !== 'off' && !!remoteState?.installed;
@@ -6965,6 +6979,7 @@ function hookStatus() {
 
 /** 상단 🔕 버튼: 연결이 안 됐거나 덜 됐을 때만 보인다(누르면 연결). 다 연결되면 숨긴다. */
 function refreshHookButton() {
+  if (!btnHook) return;
   const h = data.hooks;
   btnHook.hidden = !h || REMOTE || (h.state === 'on' && !!remoteState?.installed);   // 연결은 PC에서만
   if (btnHook.hidden) return;
@@ -7331,12 +7346,12 @@ function setLanguage(v) {
   } else setAppSetting('language', v);
 }
 
-const elem = (tag, cls, text) => {
+function elem(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   if (text) e.textContent = text;
   return e;
-};
+}
 
 // 형식마다 조작부를 줄에 붙이고 "값을 다시 그리는 함수"를 돌려준다.
 // 줄은 한 번만 만들고 이후엔 값만 고친다(스냅샷마다 다시 만들면 누르는 도중에 버튼이 바뀌어 클릭이 사라진다).

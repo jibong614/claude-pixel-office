@@ -32,18 +32,25 @@
     </div>
     <!-- 영어 화면이면 office.js 가 data-en(글)·data-en-title·data-en-ph 로 바꾼다 -->
     <button id="btnSearch" title="직원 빠른 검색 (단축키: /)" data-en-title="Quick search employees (Shortcut: /)">🔍</button>
-    <button id="btnPet" title="바탕화면 미니위젯 (단축키: M) — 대표 직원을 바탕화면 구석에 꺼내 두기" data-en-title="Desktop MiniWidget (Shortcut: M) — keep a representative employee in the corner of your desktop">🪟</button>
-    <button id="btnWidget" title="작게 보기(목록) (단축키: W) — 직원·상태만 한 줄씩" data-en-title="Compact view (list) (Shortcut: W) — one line per employee">📋</button>
-    <button id="btnToday" title="근무 일지 (단축키: R) — 일한 시간·지시·토큰·비용" data-en-title="Work log (Shortcut: R) — work time, prompts, tokens, cost">📊</button>
-    <button id="btnAchieve" title="업적 도감 & 명예의 전당 (단축키: A) — 전사 업적·직급 랭킹" data-en-title="Achievements & Hall of Fame (Shortcut: A) — company achievements & leaderboard">🏆</button>
-    <button id="btnShop" title="가구 & 소품 상점 (단축키: S) — 코인으로 사무실 인테리어 꾸미기" data-en-title="Furniture & Decor Shop (Shortcut: S) — decorate office with coins">🛋️</button>
-    <button id="btnBroadcast" title="전체 세션 브로드캐스트 지시 (단축키: B) — 모든 활성 세션에 일괄 전달" data-en-title="Broadcast to all sessions (Shortcut: B)">📢</button>
-    <button id="btnNightShift" title="야간 당직 모드 (단축키: N) — 야간 자율 모니터링 & 아침 브리핑 요약" data-en-title="Night Shift Mode (Shortcut: N)">🌙</button>
-    <button id="btnCoins" class="hud-coins" title="보유 코인 — 상점 열기" data-en-title="Current Coins — open shop">🪙 <span id="hudCoins">0</span></button>
-    <button id="btnHook" hidden>🔕</button>
-    <button id="btnAway" title="퇴근한 직원 보이기/숨기기">🚪</button>
+    <button id="btnPet" title="산책모드 (단축키: M) — 직원을 바탕화면에서 자유롭게 산책시키기" data-en-title="Walk Mode (Shortcut: M)">🪟</button>
+    <button id="btnCoins" class="hud-coins" title="상점 & 보관함 열기 (단축키: S)" data-en-title="Current Coins — open shop (Shortcut: S)">🪙 <span id="hudCoins">0</span></button>
     <button id="btnPin" title="항상 위에 표시">📌</button>
+    <div class="hud-more-wrap">
+      <button id="btnMore" title="더 많은 메뉴 (근무일지·업적·브로드캐스트 등)" data-en-title="More Options">⋯</button>
+      <div id="hudMoreMenu" class="hud-more-menu" hidden>
+        <button id="btnWidget" class="more-item" type="button"><span class="m-icon">📋</span> <span class="m-txt" data-en="Compact view (W)">작게 보기 (W)</span></button>
+        <button id="btnToday" class="more-item" type="button"><span class="m-icon">📊</span> <span class="m-txt" data-en="Work log (R)">근무 일지 (R)</span></button>
+        <button id="btnAchieve" class="more-item" type="button"><span class="m-icon">🏆</span> <span class="m-txt" data-en="Achievements (A)">업적 도감 (A)</span></button>
+        <button id="btnAway" class="more-item" type="button"><span class="m-icon">🚪</span> <span class="m-txt" data-en="Toggle absent staff">퇴근 직원 표시</span></button>
+        <div class="more-divider"></div>
+        <div class="more-sec-lbl" data-en="Advanced Features">고급 기능</div>
+        <button id="btnBroadcast" class="more-item" type="button"><span class="m-icon">📢</span> <span class="m-txt" data-en="Broadcast (B)">전체 브로드캐스트 (B)</span></button>
+        <button id="btnNightShift" class="more-item" type="button"><span class="m-icon">🌙</span> <span class="m-txt" data-en="Night Shift (N)">야간 당직 모드 (N)</span></button>
+      </div>
+    </div>
     <button id="btnSettings" title="설정" data-en-title="Settings">⚙️</button>
+    <button id="btnHook" hidden>??</button>
+    <button id="btnShop" hidden></button>
   </div>
 
   <div id="tooltip" hidden></div>
@@ -63,51 +70,67 @@
     <h2 id="pName"></h2>
     <div id="pTitle" class="dim"></div>
     <div class="pbar"><div id="pState" class="state"></div><button id="pFocusConsoleTop" class="mini btn-console-jump" title="이 직원의 터미널/VS Code 창으로 즉시 점프 (단축키: Alt+1~9)" data-en-title="Jump to this session's terminal/VS Code window (Alt+1~9)" data-en="⚡ Console Jump">⚡ 콘솔 점프</button><button id="pPet" class="mini" title="이 직원을 바탕화면 미니펫으로 꺼내기" data-en-title="Show this employee as the desktop MiniPet" data-en="🐾 MiniPet">🐾 미니펫</button></div>
-    <!-- 📊 대화 기억량 (컨텍스트 윈도우 잔여량 게이지 & 압축 경고) -->
-    <div id="pCtxMeter" class="ctx-meter-card"></div>
-    <!-- 휴대폰 지시·승인: 승인 요청(승인·거절)·Claude 의 마지막 답·지시 보내기. 휴대폰 화면(과 견본)에서, Claude Code 와 연결했을 때만 -->
-    <section id="pRemote" hidden>
-      <h3 data-en="📱 Instruct & approve from the phone">📱 휴대폰 지시·승인</h3>
-      <div id="rStatus" class="rstatus"></div>
-      <div id="rAsks"></div>
-      <div id="rSayWrap">
-        <textarea id="rSay" class="field" rows="3" maxlength="1000" placeholder="이 직원에게 보낼 지시 (같은 대화에서 이어서 일합니다)" data-en-ph="Instruction for this employee (continues in the same conversation)"></textarea>
-        <div class="rrow"><span id="rSaid" class="dim"></span><button id="rVoice" type="button" class="mini voice-btn" title="음성으로 지시하기 (Voice Prompt)" data-en-title="Voice-to-Prompt">🎙️</button><button id="rSend" class="mini" data-en="Send">보내기</button></div>
+
+    <!-- 핵심 업무: 지시와 답변 -->
+    <section class="p-card-primary">
+      <h3 data-en="Last prompt">마지막 지시</h3>
+      <p id="pPrompt" class="prompt"></p>
+      <section id="pReplyWrap" hidden>
+        <h3 data-en="Last Answer">마지막 답변</h3>
+        <p id="pReply" class="prompt reply"></p>
+      </section>
+    </section>
+
+    <!-- 별명 & 메모 -->
+    <h3 data-en="Nickname · Memo">메모</h3>
+    <textarea id="pMemo" class="field" rows="2" placeholder="이 세션에 대한 메모 (쓰는 대로 저장됩니다)" data-en-ph="Memo about this session (saved as you type)"></textarea>
+
+    <!-- 상세 개발 정보 아코디언 (기본 접힘) -->
+    <details id="pDetails" class="p-details-box">
+      <summary class="p-details-summary">
+        <span class="p-sum-txt">🛠️ 상세 개발 정보 (시스템·로그·통계)</span>
+        <span class="p-sum-arrow">▼</span>
+      </summary>
+      <div class="p-details-content">
+        <!-- 📊 대화 기억량 (컨텍스트 윈도우 잔여량 게이지 & 압축 경고) -->
+        <div id="pCtxMeter" class="ctx-meter-card"></div>
+        <!-- 휴대폰 지시·승인 -->
+        <section id="pRemote" hidden>
+          <h3 data-en="📱 Instruct & approve from the phone">📱 휴대폰 지시·승인</h3>
+          <div id="rStatus" class="rstatus"></div>
+          <div id="rAsks"></div>
+          <div id="rSayWrap">
+            <textarea id="rSay" class="field" rows="3" maxlength="1000" placeholder="이 직원에게 보낼 지시 (같은 대화에서 이어서 일합니다)" data-en-ph="Instruction for this employee (continues in the same conversation)"></textarea>
+            <div class="rrow"><span id="rSaid" class="dim"></span><button id="rVoice" type="button" class="mini voice-btn" title="음성으로 지시하기 (Voice Prompt)" data-en-title="Voice-to-Prompt">🎙️</button><button id="rSend" class="mini" data-en="Send">보내기</button></div>
+          </div>
+          <div id="rReplyWrap" hidden>
+            <div id="rReplyHead" class="dim"></div>
+            <p id="rReply" class="prompt reply"></p>
+          </div>
+        </section>
+        <h3 data-en="Nickname">별명</h3>
+        <input id="pNick" class="field" type="text" maxlength="30" autocomplete="off" spellcheck="false">
+        <div id="pSync" class="dim"></div>
+        <div id="pLookBar" class="look-bar"></div>
+        <dl>
+          <dt data-en="Team">팀</dt><dd><span id="pTeam"></span> <span class="seat"><button id="pSeatL" class="mini" title="같은 팀 안에서 자리를 앞으로" data-en-title="Move the seat earlier in the team" data-en="◀ Seat">◀ 자리</button><button id="pSeatR" class="mini" title="같은 팀 안에서 자리를 뒤로" data-en-title="Move the seat later in the team" data-en="Seat ▶">자리 ▶</button></span></dd>
+          <dt data-en="Folder">작업 폴더</dt><dd><span id="pCwd" class="mono"></span> <button id="pOpenDir" class="mini" title="탐색기로 작업 폴더 열기" data-en-title="Open the working folder in Explorer" data-en="📂 Open">📂 열기</button></dd>
+          <dt data-en="Runs in">실행 위치</dt><dd><span id="pEntry"></span> <button id="pFocusWin" class="mini" title="이 세션이 열려 있는 VS Code·터미널 창을 맨 앞으로 가져옵니다" data-en-title="Bring this session's VS Code or terminal window to the front" data-en="🖥️ Window">🖥️ 창으로</button></dd>
+          <dt data-en="Model">모델</dt><dd id="pModel"></dd>
+          <dt data-en="Branch">브랜치</dt><dd id="pBranch"></dd>
+          <dt data-en="Last active">마지막 활동</dt><dd id="pLast"></dd>
+        </dl>
+        <h3 data-en="Today's Activity">오늘의 업무 활동</h3>
+        <div id="pToday" class="today"></div>
+        <section id="pInternsWrap">
+          <h3 data-en="Interns (Subagents)">인턴 (서브에이전트)</h3>
+          <ul id="pInterns"></ul>
+        </section>
+        <h3 data-en="Recent Work">최근 작업 내역</h3>
+        <ul id="pLog"></ul>
+        <div id="pId" class="dim mono"></div>
       </div>
-      <div id="rReplyWrap" hidden>
-        <div id="rReplyHead" class="dim"></div>
-        <p id="rReply" class="prompt reply"></p>
-      </div>
-    </section>
-    <!-- 별명·메모: 세션 ID 기준으로 이 PC에 저장(세션 이름을 바꿔도 남음) -->
-    <h3 data-en="Nickname · Memo">별명 · 메모</h3>
-    <input id="pNick" class="field" type="text" maxlength="30" autocomplete="off" spellcheck="false">
-    <textarea id="pMemo" class="field" rows="3" placeholder="이 세션에 대한 메모 (쓰는 대로 저장됩니다)" data-en-ph="Memo about this session (saved as you type)"></textarea>
-    <div id="pSync" class="dim"></div>
-    <div id="pLookBar" class="look-bar"></div>
-    <dl>
-      <dt data-en="Team">팀</dt><dd><span id="pTeam"></span> <span class="seat"><button id="pSeatL" class="mini" title="같은 팀 안에서 자리를 앞으로" data-en-title="Move the seat earlier in the team" data-en="◀ Seat">◀ 자리</button><button id="pSeatR" class="mini" title="같은 팀 안에서 자리를 뒤로" data-en-title="Move the seat later in the team" data-en="Seat ▶">자리 ▶</button></span></dd>
-      <dt data-en="Folder">작업 폴더</dt><dd><span id="pCwd" class="mono"></span> <button id="pOpenDir" class="mini" title="탐색기로 작업 폴더 열기" data-en-title="Open the working folder in Explorer" data-en="📂 Open">📂 열기</button></dd>
-      <dt data-en="Runs in">실행 위치</dt><dd><span id="pEntry"></span> <button id="pFocusWin" class="mini" title="이 세션이 열려 있는 VS Code·터미널 창을 맨 앞으로 가져옵니다" data-en-title="Bring this session's VS Code or terminal window to the front" data-en="🖥️ Window">🖥️ 창으로</button></dd>
-      <dt data-en="Model">모델</dt><dd id="pModel"></dd>
-      <dt data-en="Branch">브랜치</dt><dd id="pBranch"></dd>
-      <dt data-en="Last active">마지막 활동</dt><dd id="pLast"></dd>
-    </dl>
-    <h3 data-en="Today's Activity">오늘의 업무 활동</h3>
-    <div id="pToday" class="today"></div>
-    <h3 data-en="Last prompt">마지막 지시</h3>
-    <p id="pPrompt" class="prompt"></p>
-    <section id="pReplyWrap" hidden>
-      <h3 data-en="Last Answer">마지막 답변</h3>
-      <p id="pReply" class="prompt reply"></p>
-    </section>
-    <section id="pInternsWrap">
-      <h3 data-en="Interns (Subagents)">인턴 (서브에이전트)</h3>
-      <ul id="pInterns"></ul>
-    </section>
-    <h3 data-en="Recent Work">최근 작업 내역</h3>
-    <ul id="pLog"></ul>
-    <div id="pId" class="dim mono"></div>
+    </details>
     </div>
   </aside>
 
