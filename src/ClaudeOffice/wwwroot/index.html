@@ -374,31 +374,33 @@
     </div>
   </div>
 
-  <!-- 💼 최초 1회 시작 모드 선택 모달 -->
-  <div id="modeSelectModal" class="modal" hidden>
+  <!-- 💼 최초 1회 시작 모드 선택 모달 (완전 불투명 블라인드 배경) -->
+  <div id="modeSelectModal" class="modal mode-blind-modal" hidden>
     <div class="mbox mode-select-box" role="dialog" aria-modal="true" aria-labelledby="msTitle">
-      <div class="mhead">
+      <div class="mhead mode-select-head">
         <h2 id="msTitle" data-en="💼 Select Operation Mode">💼 시작 모드 선택</h2>
       </div>
-      <p class="mode-select-desc" data-en="Choose a display mode suitable for your work environment. You can change this anytime in Settings (⚙️).">
-        사무실 환경과 취향에 맞는 화면 모드를 선택해 주세요.<br>
-        <span class="dim">※ 설정(⚙️)에서 언제든지 다시 변경할 수 있습니다.</span>
-      </p>
-      <div class="mode-cards">
-        <button type="button" class="mode-card" data-mode="basic">
-          <div class="mode-icon">🎮</div>
-          <div class="mode-info">
-            <div class="mode-title" data-en="Basic Mode (Pixel Office)">기본 모드 (픽셀 오피스)</div>
-            <div class="mode-sub" data-en="Adorable pixel characters, furniture decor, cats and walk mode.">도트 캐릭터, 가구 인테리어, 고양이와 산책 모드가 포함된 아기자기한 기본 모드</div>
-          </div>
-        </button>
-        <button type="button" class="mode-card" data-mode="office">
-          <div class="mode-icon">💼</div>
-          <div class="mode-info">
-            <div class="mode-title" data-en="Office Mode (No Game Graphics)">오피스 모드 (그래픽 요소 제외)</div>
-            <div class="mode-sub" data-en="Clean developer dashboard without gaming graphics. Perfect for company work.">회사에서 부담 없이 켤 수 있도록 캐릭터·가구 등 게임 요소를 제외한 깔끔한 비즈니스 대시보드 모드</div>
-          </div>
-        </button>
+      <div class="mode-select-body">
+        <p class="mode-select-desc" data-en="Choose a display mode suitable for your work environment. You can change this anytime in Settings (⚙️).">
+          사무실 환경과 취향에 맞는 화면 모드를 선택해 주세요.<br>
+          <span class="dim">※ 설정(⚙️)에서 언제든지 다시 변경할 수 있습니다.</span>
+        </p>
+        <div class="mode-cards">
+          <button type="button" class="mode-card" data-mode="basic">
+            <div class="mode-icon">🎮</div>
+            <div class="mode-info">
+              <div class="mode-title" data-en="Basic Mode (Pixel Office)">기본 모드 (픽셀 오피스)</div>
+              <div class="mode-sub" data-en="Adorable pixel characters, furniture decor, cats and walk mode.">도트 캐릭터, 가구 인테리어, 고양이와 산책 모드가 포함된 기본 모드</div>
+            </div>
+          </button>
+          <button type="button" class="mode-card" data-mode="office">
+            <div class="mode-icon">💼</div>
+            <div class="mode-info">
+              <div class="mode-title" data-en="Office Mode (No Game Graphics)">오피스 모드 (그래픽 요소 제외)</div>
+              <div class="mode-sub" data-en="Clean developer dashboard without gaming graphics. Perfect for company work.">캐릭터·가구 등 게임 요소를 제외한 깔끔한 비즈니스 대시보드 모드</div>
+            </div>
+          </button>
+        </div>
       </div>
     </div>
   </div>

@@ -3576,46 +3576,85 @@ body.pet-float #pet.pet-island {
   transform: translateY(-1px);
 }
 
-/* 💼 시작 모드 선택 모달 (최초 1회 & 온보딩) */
+/* 💼 시작 모드 선택 모달 (최초 1회 온보딩 & 완전 암막 블라인드) */
+#modeSelectModal.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0b0d14 !important; /* 모드 선택 중 뒤 세션/캐릭터가 일체 보이지 않도록 완전 블라인드 처리 */
+}
 .mode-select-box {
-  width: 520px;
-  max-width: 92vw;
+  width: 440px !important;
+  max-width: calc(100vw - 32px) !important;
+  height: auto !important;
+  max-height: none !important;
+  box-sizing: border-box !important;
+  background: #141724 !important;
+  border: 1px solid rgba(124, 107, 224, 0.4) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(124, 107, 224, 0.2) !important;
+  overflow: hidden;
+}
+.mode-select-head {
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.mode-select-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+.mode-select-body {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   box-sizing: border-box;
 }
 .mode-select-desc {
-  margin: 4px 0 16px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: #cbd5e1;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+.mode-select-desc .dim {
+  color: #64748b;
+  font-size: 11.5px;
+  display: inline-block;
+  margin-top: 3px;
 }
 .mode-cards {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 .mode-card {
   all: unset;
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 18px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   cursor: pointer;
   box-sizing: border-box;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .mode-card:hover {
-  background: rgba(99, 102, 241, 0.12);
+  background: rgba(99, 102, 241, 0.14);
   border-color: #6366f1;
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.25);
 }
 .mode-icon {
-  font-size: 32px;
+  font-size: 26px;
   flex-shrink: 0;
-  width: 44px;
+  width: 36px;
   text-align: center;
 }
 .mode-info {
@@ -3623,15 +3662,15 @@ body.pet-float #pet.pet-island {
   text-align: left;
 }
 .mode-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: #f8fafc;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 .mode-sub {
-  font-size: 12px;
+  font-size: 11.5px;
   color: #94a3b8;
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
 /* 💼 오피스 모드: 비즈니스 대시보드 뷰 */
