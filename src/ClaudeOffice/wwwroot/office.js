@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.7.0';
+const PAGE_VERSION = '1.7.1';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -219,6 +219,8 @@ function onSavedShare(saved) {
     if (saved.cat && typeof saved.cat === 'object') {
       officeCatState = Object.assign(officeCatState, saved.cat);
       if (!Array.isArray(officeCatState.disabledCats)) officeCatState.disabledCats = [];
+      if (!officeCatState.adoptDates || typeof officeCatState.adoptDates !== 'object') officeCatState.adoptDates = {};
+      if (!officeCatState.growthBonus || typeof officeCatState.growthBonus !== 'object') officeCatState.growthBonus = {};
       saveOfficeCatState();
     }
     if (typeof saved.coins === 'number' && saved.coins > (typeof getCoins === 'function' ? getCoins() : 0)) {
@@ -865,9 +867,17 @@ function loadOfficeCatState() {
         poopCount: 0,
         lastPetDate: '',
         names: {},
+        adoptDates: {},
+        growthBonus: {},
       }, obj);
       if (!Array.isArray(loaded.disabledCats)) {
         loaded.disabledCats = [];
+      }
+      if (!loaded.adoptDates || typeof loaded.adoptDates !== 'object') {
+        loaded.adoptDates = {};
+      }
+      if (!loaded.growthBonus || typeof loaded.growthBonus !== 'object') {
+        loaded.growthBonus = {};
       }
       if (typeof loaded.foodPortions !== 'number') {
         loaded.foodPortions = loaded.foodEmpty ? 0 : 10;
@@ -887,6 +897,8 @@ function loadOfficeCatState() {
     poopCount: 0,
     lastPetDate: '',
     names: {},
+    adoptDates: {},
+    growthBonus: {},
   };
 }
 
@@ -1064,6 +1076,68 @@ function toggleCatActive(type, active) {
   refreshSettings();
 }
 
+function getCatAgeDays(type) {
+  const state = (remoteShare?.cat) ? remoteShare.cat : officeCatState;
+  if (!state.adoptDates) state.adoptDates = {};
+  if (!state.growthBonus) state.growthBonus = {};
+  let adoptTs = state.adoptDates[type];
+  if (!adoptTs) {
+    adoptTs = Date.now();
+    state.adoptDates[type] = adoptTs;
+  }
+  const daysPassed = Math.max(0, Math.floor((Date.now() - adoptTs) / 86400000));
+  const bonus = typeof state.growthBonus[type] === 'number' ? state.growthBonus[type] : 0;
+  return daysPassed + bonus;
+}
+
+function getCatGrowthStage(type) {
+  const days = getCatAgeDays(type);
+  if (days < 60) return 'baby';
+  if (days < 120) return 'junior';
+  return 'adult';
+}
+
+function getCatGrowthStageName(stage) {
+  if (stage === 'baby') return T('🍼 아깽이', '🍼 Kitten');
+  if (stage === 'junior') return T('⚡ 캣초딩', '⚡ Junior');
+  return T('👑 성묘', '👑 Adult');
+}
+
+function setCatGrowthStage(type, targetStage) {
+  if (!officeCatState.adoptDates) officeCatState.adoptDates = {};
+  if (!officeCatState.growthBonus) officeCatState.growthBonus = {};
+  const targetDays = targetStage === 'baby' ? 0 : targetStage === 'junior' ? 60 : 120;
+  officeCatState.adoptDates[type] = Date.now() - targetDays * 86400000;
+  officeCatState.growthBonus[type] = 0;
+  saveOfficeCatState();
+  if (!REMOTE) shareToApp();
+
+  const breed = CAT_BREEDS[type];
+  const catName = officeCatState.names?.[type] || breed?.defaultName || type;
+  const stageName = getCatGrowthStageName(targetStage);
+  showToast(T(`✨ 「${catName}」(이)가 ${stageName}(으)로 성장 단계를 변경했습니다!`, `✨ "${catName}" changed growth stage to ${stageName}!`), '🐾');
+  playRetroSound('cat');
+  renderShopModal();
+}
+
+function addCatGrowthBonus(type, days) {
+  if (!officeCatState.growthBonus) officeCatState.growthBonus = {};
+  const prevStage = getCatGrowthStage(type);
+  officeCatState.growthBonus[type] = (officeCatState.growthBonus[type] || 0) + days;
+  const newStage = getCatGrowthStage(type);
+  saveOfficeCatState();
+  if (!REMOTE) shareToApp();
+
+  if (prevStage !== newStage) {
+    const breed = CAT_BREEDS[type];
+    const catName = officeCatState.names?.[type] || breed?.defaultName || type;
+    const stageName = getCatGrowthStageName(newStage);
+    playRetroSound('done');
+    playRetroSound('cat');
+    showToast(T(`🎉 축하합니다! 「${catName}」(이)가 쑥쑥 자라 ${stageName}(으)로 진화했습니다! ✨`, `🎉 Congratulations! "${catName}" grew into ${stageName}! ✨`), '🐱');
+  }
+}
+
 function adoptCat(item) {
   const owned = getOwnedFurniture();
   // 필수 조건: 화장실과 식기 모두 소유
@@ -1087,6 +1161,11 @@ function adoptCat(item) {
   if (Array.isArray(officeCatState.disabledCats)) {
     officeCatState.disabledCats = officeCatState.disabledCats.filter((x) => x !== item.catType);
   }
+  if (!officeCatState.adoptDates) officeCatState.adoptDates = {};
+  officeCatState.adoptDates[item.catType] = Date.now();
+  if (!officeCatState.growthBonus) officeCatState.growthBonus = {};
+  officeCatState.growthBonus[item.catType] = 0;
+
   officeCatState.adopted = true;
   store.set('showCats', true);
   saveOfficeCatState();
@@ -1096,7 +1175,7 @@ function adoptCat(item) {
   playRetroSound('done');
   spawnHearts(Math.round(logicalW / 2), WALL_H + 20);
   markQuest('first_cat_adopt');
-  showToast(T(`🎉 축하합니다! 새로운 가족 「${item.catName}」(이)가 사무실에 입주했습니다! 🐱💕`, `🎉 Welcome your new cat "${item.catName}" to the office! 🐱💕`), '🐱');
+  showToast(T(`🎉 축하합니다! 새로운 아깽이 「${item.catName}」(이)가 입주했습니다! 🍼💕`, `🎉 Welcome your new kitten "${item.catName}"! 🍼💕`), '🐱');
   renderShopModal();
   updateCoinDisplay();
   return true;
@@ -1876,8 +1955,12 @@ function petOfficeCat(cat) {
   spawnHearts(cat.x + 6, cat.y - 2);
   cat.state = 'petted';
   cat.stateTimer = 2600;
-  cat.bubbleText = T('골골송... 💕', 'Purrr... 💕');
+  const stage = getCatGrowthStage(cat.type);
+  cat.bubbleText = stage === 'baby' ? T('먕! 🍼 (성장 +1일!)', 'Mew! 🍼 (+1d growth!)') :
+                   stage === 'junior' ? T('골골... ⚡ (성장 +1일!)', 'Purr... ⚡ (+1d growth!)') :
+                   T('골골송... 💕', 'Purrr... 💕');
   cat.bubbleTimer = 2600;
+  addCatGrowthBonus(cat.type, 1);
 
   if (bonus > 0) {
     showToast(T(`💕 ${cat.name}(이)가 기분 좋게 골골송을 부릅니다! (일일 첫 교감: +10🪙, 친밀도: ${officeCatState.affection}%)`, `💕 ${cat.name} purrs happily! (+10🪙, Affection: ${officeCatState.affection}%)`), '🐱');
@@ -2108,7 +2191,217 @@ function drawPixelCat(cat, t) {
   const x = Math.round(cat.x);
   const y = Math.round(cat.y);
   const dir = cat.dir;
+  const stage = getCatGrowthStage(cat.type);
 
+  if (stage === 'baby') {
+    const bboxW = 7;
+    const cP = (dx, dy, c) => {
+      const rx = dir === 1 ? x + dx : x + (bboxW - 1 - dx);
+      P(rx, y + dy, c);
+    };
+    const cR = (dx, dy, w, h, c) => {
+      const rx = dir === 1 ? x + dx : x + (bboxW - dx - w);
+      R(rx, y + dy, w, h, c);
+    };
+
+    if (cat.state === 'loaf' || cat.state === 'sit' || cat.state === 'onMonitor' || cat.state === 'onTower') {
+      const breath = tick(t, 800) ? 1 : 0;
+      cR(1, 2 - breath, 5, 3, pal.base);
+      cR(4, 1 - breath, 3, 3, pal.base);
+      cP(4, -breath, pal.ear || pal.dark);
+      cP(6, -breath, pal.ear || pal.dark);
+      cP(5, 1 - breath, pal.eye);
+      cP(6, 2 - breath, pal.nose);
+      cR(2, 4 - breath, 3, 1, pal.white);
+      if (cat.type === 'cheese') {
+        cP(2, 2 - breath, pal.dark);
+      } else if (cat.type === 'calico') {
+        cP(2, 2 - breath, pal.dark);
+        cP(3, 3 - breath, pal.black);
+      }
+      const tailWag = tick(t, 250) ? 1 : 0;
+      cP(0, 2 - breath, pal.dark);
+      cP(0 - tailWag, 1 - breath, pal.base);
+    } else if (cat.state === 'inBox') {
+      cP(3, 0, pal.ear || pal.dark);
+      cP(5, 0, pal.ear || pal.dark);
+      cR(3, 1, 3, 2, pal.base);
+      cP(4, 1, pal.eye);
+      cP(5, 2, pal.nose);
+    } else if (cat.state === 'pooping') {
+      cR(1, 1, 4, 4, pal.base);
+      cR(4, 1, 3, 3, pal.base);
+      cP(4, 0, pal.ear || pal.dark);
+      cP(6, 0, pal.ear || pal.dark);
+      cP(6, 2, pal.nose);
+      cP(0, 2, pal.dark);
+    } else if (cat.state === 'eating') {
+      const dip = tick(t, 200) ? 1 : 0;
+      cR(1, 2, 4, 3, pal.base);
+      cR(4, 2 + dip, 3, 3, pal.base);
+      cP(4, 1 + dip, pal.ear || pal.dark);
+      cP(6, 1 + dip, pal.ear || pal.dark);
+      cP(6, 3 + dip, pal.nose);
+      const tailWag = tick(t, 180) ? 1 : 0;
+      cP(0, 2, pal.dark);
+      cP(0 - tailWag, 1, pal.base);
+      cR(2, 4, 3, 1, pal.white);
+    } else if (cat.state === 'petted') {
+      cR(1, 2, 5, 3, pal.base);
+      cR(4, 1, 3, 3, pal.base);
+      cP(4, 0, pal.ear || pal.dark);
+      cP(6, 0, pal.ear || pal.dark);
+      cP(6, 2, pal.nose);
+      const fastTail = tick(t, 100) ? 1 : 0;
+      cP(0, 1, pal.dark);
+      cP(0 + fastTail, 0, pal.base);
+      cR(2, 4, 3, 1, pal.white);
+    } else {
+      const isWalk = cat.state === 'walk';
+      const step = isWalk ? tick(t, 120, 4) : 0;
+      const bob = isWalk && (step === 1 || step === 3) ? 1 : 0;
+
+      cR(1, 2 - bob, 4, 3, pal.base);
+      if (cat.type === 'cheese') {
+        cP(2, 2 - bob, pal.dark);
+        cP(4, 2 - bob, pal.dark);
+      } else if (cat.type === 'calico') {
+        cP(2, 2 - bob, pal.dark);
+        cP(3, 3 - bob, pal.black);
+      }
+
+      cR(4, 0 - bob, 3, 3, pal.base);
+      cP(4, -1 - bob, pal.ear || pal.dark);
+      cP(6, -1 - bob, pal.ear || pal.dark);
+
+      if (cat.type === 'white') {
+        cP(5, 1 - bob, pal.eye);
+        cP(6, 1 - bob, pal.eyeR || pal.eye);
+      } else {
+        cP(5, 1 - bob, pal.eye);
+      }
+      cP(6, 2 - bob, pal.nose);
+      cR(4, 3 - bob, 2, 1, pal.white);
+
+      const tailWag = tick(t, 200) ? 1 : 0;
+      cP(0, 2 - bob, pal.dark);
+      cP(0 - tailWag, 1 - bob, pal.base);
+
+      if (isWalk) {
+        cP(4 + (step === 0 ? 1 : step === 2 ? -1 : 0), 5, pal.white);
+        cP(2 + (step === 1 ? 1 : step === 3 ? -1 : 0), 5, pal.white);
+      } else {
+        cP(2, 5, pal.white);
+        cP(4, 5, pal.white);
+      }
+    }
+    return;
+  }
+
+  if (stage === 'junior') {
+    const bboxW = 10;
+    const cP = (dx, dy, c) => {
+      const rx = dir === 1 ? x + dx : x + (bboxW - 1 - dx);
+      P(rx, y + dy, c);
+    };
+    const cR = (dx, dy, w, h, c) => {
+      const rx = dir === 1 ? x + dx : x + (bboxW - dx - w);
+      R(rx, y + dy, w, h, c);
+    };
+
+    if (cat.state === 'loaf' || cat.state === 'sit' || cat.state === 'onMonitor' || cat.state === 'onTower') {
+      const breath = tick(t, 900) ? 1 : 0;
+      cR(1, 2 - breath, 6, 3, pal.base);
+      cR(5, 1 - breath, 4, 3, pal.base);
+      cP(6, -breath, pal.dark);
+      cP(8, -breath, pal.ear || pal.dark);
+      cP(8, 2 - breath, pal.dark);
+      cP(9, 2 - breath, pal.nose);
+      cR(2, 4 - breath, 4, 1, pal.white);
+      if (cat.type === 'cheese') {
+        cP(3, 2 - breath, pal.dark);
+        cP(5, 2 - breath, pal.dark);
+      } else if (cat.type === 'calico') {
+        cP(3, 2 - breath, pal.dark);
+        cP(4, 3 - breath, pal.black);
+      }
+      const tailWag = tick(t, 350) ? 1 : 0;
+      cP(0, 3, pal.dark);
+      cP(0, 2 - breath - tailWag, pal.base);
+    } else if (cat.state === 'inBox') {
+      cP(4, 0, pal.dark); cP(6, 0, pal.ear || pal.dark);
+      cR(3, 1, 4, 3, pal.base);
+      cP(6, 2, pal.eye);
+      cP(7, 3, pal.nose);
+    } else if (cat.state === 'pooping') {
+      cR(2, 1, 5, 4, pal.base);
+      cR(6, 2, 3, 3, pal.base);
+      cP(6, 1, pal.dark); cP(8, 1, pal.ear || pal.dark);
+      cP(8, 3, pal.dark);
+      cP(9, 4, pal.nose);
+      cP(1, 2, pal.dark);
+    } else if (cat.state === 'eating') {
+      const dip = tick(t, 220) ? 1 : 0;
+      cR(1, 2, 6, 3, pal.base);
+      cR(6, 2 + dip, 3, 3, pal.base);
+      cP(6, 1 + dip, pal.dark); cP(8, 1 + dip, pal.ear || pal.dark);
+      cP(9, 3 + dip, pal.nose);
+      const tailWag = tick(t, 200) ? 1 : 0;
+      cP(0, 2, pal.dark); cP(0, 1 - tailWag, pal.base);
+      cR(2, 4, 4, 1, pal.white);
+    } else if (cat.state === 'petted') {
+      cR(1, 2, 6, 3, pal.base);
+      cR(6, 1, 4, 3, pal.base);
+      cP(7, 0, pal.dark); cP(9, 0, pal.ear || pal.dark);
+      cP(9, 2, pal.nose);
+      const fastTail = tick(t, 110) ? 1 : 0;
+      cP(1, 1, pal.dark);
+      cP(1 + fastTail, 0, pal.base);
+      cR(2, 4, 5, 1, pal.white);
+    } else {
+      const isWalk = cat.state === 'walk';
+      const step = isWalk ? tick(t, 120, 4) : 0;
+      const bob = isWalk && (step === 1 || step === 3) ? 1 : 0;
+
+      cR(2, 2 - bob, 6, 3, pal.base);
+      if (cat.type === 'cheese') {
+        cP(4, 2 - bob, pal.dark);
+        cP(6, 2 - bob, pal.dark);
+      } else if (cat.type === 'calico') {
+        cP(4, 2 - bob, pal.dark);
+        cP(5, 3 - bob, pal.black);
+      }
+
+      cR(6, 0 - bob, 4, 3, pal.base);
+      cP(7, -1 - bob, pal.dark);
+      cP(9, -1 - bob, pal.ear || pal.dark);
+
+      if (cat.type === 'white') {
+        cP(8, 1 - bob, pal.eye);
+        cP(9, 1 - bob, pal.eyeR || pal.eye);
+      } else {
+        cP(8, 1 - bob, pal.eye);
+      }
+      cP(9, 2 - bob, pal.nose);
+      cR(6, 3 - bob, 2, 1, pal.white);
+
+      const tailWag = tick(t, 220) ? 1 : 0;
+      cP(1, 2 - bob, pal.dark);
+      cP(0, 1 - bob, pal.dark);
+      cP(0, -bob - tailWag, pal.base);
+
+      if (isWalk) {
+        cP(7 + (step === 0 ? 1 : step === 2 ? -1 : 0), 5, pal.white);
+        cP(3 + (step === 1 ? 1 : step === 3 ? -1 : 0), 5, pal.white);
+      } else {
+        cP(3, 5, pal.white);
+        cP(7, 5, pal.white);
+      }
+    }
+    return;
+  }
+
+  // 3. adult (성묘 - 완성형 스탠다드 13px)
   const cP = (dx, dy, c) => {
     const rx = dir === 1 ? x + dx : x + (12 - dx);
     P(rx, y + dy, c);
@@ -2389,6 +2682,10 @@ function cleanCatLitter(b) {
     officeCatState.poopCleanedTotal = (officeCatState.poopCleanedTotal || 0) + count;
     officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + Math.min(10, 1 + count));
     saveOfficeCatState();
+    const activeCats = getAdoptedCatTypes();
+    for (const cType of activeCats) {
+      addCatGrowthBonus(cType, 1);
+    }
     addCoins(reward, T('고양이 화장실 청소', 'Cleaned cat litter'));
     shareToApp();
     playRetroSound('coin');
@@ -2414,6 +2711,10 @@ function refillCatFood(b) {
     officeCatState.foodEmpty = false;
     officeCatState.affection = Math.min(100, (officeCatState.affection || 50) + 2);
     saveOfficeCatState();
+    const activeCats = getAdoptedCatTypes();
+    for (const cType of activeCats) {
+      addCatGrowthBonus(cType, 1);
+    }
     addCoins(5, T('사료 리필 보너스', 'Refilled food bonus'));
     shareToApp();
     playRetroSound('coin');
@@ -5626,7 +5927,7 @@ function renderShopModal() {
         const pill = elem('div', 'shop-req-pill', T('⚠️ 필수조건: 화장실 🚽 & 식기 🥣 필요', '⚠️ Needs: Litter Box 🚽 & Food Bowl 🥣'));
         info.append(pill);
       } else {
-        const pill = elem('div', 'shop-ready-pill', T('✨ 입양 준비 완료! 🐾', '✨ Ready to Adopt! 🐾'));
+        const pill = elem('div', 'shop-ready-pill', T('✨ 🍼 아깽이로 입양 준비 완료!', '✨ Ready to Adopt as 🍼 Kitten!'));
         info.append(pill);
       }
     }
@@ -5634,6 +5935,32 @@ function renderShopModal() {
     const name = elem('div', 'shop-card-name', T(item.name, item.enName));
     const desc = elem('div', 'shop-card-desc', T(item.desc, item.enDesc));
     info.append(name, desc);
+
+    if (isCat && isAdopted) {
+      const stage = getCatGrowthStage(item.catType);
+      const stageName = getCatGrowthStageName(stage);
+      const days = getCatAgeDays(item.catType);
+      const stagePill = elem('div', 'shop-stage-pill');
+      stagePill.title = T('클릭 시 성장 단계를 직접 변경할 수 있습니다 (아깽이 ⇄ 캣초딩 ⇄ 성묘)', 'Click to switch growth stage directly');
+      let stageDetail = '';
+      if (stage === 'baby') {
+        stageDetail = T(` (Day ${days} · 60일차에 ⚡ 캣초딩)`, ` (Day ${days} · 60d to ⚡ Junior)`);
+      } else if (stage === 'junior') {
+        stageDetail = T(` (Day ${days} · 120일차에 👑 성묘)`, ` (Day ${days} · 120d to 👑 Adult)`);
+      } else {
+        stageDetail = T(` (Day ${days} · 완성형 🐾)`, ` (Day ${days} · Complete 🐾)`);
+      }
+      stagePill.innerHTML = `<span>${stageName}${stageDetail}</span> <span class="shop-stage-cycle-icon">🔄</span>`;
+      if (!REMOTE) {
+        stagePill.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const nextStage = stage === 'baby' ? 'junior' : stage === 'junior' ? 'adult' : 'baby';
+          setCatGrowthStage(item.catType, nextStage);
+        });
+      }
+      info.append(stagePill);
+    }
+
     top.append(icon, info);
 
     const foot = elem('div', 'shop-card-foot');
@@ -5693,7 +6020,7 @@ function renderShopModal() {
       btn.disabled = true;
       btn.title = T('고양이를 맞이하려면 먼저 [모래 화장실 🚽]과 [식기 & 물그릇 🥣]을 구매해주세요!', 'Please buy the Litter Box and Food Bowl first!');
     } else {
-      btn.textContent = canAfford ? (isCat ? T('분양받기', 'Adopt') : T('구매하기', 'Buy')) : T('코인 부족', 'Need Coins');
+      btn.textContent = canAfford ? (isCat ? T('🍼 아깽이 분양받기', 'Adopt 🍼 Kitten') : T('구매하기', 'Buy')) : T('코인 부족', 'Need Coins');
       btn.disabled = !canAfford;
       btn.addEventListener('click', () => {
         buyFurniture(item.id);
