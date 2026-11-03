@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.7.8';
+const PAGE_VERSION = '1.7.9';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -452,12 +452,19 @@ function playSweep(ctx, startFreq, endFreq, start, dur, type = 'triangle', vol =
 }
 
 /** 알림이나 메뉴를 눌러 창을 열었을 때: 그 직원(또는 @today 근무 일지)의 패널을 연다. */
+function openDrawer(s) {
+  if (!s) return;
+  const sid = typeof s === 'string' ? s : s.id;
+  selectSession(sid);
+}
+
 function selectSession(id) {
   if (id !== REPORT_ID && !data.sessions.some((s) => s.id === id)) return;
   if (!settingsEl.hidden) setSettingsOpen(false);
   selectedId = id;
   drawerFolded = false;
   renderPanel();
+  if (appMode === 'office') renderCleanOffice();
 }
 let selectedId = params.get('select');   // 화면 점검용: ?demo&select=demo-b1 이면 상세 패널을, select=settings 면 설정을 연 채로 시작
 let hoverId = null;
@@ -5042,10 +5049,11 @@ function renderCleanOffice() {
 
     const grid = elem('div', 'ocv-grid');
     for (const s of sList) {
-      const card = elem('div', 'ocv-card');
+      const isSelected = selectedId === s.id && !panelEl.hidden;
+      const card = elem('div', `ocv-card ${isSelected ? 'selected' : ''}`);
       card.onclick = (e) => {
         if (e.target.closest('.ocv-btn')) return;
-        openDrawer(s);
+        selectSession(s.id);
       };
 
       const top = elem('div', 'ocv-card-top');
@@ -5084,7 +5092,7 @@ function renderCleanOffice() {
       const btnDrawer = elem('button', 'ocv-btn', T('💬 지시하기', '💬 Instruct'));
       btnDrawer.onclick = (e) => {
         e.stopPropagation();
-        openDrawer(s);
+        selectSession(s.id);
         const sayField = $('rSay');
         if (sayField) sayField.focus();
       };
@@ -8308,7 +8316,7 @@ canvas.addEventListener('click', (e) => {
   renderPanel();
 });
 
-$('pClose').addEventListener('click', () => { selectedId = null; renderPanel(); });
+$('pClose').addEventListener('click', () => { selectedId = null; renderPanel(); if (appMode === 'office') renderCleanOffice(); });
 if ($('pPet')) {
   $('pPet').addEventListener('click', () => {
     if (!selectedId) return;

@@ -3686,6 +3686,15 @@ body.pet-float #pet.pet-island {
   box-sizing: border-box;
   color: #f1f5f9;
   z-index: 5;
+  transition: right 0.18s ease;
+}
+body.panel-open .office-clean-view {
+  right: var(--drawer-w) !important;
+}
+.ocv-card.selected {
+  border-color: #818cf8 !important;
+  box-shadow: 0 0 0 1.5px #818cf8, 0 6px 20px rgba(99, 102, 241, 0.35) !important;
+  background: #181c2e !important;
 }
 .ocv-header {
   display: flex;
