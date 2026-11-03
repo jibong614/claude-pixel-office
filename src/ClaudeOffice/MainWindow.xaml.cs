@@ -910,6 +910,8 @@ public partial class MainWindow : Window
                 case "pet-size":
                     if (root.TryGetProperty("height", out var ph) && ph.TryGetDouble(out var pheight))
                         _widgetWindow?.FitHeight(pheight);
+                    if (root.TryGetProperty("width", out var pw) && pw.TryGetDouble(out var pwidth))
+                        _widgetWindow?.FitWidth(pwidth);
                     break;
                 case "notify-test":
                     if (_tray is null) break;

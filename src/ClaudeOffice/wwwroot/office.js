@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.7.4';
+const PAGE_VERSION = '1.7.6';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -106,6 +106,71 @@ const store = {
 };
 
 let showAway = store.get('showAway', true);
+
+// 💼 화면 동작 모드 ('basic': 기본 픽셀 오피스 / 'office': 비즈니스 대시보드)
+let appMode = store.get('appMode', 'basic');
+if (appMode !== 'basic' && appMode !== 'office') appMode = 'basic';
+
+function getAppMode() {
+  return appMode;
+}
+
+function setAppMode(mode) {
+  if (mode !== 'basic' && mode !== 'office') mode = 'basic';
+  appMode = mode;
+  store.set('appMode', mode);
+  applyAppMode();
+  if (appMode === 'office') {
+    if (typeof petMode !== 'undefined' && petMode !== 'island') {
+      petMode = 'island';
+      store.set('petMode', 'island');
+    }
+  }
+  if (typeof refreshHud === 'function') refreshHud();
+  if (typeof refreshSettings === 'function') refreshSettings();
+  if (typeof renderCleanOffice === 'function') renderCleanOffice();
+  if (typeof redraw === 'function') redraw(true);
+}
+
+function applyAppMode() {
+  const isOffice = appMode === 'office';
+  document.body.classList.toggle('mode-office', isOffice);
+  document.body.classList.toggle('mode-basic', !isOffice);
+  const cleanView = $('officeCleanView');
+  const canvas = $('office');
+  if (cleanView) cleanView.hidden = !isOffice;
+  if (canvas) canvas.hidden = isOffice;
+  if (isOffice) {
+    if (typeof petMode !== 'undefined' && petMode !== 'island') {
+      petMode = 'island';
+      store.set('petMode', 'island');
+    }
+    if (typeof renderCleanOffice === 'function') renderCleanOffice();
+  }
+}
+
+function initModeSelectModal() {
+  const modal = $('modeSelectModal');
+  if (!modal) return;
+  const cards = modal.querySelectorAll('.mode-card');
+  cards.forEach((card) => {
+    card.addEventListener('click', () => {
+      const mode = card.dataset.mode;
+      store.set('appModeChosen', true);
+      setAppMode(mode);
+      modal.hidden = true;
+    });
+  });
+}
+
+function checkFirstLaunchMode() {
+  if (WIDGET_WINDOW || REMOTE) return;
+  const chosen = store.get('appModeChosen', false);
+  if (!chosen) {
+    const modal = $('modeSelectModal');
+    if (modal) modal.hidden = false;
+  }
+}
 // 팀(작업 폴더) 표시: {팀: {name, color(RUGS 번호)}} · 팀 순서 · 직원 자리 순서(세션 ID). 휴대폰은 PC가 보낸 것을 쓴다(remoteShare)
 const teamPrefs = store.get('teams', {}) || {};
 let teamOrder = store.get('teamOrder', []) || [];
@@ -402,7 +467,7 @@ function onSnapshot(snap) {
   if (!snap || !Array.isArray(snap.sessions)) return;
 
   // 작업 완료 감지 시 코인 보상 & 야근 업적 확인
-  if (prevSessionsAct.size > 0) {
+  if (appMode !== 'office' && prevSessionsAct.size > 0) {
     for (const s of snap.sessions) {
       const prev = prevSessionsAct.get(s.id);
       if (prev && ['writing', 'running', 'working', 'searching'].includes(prev) && ['idle', 'waiting', 'asking'].includes(s.act)) {
@@ -421,6 +486,7 @@ function onSnapshot(snap) {
   data = snap;
   skew = (snap.now || Date.now()) - Date.now();
   if (WIDGET_WINDOW) { renderPet(); return; }
+  if (appMode === 'office') renderCleanOffice();
   refreshHud();
   refreshHookButton();
   refreshSettings();
@@ -3929,7 +3995,7 @@ const petArt = document.createElement('canvas');
 const petAskEls = new Map();
 const petAnswered = new Map();
 let petNote = null;   // { sid, at, text }
-let lastPetH = 0;
+let lastPetH = 0, lastPetW = 0;
 
 function ensurePetDom() {
   if (petDomBuilt) return;
@@ -4127,6 +4193,7 @@ let devMemeExpires = 0;
 let lastMemeIndex = -1;
 
 function triggerDevMeme(isAuto = false) {
+  if (appMode === 'office') return;
   let idx = 0, attempts = 0;
   do {
     idx = Math.floor(Math.random() * DEV_MEMES.length);
@@ -4196,6 +4263,7 @@ function showIslandToast(text, icon = '🏝️', durationMs = 2500) {
 }
 
 function togglePetWalk() {
+  if (appMode === 'office') return;
   petMode = (petMode === 'shimeji') ? 'normal' : 'shimeji';
   store.set('petMode', petMode);
   petEl.classList.toggle('pet-shimeji', petMode === 'shimeji');
@@ -4218,8 +4286,13 @@ function togglePetWalk() {
 }
 
 function togglePetIsland() {
+  if (appMode === 'office') {
+    petMode = 'island';
+    return;
+  }
   petMode = (petMode === 'island') ? 'normal' : 'island';
   store.set('petMode', petMode);
+  lastPetW = 0;
   const gt = $('genToast');
   if (gt) gt.classList.remove('show');
   if (genToastTimer) clearTimeout(genToastTimer);
@@ -4256,9 +4329,11 @@ function renderPetIsland(s) {
   const info = elem('div', 'island-info');
   const nameText = isNotice ? T('다이내믹 아일랜드', 'Dynamic Island') : (s ? displayName(s) : T('사무실', 'Office'));
   const nm = elem('span', 'island-name', nameText);
+  nm.title = nameText;
   const dot = elem('span', `island-dot ${isWait ? 'waiting' : ''}`);
   const statusText = isNotice ? islandToastText.text : (s ? (s.text || T('대기 중', 'Standing by')) : T('직원 대기 중', 'Standing by'));
   const tx = elem('span', `island-text ${isNotice ? 'island-notice' : ''}`, statusText);
+  tx.title = statusText;
   info.append(nm, dot, tx);
 
   const actions = elem('div', 'island-actions');
@@ -4273,11 +4348,12 @@ function renderPetIsland(s) {
     actions.append(jumpBtn, stopBtn);
   }
 
-  const restoreBtn = elem('button', 'island-btn btn-restore', '✕');
-  restoreBtn.title = T('일반 모드로 복귀', 'Restore normal mode');
-  restoreBtn.onclick = (e) => { e.stopPropagation(); togglePetIsland(); };
-
-  actions.append(restoreBtn);
+  if (appMode !== 'office') {
+    const restoreBtn = elem('button', 'island-btn btn-restore', '✕');
+    restoreBtn.title = T('일반 모드로 복귀', 'Restore normal mode');
+    restoreBtn.onclick = (e) => { e.stopPropagation(); togglePetIsland(); };
+    actions.append(restoreBtn);
+  }
   petIslandEl.append(avatar, info, actions);
 }
 
@@ -4904,6 +4980,128 @@ function showToast(msg, icon = '⚡', durationMs = 2200) {
   genToastTimer = setTimeout(() => {
     if (t) t.classList.remove('show');
   }, durationMs);
+}
+
+// 💼 오피스 모드: 그래픽 요소를 제외한 깔끔한 비즈니스 대시보드 뷰 렌더링
+function renderCleanOffice() {
+  const container = $('ocvContent');
+  const nameEl = $('ocvOfficeName');
+  const statsEl = $('ocvStats');
+  if (!container) return;
+
+  if (nameEl) nameEl.textContent = officeName || DEFAULT_OFFICE;
+
+  // 전체 통계 계산
+  const sessions = visibleSessions();
+  let busy = 0, wait = 0, rest = 0, away = 0;
+  for (const s of data.sessions || []) {
+    const a = actOf(s);
+    if (s.act === 'away') away++;
+    else if (a.wait) wait++;
+    else if (a.busy) busy++;
+    else rest++;
+  }
+
+  if (statsEl) {
+    statsEl.replaceChildren(
+      elem('div', 'ocv-stat-pill', T(`총 세션 ${(data.sessions || []).length}개`, `Total ${(data.sessions || []).length} sessions`)),
+      elem('div', `ocv-stat-pill ${busy > 0 ? 'busy' : ''}`, T(`⚡ 작업 중 ${busy}`, `⚡ Busy ${busy}`)),
+      elem('div', `ocv-stat-pill ${wait > 0 ? 'wait' : ''}`, T(`✋ 확인 대기 ${wait}`, `✋ Waiting ${wait}`)),
+      elem('div', 'ocv-stat-pill', T(`💤 대기 ${rest}`, `💤 Idle ${rest}`))
+    );
+  }
+
+  if (!sessions || sessions.length === 0) {
+    container.replaceChildren(
+      elem('div', 'ocv-empty', T('🏢 출근한 세션이 없습니다.\nClaude Code 터미널에서 작업을 시작하면 실시간으로 감시됩니다.',
+        '🏢 No active sessions yet.\nStart a conversation in Claude Code to monitor in real-time.'))
+    );
+    return;
+  }
+
+  // 팀별 그룹화
+  const teamMap = new Map();
+  for (const s of sessions) {
+    const tId = s.team || '__default__';
+    if (!teamMap.has(tId)) teamMap.set(tId, []);
+    teamMap.get(tId).push(s);
+  }
+
+  const sections = [];
+  for (const [tId, sList] of teamMap) {
+    const sec = elem('div', 'ocv-team-section');
+    const header = elem('div', 'ocv-team-header');
+    const title = elem('div', 'ocv-team-title');
+    const teamName = tId === '__default__' ? T('기본 프로젝트', 'Default Project') : teamLabel(tId);
+    title.textContent = `📁 ${teamName}`;
+    const count = elem('span', 'ocv-team-count', T(` (${sList.length}개 세션)`, ` (${sList.length} sessions)`));
+    title.append(count);
+    header.append(title);
+
+    const grid = elem('div', 'ocv-grid');
+    for (const s of sList) {
+      const card = elem('div', 'ocv-card');
+      card.onclick = (e) => {
+        if (e.target.closest('.ocv-btn')) return;
+        openDrawer(s);
+      };
+
+      const top = elem('div', 'ocv-card-top');
+      const emp = elem('div', 'ocv-card-emp');
+      const a = actOf(s);
+      let statusClass = 'rest';
+      if (s.act === 'away') statusClass = 'away';
+      else if (a.wait) statusClass = 'wait';
+      else if (a.busy) statusClass = 'busy';
+
+      const dot = elem('div', `ocv-emp-dot ${statusClass}`);
+      const name = elem('span', 'ocv-emp-name', displayName(s));
+      emp.append(dot, name);
+
+      const badge = elem('span', `ocv-badge ${statusClass}`, a.label);
+      top.append(emp, badge);
+
+      const promptText = s.lastPrompt || s.text || T('대기 중', 'Standing by');
+      const promptEl = elem('div', 'ocv-card-prompt', promptText);
+      promptEl.title = promptText;
+
+      const meta = elem('div', 'ocv-card-meta');
+      if (s.branch) {
+        meta.append(elem('span', '', `🌿 ${s.branch}`));
+      }
+      if (s.model) {
+        const shortModel = s.model.replace('claude-', '').replace('-20241022', '');
+        meta.append(elem('span', '', `🤖 ${shortModel}`));
+      }
+      if (s.since || s.last) {
+        const activeTime = s.last || s.since;
+        meta.append(elem('span', '', `🕒 ${fmtAgo(now() - activeTime)}`));
+      }
+
+      const actions = elem('div', 'ocv-card-actions');
+      const btnDrawer = elem('button', 'ocv-btn', T('💬 지시하기', '💬 Instruct'));
+      btnDrawer.onclick = (e) => {
+        e.stopPropagation();
+        openDrawer(s);
+        const sayField = $('rSay');
+        if (sayField) sayField.focus();
+      };
+      const btnConsole = elem('button', 'ocv-btn', T('⚡ 콘솔 점프', '⚡ Console Jump'));
+      btnConsole.onclick = (e) => {
+        e.stopPropagation();
+        jumpToConsole(s.id, s);
+      };
+      actions.append(btnDrawer, btnConsole);
+
+      card.append(top, promptEl, meta, actions);
+      grid.append(card);
+    }
+
+    sec.append(header, grid);
+    sections.push(sec);
+  }
+
+  container.replaceChildren(...sections);
 }
 
 // ⚡ 원클릭 터미널/콘솔 창 점프
@@ -6381,6 +6579,7 @@ function sendPetSay() {
 
 function renderPet() {
   if (!WIDGET_WINDOW && !(DEMO && petOn())) return;
+  if (appMode === 'office') petMode = 'island';
   ensurePetDom();
 
   const pref = petSessionPref();
@@ -6548,9 +6747,13 @@ function syncPetHeight() {
     h = Math.ceil(petEl.getBoundingClientRect().height);
   }
   const minH = (petMode === 'island') ? 40 : 120;
-  if (h >= 40 && Math.abs(h - lastPetH) > 1) {
+  const targetW = (petMode === 'island') ? 440 : 300;
+  const hChanged = h >= 40 && Math.abs(h - lastPetH) > 1;
+  const wChanged = lastPetW !== targetW;
+  if (hChanged || wChanged) {
     lastPetH = h;
-    send({ cmd: 'pet-size', height: Math.min(620, Math.max(h, minH)) });
+    lastPetW = targetW;
+    send({ cmd: 'pet-size', height: Math.min(620, Math.max(h, minH)), width: targetW });
   }
 }
 
@@ -7066,6 +7269,11 @@ const SETTINGS = [
   {
     tab: 'office',
     items: [
+      { type: 'choice', name: T('화면 동작 모드', 'Operation Mode'), pcOnly: true,
+        desc: T('사무실 환경에 맞는 화면 모드를 선택합니다. 오피스 모드는 캐릭터/가구 등 게임 요소를 제외한 깔끔한 비즈니스 대시보드로 동작합니다.', 'Choose operation mode. Office Mode provides a clean business dashboard without game graphics.'),
+        options: [['basic', T('기본 모드 (픽셀 오피스)', 'Basic Mode (Pixel Office)')], ['office', T('오피스 모드 (비즈니스 대시보드)', 'Office Mode (Business Dashboard)')]],
+        get: () => getAppMode(),
+        set: (v) => { setAppMode(v); refreshSettings(); } },
       { type: 'text', name: T('사무실 이름', 'Office name'), desc: T('벽 간판과 창 제목(작업표시줄)에 씁니다. 비우면 기본 이름입니다.', 'Shown on the wall sign and the window title (taskbar). Leave empty for the default.'), pcOnly: true,
         placeholder: DEFAULT_OFFICE, max: 30, get: () => officeName, set: setOfficeName },
       // 언어 이름은 두 언어로 — 읽지 못하는 언어로 켜져 있어도 찾을 수 있게
@@ -7106,6 +7314,7 @@ const SETTINGS = [
         options: [[-2, T('더 작게', 'Smallest')], [-1, T('작게', 'Smaller')], [0, T('맞춤', 'Fit')], [1, T('크게', 'Larger')], [2, T('더 크게', 'Largest')]],
         get: () => zoom, set: (v) => { zoom = v; store.set('zoom', v); layoutKey = ''; refreshSettings(); } },
       { type: 'choice', name: T('사무실 조명 (낮/밤)', 'Office Lighting'),
+        shown: () => getAppMode() !== 'office',
         desc: T('실제 시간 연동 또는 원하는 감성의 오피스 조명 분위기를 선택합니다.', 'Choose ambient lighting mode (Auto synced with PC clock, day, dusk, night shift).'),
         options: [
           ['auto', T('자동 (현재 시각 연동)', 'Auto (Sync clock)')],
@@ -7116,14 +7325,17 @@ const SETTINGS = [
         get: () => store.get('light_mode', 'auto'),
         set: (v) => { store.set('light_mode', v); refreshSettings(); } },
       { type: 'toggle', name: T('🐾 고양이 표시', 'Show Cats'),
+        shown: () => getAppMode() !== 'office',
         desc: T('입양한 고양이들을 사무실에 표시합니다. 끄면 고양이들이 방에서 휴식을 취하며 사무실을 비웁니다.', 'Shows adopted cats in the office. Turn off to let all cats rest and clear the office.'),
         get: isCatsEnabledGlobal,
         set: (v) => { store.set('showCats', v); refreshSettings(); } },
       { type: 'toggle', name: T('🛋️ 인테리어 가구 배치', 'Place Furniture'),
+        shown: () => getAppMode() !== 'office',
         desc: T('구매한 인테리어 가구와 소품을 사무실에 배치합니다. 끄면 모든 가구를 보관함에 넣어 미니멀한 사무실로 만듭니다.', 'Places purchased furniture in the office. Turn off to store all furniture for a minimal office.'),
         get: isFurnitureEnabledGlobal,
         set: (v) => { store.set('showFurniture', v); refreshSettings(); } },
       { type: 'action', name: T('🛋️ 가구 & 고양이 상점 / 보관함', '🛋️ Furniture & Cat Shop / Storage'),
+        shown: () => getAppMode() !== 'office',
         desc: T('가구와 고양이의 개별 배치/보관을 설정하거나 코인으로 새 소품을 구매합니다.', 'Manage placement/storage of individual furniture & cats, or buy new items with coins.'),
         label: () => T('상점 및 보관함 열기', 'Open Shop & Storage'), run: () => openShopModal() },
       { type: 'toggle', name: T('작게 보기(목록)', 'Compact view (list)'),
@@ -7141,6 +7353,7 @@ const SETTINGS = [
         type: 'choice',
         name: T('💡 아이스브레이킹 개발자 밈 주기', '💡 Icebreaker Dev Memes Interval'),
         pcOnly: true,
+        shown: () => getAppMode() !== 'office',
         desc: T('코딩 중 가벼운 활력을 위해 주기적으로 개발자 유머와 명언을 말풍선으로 띄웁니다 (미니위젯 상단 💡 버튼으로 즉시 보기 가능).',
           'Pops up developer humor and quotes periodically to break the ice (also available instantly via 💡 in MiniPet).'),
         options: [
@@ -7169,6 +7382,7 @@ const SETTINGS = [
         type: 'toggle',
         name: T('💡 아이스브레이킹 효과음', '💡 Icebreaker Sound Effect'),
         pcOnly: true,
+        shown: () => getAppMode() !== 'office',
         desc: T('개발자 밈이 팝업될 때 재생되는 효과음을 켜거나 끕니다.', 'Play a sound effect when a developer meme pops up.'),
         get: () => store.get('memeSound', true) !== false,
         set: (v) => { store.set('memeSound', v); refreshSettings(); }
@@ -8151,6 +8365,8 @@ if (hudSearchEl) {
 // 키보드 단축키: Esc(닫기), /(직원 검색), 1~9(책상 직원 선택), M(미니위젯), W(작게 보기), R(근무 일지), A(업적 도감)
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    const msModal = modeSelectModal;
+    if (msModal && !msModal.hidden) { msModal.hidden = true; return; }
     if (connectGuideEl && !connectGuideEl.hidden) { closeConnectGuide(); return; }
     if (whiteboardModalEl && !whiteboardModalEl.hidden) { closeWhiteboardModal(); return; }
     if (achieveModalEl && !achieveModalEl.hidden) { closeAchieveModal(); return; }
@@ -8213,11 +8429,13 @@ document.addEventListener('keydown', (e) => {
     btnToday.click();
   } else if (k === 'a') {
     e.preventDefault();
-    if (btnAchieve) btnAchieve.click();
+    if (appMode !== 'office' && btnAchieve) btnAchieve.click();
   } else if (k === 's') {
     e.preventDefault();
-    if (shopModalEl && !shopModalEl.hidden) closeShopModal();
-    else openShopModal();
+    if (appMode !== 'office') {
+      if (shopModalEl && !shopModalEl.hidden) closeShopModal();
+      else openShopModal();
+    }
   } else if (k === 'b') {
     e.preventDefault();
     if (broadcastModalEl && !broadcastModalEl.hidden) closeBroadcastModal();
@@ -9342,6 +9560,9 @@ initWhiteboardModal();
 initAchieveModal();
 refreshButtons();
 applyPetState();
+applyAppMode();
+initModeSelectModal();
+checkFirstLaunchMode();
 refreshHud();
 if (selectedId === 'settings') setSettingsOpen(true, params.get('tab'));   // 화면 점검용: ?select=settings&tab=phone
 if (selectedId === 'pet') selectedId = null;   // ?select=pet 은 바탕화면 미니위젯 미리보기를 켠다

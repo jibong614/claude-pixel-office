@@ -42,8 +42,8 @@ internal sealed class WidgetWindow : Window
         Title = "Claude Office — MiniWidget";
         Width = DefaultWidth;
         Height = 260;
-        MinWidth = DefaultWidth;
-        MaxWidth = DefaultWidth;
+        MinWidth = 260;
+        MaxWidth = 800;
         MinHeight = MinPetHeight;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -208,6 +208,7 @@ internal sealed class WidgetWindow : Window
         var wa = SystemParameters.WorkArea;
         if ((App.Settings.MiniWidgetPlacement ?? App.Settings.MiniWidgetWindow) is { } w && OnScreen(w))
         {
+            if (w.Width >= 260 && w.Width <= 800) Width = w.Width;
             if (w.Height >= MinPetHeight && w.Height <= MaxPetHeight) Height = w.Height;
             Left = w.Left;
             Top = w.Top;
@@ -233,6 +234,23 @@ internal sealed class WidgetWindow : Window
         {
             var wa = SystemParameters.WorkArea;
             Top = Math.Clamp(bottom - target, wa.Top + 8, wa.Bottom - target - 8);
+        }
+        SavePlacement();
+    }
+
+    /// <summary>미니위젯 내용 너비에 창 너비를 맞추되, 바탕화면 오른쪽 정렬(Right 고정)을 유지하여 좌측으로 확장/축소되게 한다.</summary>
+    public void FitWidth(double contentWidth)
+    {
+        if (WindowState != WindowState.Normal) return;
+        double target = Math.Clamp(Math.Ceiling(contentWidth), 260, 800);
+        if (Math.Abs(Width - target) < 1) return;
+        double curW = ActualWidth > 0 ? ActualWidth : Width;
+        double right = Left + curW;
+        Width = target;
+        if (!App.Offscreen && right > 0)
+        {
+            var wa = SystemParameters.WorkArea;
+            Left = Math.Clamp(right - target, wa.Left + 8, wa.Right - target - 8);
         }
         SavePlacement();
     }
