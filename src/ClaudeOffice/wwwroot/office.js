@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.6.8';
+const PAGE_VERSION = '1.6.9';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -3095,7 +3095,13 @@ function drawDeskBubble(d, t) {
     return;
   }
   if (a.bubble === 'none') return;
-  if (a.bubble === 'zzz') { drawZzz(cx, ay, t); return; }
+  if (a.bubble === 'zzz') {
+    // 컴퓨터 책상에 앉아 있을 때는 zzz 생각 말풍선과 부유 애니메이션 동시 표시
+    drawBubble(cx, ay, `${s.icon} ${s.text}`, BUBBLE.thought, t, CELL_W * U - 6);
+    drawZzz(cx, ay, t);
+    ctx.globalAlpha = 1;
+    return;
+  }
 
   let text = `${s.icon} ${s.text}`;
   if (currentDevMeme && t < devMemeExpires && s.id === (resolvePetSession()?.id || visibleSessions()[0]?.id)) {
@@ -3169,9 +3175,9 @@ function drawZzz(cx, y, t) {
   for (let i = 0; i < 3; i++) {
     const p = (t / 1500 + i / 3) % 1;
     ctx.globalAlpha = 1 - p;
-    ctx.fillStyle = '#ddd8f2';
+    ctx.fillStyle = '#a78bfa';
     ctx.font = `800 ${fontSmall + i * 3}px ${FONT}`;
-    ctx.fillText('z', cx + 4 + p * 10 + i * 5, y - 2 - p * 22 - i * 4);
+    ctx.fillText('z', cx + 4 + p * 10 + i * 4, y - 2 - p * 22 - i * 4);
   }
   ctx.globalAlpha = 1;
 }
@@ -6114,7 +6120,11 @@ function drawPetFrame(ts) {
     const cx = h.x * scale, ay = h.y * scale;
     petCtx.setTransform((PW * k) / cssWidth, 0, 0, (PH * k) / cssHeight, 0, 0);
     if (a.bubble === 'zzz') {
+      // 컴퓨터 책상에 앉아 있을 때는 zzz 말풍선과 부유 애니메이션을 모두 노출
+      let text = `${s.icon} ${s.text}`;
+      drawPetBubble(petCtx, cx, ay, text, BUBBLE.thought, ts, cssWidth);
       drawPetZzz(petCtx, cx, ay, ts);
+      petCtx.globalAlpha = 1;
     } else {
       let text = `${s.icon} ${s.text}`;
       if (a.bubble === 'thought') text += '.'.repeat(1 + tick(ts, 450, 3));
@@ -6179,7 +6189,7 @@ function drawPetZzz(c, cx, y, t) {
   for (let i = 0; i < 3; i++) {
     const p = (t / 1500 + i / 3) % 1;
     c.globalAlpha = 1 - p;
-    c.fillStyle = '#ddd8f2';
+    c.fillStyle = '#a78bfa';
     c.font = `800 ${10 + i * 2}px ${FONT}`;
     c.fillText('z', cx + 3 + p * 8 + i * 4, y - 2 - p * 16 - i * 3);
   }

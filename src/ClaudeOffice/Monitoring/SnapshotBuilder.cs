@@ -53,7 +53,7 @@ internal sealed record LogDto(long T, string Icon, string Text);
 internal static class SnapshotBuilder
 {
     // 시간이 지나면서 바뀌는 상태(기록 파일에는 남지 않으므로 여기서 계산)
-    private static readonly TimeSpan IdleToSleep = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan IdleToSleep = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan BusyTooLong = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan ToAway = TimeSpan.FromHours(3);
     private static readonly TimeSpan EditPendingAsWaiting = TimeSpan.FromSeconds(6);
