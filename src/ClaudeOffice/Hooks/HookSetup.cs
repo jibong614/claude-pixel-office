@@ -132,7 +132,7 @@ internal static class HookSetup
         "f=\"${TMPDIR:-/tmp}/claudeoffice-listen-$sid\"; me=\"$$.$RANDOM\"; printf '%s' \"$me\" > \"$f\" 2>/dev/null; " +
         "trap '[ \"$(cat \"$f\" 2>/dev/null)\" = \"$me\" ] && rm -f \"$f\"' EXIT; while :; do " +
         $"out=$(printf '%s' \"$in\" | curl -sf -m {ListenTimeout - 400} -H \"Content-Type: application/json\" -H \"X-ClaudeOffice-Token: {Token}\" --data-binary @- http://127.0.0.1:{HookServer.Port}/remote/listen 2>/dev/null); " +
-        "if [ $? -eq 0 ]; then [ -n \"$out\" ] && { printf '%s' \"$out\" >&2; exit 2; }; exit 0; fi; " +
+        "if [ $? -eq 0 ]; then [ -n \"$out\" ] && { printf '%s' \"$out\" >&2; exit 2; }; sleep 3; [ \"$(cat \"$f\" 2>/dev/null)\" = \"$me\" ] || exit 0; continue; fi; " +
         "sleep 15; [ \"$(cat \"$f\" 2>/dev/null)\" = \"$me\" ] || exit 0; done; " +
         $"exit 0 {RemoteMarker}";
 
@@ -152,7 +152,7 @@ internal static class HookSetup
         "$f = Join-Path $env:TEMP \"claudeoffice-listen-$sid\"; $me = \"$PID.$(Get-Random)\"; try { [IO.File]::WriteAllText($f, $me) } catch {}; " +
         "$mine = { try { [IO.File]::ReadAllText($f) -eq $me } catch { $false } }; try { while ($true) { try { " +
         $"$r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri http://127.0.0.1:{HookServer.Port}/remote/listen -ContentType 'application/json' -Headers @{{'X-ClaudeOffice-Token'='{Token}'}} -Body $b -TimeoutSec {ListenTimeout - 400}; " +
-        "$o = $r.RawContentStream.ToArray(); if ($o.Length -gt 0) { $e = [Console]::OpenStandardError(); $e.Write($o, 0, $o.Length); $e.Flush(); exit 2 }; exit 0 " +
+        "$o = $r.RawContentStream.ToArray(); if ($o.Length -gt 0) { $e = [Console]::OpenStandardError(); $e.Write($o, 0, $o.Length); $e.Flush(); exit 2 }; Start-Sleep -Seconds 3; if (-not (& $mine)) { exit 0 } " +
         "} catch { Start-Sleep -Seconds 15; if (-not (& $mine)) { exit 0 } } } } " +
         "finally { if (& $mine) { Remove-Item -LiteralPath $f -ErrorAction SilentlyContinue } }; " +
         $"exit 0 {RemoteMarker}";

@@ -35,9 +35,11 @@ public partial class MainWindow : Window
     private readonly System.Windows.Threading.DispatcherTimer _presence = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly TrayIcon? _tray;
     private WidgetWindow? _widgetWindow;
+    private SettingsWindow? _settingsWindow;
     private bool _pageReady;
     private bool _exiting, _cleanedUp;
     private string? _pendingSelect;   // 알림을 눌러 창을 열었는데 화면이 아직 준비 중이면, 준비되는 대로 그 직원을 연다
+    private string? _pendingSettings;
 
     // 사무실 이름·별명·메모 — 화면(localStorage)이 원본이고 데이터 폴더 share.json 에 사본을 둔다.
     // 창을 띄우지 않고 시작해도 휴대폰·알림에 별명이 보이고, 화면 저장소가 지워져도 되살릴 수 있게.
@@ -70,12 +72,16 @@ public partial class MainWindow : Window
             _tray = new TrayIcon(
                 ShowFromTray,
                 sid => { ShowFromTray(); SelectSession(sid); },
-                () => SetPet(!App.Settings.Pet, null),
-                () => SetWidget(!App.Settings.Widget),
+                ShowLargeView,
+                ShowCompactView,
+                TurnOffPet,
+                TurnOnPetNormal,
+                TurnOnPetIsland,
+                () => OpenSettingsWindow(),
                 ExitApp);
             _tray.SetText(Title);
-            _tray.SetPetChecked(App.Settings.Pet);
-            _tray.SetWidgetChecked(App.Settings.Widget);
+            _tray.SetViewMode(App.Settings.Widget);
+            _tray.SetPetMode(App.Settings.Pet ? (App.Settings.PetIsland ? TrayIcon.PetTrayMode.Island : TrayIcon.PetTrayMode.Normal) : TrayIcon.PetTrayMode.None);
             if (App.Updated)
                 _tray.Notify(L.T($"{App.Version} 버전으로 업데이트했어요", $"Updated to {App.Version}"),
                              L.T("바뀐 내용은 ⚙️ → 정보 → 버전에서 GitHub 릴리스로", "See what's new: ⚙️ → About → Version (GitHub release)"),
@@ -131,6 +137,8 @@ public partial class MainWindow : Window
         if (IsVisible) SavePlacement();
         _widgetWindow?.CloseForce();
         _widgetWindow = null;
+        _settingsWindow?.CloseForce();
+        _settingsWindow = null;
         Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
         _presence.Stop();
         _watcher.Dispose();
@@ -317,11 +325,77 @@ public partial class MainWindow : Window
         if (sid != null) App.Settings.PetSessionId = string.IsNullOrWhiteSpace(sid) ? null : sid.Trim();
         App.Settings.Pet = on;
         TrySaveSettings();
-        _tray?.SetPetChecked(on);
+        _tray?.SetPetMode(on ? (App.Settings.PetIsland ? TrayIcon.PetTrayMode.Island : TrayIcon.PetTrayMode.Normal) : TrayIcon.PetTrayMode.None);
         _remote.SetPet(on, App.Settings.PetSessionId);
         ApplyWidgetWindow();
         Post(AppSettingsJson());
     }
+
+    private void TurnOffPet()
+    {
+        SetPet(false, null);
+    }
+
+    private void TurnOnPetNormal()
+    {
+        App.Settings.PetIsland = false;
+        TrySaveSettings();
+        SetPet(true, null);
+        _widgetWindow?.SetPetMode(false);
+        _widgetWindow?.Post(JsonSerializer.Serialize(new { type = "pet-mode", mode = "normal" }));
+        _tray?.SetPetMode(TrayIcon.PetTrayMode.Normal);
+    }
+
+    private void TurnOnPetIsland()
+    {
+        App.Settings.PetIsland = true;
+        TrySaveSettings();
+        SetPet(true, null);
+        _widgetWindow?.SetPetMode(true);
+        _widgetWindow?.Post(JsonSerializer.Serialize(new { type = "pet-mode", mode = "island" }));
+        _tray?.SetPetMode(TrayIcon.PetTrayMode.Island);
+    }
+
+    private void OpenSettings(string? tab = null)
+    {
+        ShowFromTray();
+        if (_pageReady)
+        {
+            Web.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "settings", tab }));
+        }
+        else
+        {
+            _pendingSettings = tab ?? "";
+        }
+    }
+
+
+    private void OpenSettingsWindow(string? tab = null)
+
+    {
+
+        if (_settingsWindow is null)
+
+        {
+
+            _settingsWindow = new SettingsWindow(VirtualHost, FindWebRoot(), e => OnWebMessage(null, e));
+
+        }
+
+        _settingsWindow.ShowSettings(tab);
+
+        if (_settingsWindow.IsPageReady)
+
+        {
+
+            _settingsWindow.Post(AppSettingsJson());
+
+            _settingsWindow.Post(_cloud.StatusJson());
+
+        }
+
+    }
+
 
     private void ApplyWidgetWindow()
     {
@@ -529,6 +603,18 @@ public partial class MainWindow : Window
         else { Left = wa.Right - Width - 16; Top = wa.Top + 16; }
     }
 
+    private void ShowLargeView()
+    {
+        SetWidget(false);
+        ShowFromTray();
+    }
+
+    private void ShowCompactView()
+    {
+        SetWidget(true);
+        ShowFromTray();
+    }
+
     private void SetWidget(bool on)
     {
         if (on != App.Settings.Widget)
@@ -536,8 +622,12 @@ public partial class MainWindow : Window
             SavePlacement();   // 지금 모양의 위치·크기를 먼저 기억
             App.Settings.Widget = on;
             TrySaveSettings();
-            _tray?.SetWidgetChecked(on);
-            if (on) ApplyWidgetPlacement();
+            _tray?.SetViewMode(on);
+            if (on)
+            {
+                ApplyWidgetPlacement();
+                ShowFromTray();
+            }
             else
             {
                 Topmost = false;   // 화면이 "항상 위" 설정을 다시 보낸다
@@ -547,7 +637,12 @@ public partial class MainWindow : Window
                     Left = wa.Left + (wa.Width - Width) / 2;
                     Top = wa.Top + (wa.Height - Height) / 2;
                 }
+                ShowFromTray();
             }
+        }
+        else
+        {
+            ShowFromTray();
         }
         Post(AppSettingsJson());
     }
@@ -665,6 +760,8 @@ public partial class MainWindow : Window
         _watcher.Reparse();
         Web.CoreWebView2?.Navigate(PageUrl());
         _widgetWindow?.ReloadLanguage();
+        _settingsWindow?.ReloadLanguage();
+
     }
 
     /// <summary>앱 쪽 설정(app.json·시작 프로그램 등록)과 새 버전 확인 결과를 화면 설정 패널에 알린다.</summary>
@@ -692,6 +789,10 @@ public partial class MainWindow : Window
             petSessionId = s.PetSessionId ?? "",
             petCompact = s.PetCompact,
             petNoBg = s.PetNoBg,
+            petIsland = s.PetIsland,
+            petTopmost = s.PetTopmost,
+            appMode = s.AppMode,
+            widgetSize = s.WidgetSize,
             language = s.Language == "en" ? "en" : "ko",
             remoteAwayOnLock = s.RemoteAwayOnLock,
             remoteAwayIdleMinutes = s.RemoteAwayIdleMinutes,
@@ -711,6 +812,8 @@ public partial class MainWindow : Window
     {
         if (_pageReady) Web.CoreWebView2?.PostWebMessageAsJson(json);
         _widgetWindow?.Post(json);
+        _settingsWindow?.Post(json);
+
     }
 
     private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -735,6 +838,7 @@ public partial class MainWindow : Window
                         Post("{\"type\":\"remote\",\"data\":" + _remote.StateJson() + "}");
                     }
                     if (sender != null && _pendingSelect is { } sel) { _pendingSelect = null; SelectSession(sel); }
+                    if (sender != null && _pendingSettings is { } setTab) { _pendingSettings = null; OpenSettings(setTab); }
                     break;
                 case "app-setting":   // 앱 쪽 설정(app.json), autoStart 는 시작 프로그램 등록
                     if (!App.DemoMode && root.TryGetProperty("key", out var key) && root.TryGetProperty("value", out var val))
@@ -844,10 +948,65 @@ public partial class MainWindow : Window
                         Post(AppSettingsJson());
                     }
                     break;
+                case "pet-topmost":
+                    if (!App.DemoMode && root.TryGetProperty("value", out var ptop))
+                    {
+                        bool on = ptop.ValueKind == JsonValueKind.True;
+                        App.Settings.PetTopmost = on;
+                        TrySaveSettings();
+                        _widgetWindow?.SetTopmost(on);
+                        _widgetWindow?.Post(JsonSerializer.Serialize(new { type = "pet-topmost", value = on }));
+                        Post(AppSettingsJson());
+                    }
+                    break;
+                case "app-mode":
+                    if (root.TryGetProperty("mode", out var mElem) && mElem.GetString() is { Length: > 0 } m)
+                    {
+                        bool initial = root.TryGetProperty("initial", out var ini) && ini.GetBoolean();
+                        App.Settings.AppMode = m;
+                        TrySaveSettings();
+                        _widgetWindow?.Post(JsonSerializer.Serialize(new { type = "app-mode", mode = m }));
+                        if (_widgetWindow != null)
+                        {
+                            _widgetWindow.ApplyBackdrop(m == "office" ? false : App.Settings.PetNoBg);
+                            _widgetWindow.SetAppMode(m, initial);
+                        }
+                    }
+                    break;
+                case "widget-size-mode":
+
+                    if (!App.DemoMode && root.TryGetProperty("size", out var wszElem) && wszElem.GetString() is { Length: > 0 } wsz)
+
+                    {
+
+                        App.Settings.WidgetSize = wsz;
+
+                        TrySaveSettings();
+
+                        _widgetWindow?.SetWidgetSize(wsz);
+
+                        _widgetWindow?.Post(JsonSerializer.Serialize(new { type = "widget-size-mode", size = wsz }));
+
+                        Post(JsonSerializer.Serialize(new { type = "widget-size-mode", size = wsz }));
+
+                    }
+
+                    break;
+
                 case "pet-backdrop":
                     if (!App.DemoMode && root.TryGetProperty("noBg", out var pbd))
                     {
                         _widgetWindow?.ApplyBackdrop(pbd.ValueKind == JsonValueKind.True);
+                    }
+                    break;
+                case "pet-mode":
+                    if (!App.DemoMode && root.TryGetProperty("mode", out var pmd) && pmd.GetString() is { } modeStr)
+                    {
+                        bool isIsland = modeStr == "island";
+                        App.Settings.PetIsland = isIsland;
+                        TrySaveSettings();
+                        _widgetWindow?.SetPetMode(isIsland);
+                        _tray?.SetPetMode(App.Settings.Pet ? (isIsland ? TrayIcon.PetTrayMode.Island : TrayIcon.PetTrayMode.Normal) : TrayIcon.PetTrayMode.None);
                     }
                     break;
                 case "pet-say":
@@ -907,6 +1066,24 @@ public partial class MainWindow : Window
                 case "pet-drag":
                     _widgetWindow?.StartDrag();
                     break;
+                case "pet-resize-start":
+                    if (root.TryGetProperty("edge", out var rse) && rse.GetString() is { } startEdge)
+                        _widgetWindow?.OnResizeStart(startEdge);
+                    break;
+                case "pet-resize-move":
+                    if (root.TryGetProperty("edge", out var rme) && rme.GetString() is { } moveEdge
+                        && root.TryGetProperty("deltaY", out var rmd) && rmd.TryGetDouble(out var moveDy))
+                        _widgetWindow?.OnResizeMove(moveEdge, moveDy);
+                    break;
+                case "pet-resize-end":
+                    if (root.TryGetProperty("edge", out var ree) && ree.GetString() is { } endEdge
+                        && root.TryGetProperty("deltaY", out var red) && red.TryGetDouble(out var endDy))
+                        _widgetWindow?.OnResizeEnd(endEdge, endDy);
+                    break;
+                case "pet-restore-height":
+                    _widgetWindow?.RestoreSavedHeight();
+                    break;
+
                 case "pet-size":
                     if (root.TryGetProperty("height", out var ph) && ph.TryGetDouble(out var pheight))
                         _widgetWindow?.FitHeight(pheight);

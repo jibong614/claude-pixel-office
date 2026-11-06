@@ -43,6 +43,15 @@ internal sealed class AppSettings
     /// <summary>화면 언어: ko(기본) | en. 말풍선·알림 문구를 만드는 감시기도 알아야 해서 화면 저장소가 아니라 여기에.</summary>
     public string Language { get; set; } = "ko";
 
+    /// <summary>화면 동작 모드: basic(기본 픽셀 오피스) | office(비즈니스 대시보드).</summary>
+    public string AppMode { get; set; } = "basic";
+
+    /// <summary>바탕화면 미니위젯 크기: large(크게 · 기본 360px) | medium(보통 300px) | small(작게 260px).</summary>
+    public string WidgetSize { get; set; } = "large";
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string PetSize { get => WidgetSize; set => WidgetSize = value; }
+
     /// <summary>마지막 창 위치·크기(화면 밖이면 쓰지 않는다).</summary>
     public WindowPlacement? Window { get; set; }
 
@@ -59,8 +68,17 @@ internal sealed class AppSettings
     public bool PetCompact { get; set; }
     /// <summary>미니위젯 배경(벽·창문·화분·카펫)을 숨기고 직원·의자·책상·컴퓨터만 보여 줄지.</summary>
     public bool PetNoBg { get; set; }
+    /// <summary>미니위젯을 초슬림 미니바(아일랜드) 모드로 보여 줄지.</summary>
+    public bool PetIsland { get; set; }
+    /// <summary>미니위젯을 항상 위(Topmost)에 둘지. 해제 시 다른 일반 창 뒤로 숨는다.</summary>
+    public bool PetTopmost { get; set; } = true;
+    /// <summary>바탕화면 미니위젯 위치·크기 (높이는 사용자 조절 가능, 폭은 360 고정).</summary>
     [System.Text.Json.Serialization.JsonPropertyName("PetWindow")]
     public WindowPlacement? MiniWidgetPlacement { get; set; }
+
+    /// <summary>바탕화면 미니바(초슬림 아일랜드) 위치 (폭 540, 높이 44 고정).</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("MiniBarWindow")]
+    public WindowPlacement? MiniBarPlacement { get; set; }
 
     [System.Text.Json.Serialization.JsonIgnore]
     public WindowPlacement? MiniWidgetWindow { get => MiniWidgetPlacement; set => MiniWidgetPlacement = value; }

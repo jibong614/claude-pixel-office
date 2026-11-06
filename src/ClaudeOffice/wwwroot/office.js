@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.7.9';
+const PAGE_VERSION = '1.8.4';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -64,6 +64,14 @@ const REMOTE = !params.has('demo') && (!!remoteLink || HOSTED);
 const DEMO = !REMOTE && (!host || params.has('demo'));
 const WIDGET_WINDOW = params.has('pet') || params.has('widget_window') || params.has('miniwidget'); // 바탕화면 미니위젯 전용 창(?widget_window=1)
 const PET_WINDOW = WIDGET_WINDOW; // 하위 호환 별칭
+if (WIDGET_WINDOW && typeof document !== 'undefined' && document.body) {
+  document.body.classList.add('widget-window', 'pet-window');
+}
+const SETTINGS_WINDOW = params.has('settings_window'); // 독립 설정 전용 창(?settings_window=1)
+if (SETTINGS_WINDOW && typeof document !== 'undefined') {
+  if (document.documentElement) document.documentElement.classList.add('settings-window');
+  if (document.body) document.body.classList.add('settings-window');
+}
 
 // 화면 언어(⚙️ → 사무실 → 화면 언어). PC 앱은 주소의 ?lang=en 으로 알려 준다(한국어는 붙이지 않음).
 // 휴대폰 보기는 PC가 요약에 실어 보낸 언어를 이 기기에 저장해 두고 쓴다(startRemote — 다르면 저장하고 다시 연다).
@@ -108,15 +116,86 @@ const store = {
 let showAway = store.get('showAway', true);
 
 // 💼 화면 동작 모드 ('basic': 기본 픽셀 오피스 / 'office': 비즈니스 대시보드)
-let appMode = store.get('appMode', 'basic');
+let appMode = (params.has('mode') && (params.get('mode') === 'office' || params.get('mode') === 'basic')) ? params.get('mode') : store.get('appMode', 'basic');
 if (appMode !== 'basic' && appMode !== 'office') appMode = 'basic';
 
 function getAppMode() {
   return appMode;
 }
 
-function setAppMode(mode) {
+// 💼 화면 동작 모드 동기화 채널 (창 간 실시간 동기화)
+const modeBroadcast = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('co_app_mode') : null;
+if (modeBroadcast) {
+  modeBroadcast.onmessage = (e) => {
+    if (e.data && e.data.mode && e.data.mode !== appMode) {
+      setAppMode(e.data.mode, true);
+    }
+  };
+}
+window.addEventListener('storage', (e) => {
+  if (e.key === STORE_PREFIX + 'appMode') {
+    const newMode = store.get('appMode', 'basic');
+    if (newMode !== appMode) {
+      setAppMode(newMode, true);
+    }
+  }
+});
+
+// 📐 바탕화면 미니위젯 크기 ('large': 크게 · 기본 / 'medium': 보통 / 'small': 작게)
+let widgetSize = store.get('widgetSize', 'large');
+if (widgetSize !== 'large' && widgetSize !== 'medium' && widgetSize !== 'small') widgetSize = 'large';
+
+function getWidgetSize() {
+  return widgetSize;
+}
+
+const widgetSizeBroadcast = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('co_widget_size') : null;
+if (widgetSizeBroadcast) {
+  widgetSizeBroadcast.onmessage = (e) => {
+    if (e.data && e.data.size && e.data.size !== widgetSize) {
+      setWidgetSize(e.data.size, true);
+    }
+  };
+}
+window.addEventListener('storage', (e) => {
+  if (e.key === STORE_PREFIX + 'widgetSize') {
+    const newSize = store.get('widgetSize', 'large');
+    if (newSize !== widgetSize) {
+      setWidgetSize(newSize, true);
+    }
+  }
+});
+
+function setWidgetSize(size, fromSync = false) {
+  if (size !== 'large' && size !== 'medium' && size !== 'small') size = 'large';
+  widgetSize = size;
+  store.set('widgetSize', size);
+  applyWidgetSize();
+  if (!fromSync) {
+    if (widgetSizeBroadcast) {
+      try { widgetSizeBroadcast.postMessage({ size }); } catch { /* ignore */ }
+    }
+    send({ cmd: 'widget-size-mode', size });
+  }
+  if (typeof refreshSettings === 'function') refreshSettings();
+  if (typeof renderPet === 'function') renderPet();
+}
+
+function applyWidgetSize() {
+  document.body.classList.toggle('widget-size-large', widgetSize === 'large');
+  document.body.classList.toggle('widget-size-medium', widgetSize === 'medium');
+  document.body.classList.toggle('widget-size-small', widgetSize === 'small');
+  if (typeof petEl !== 'undefined' && petEl) {
+    petEl.classList.toggle('size-large', widgetSize === 'large');
+    petEl.classList.toggle('size-medium', widgetSize === 'medium');
+    petEl.classList.toggle('size-small', widgetSize === 'small');
+  }
+}
+
+function setAppMode(mode, fromSync = false) {
   if (mode !== 'basic' && mode !== 'office') mode = 'basic';
+  const prevMode = appMode;
+  if (mode === prevMode && !fromSync) return;
   appMode = mode;
   store.set('appMode', mode);
   applyAppMode();
@@ -126,11 +205,18 @@ function setAppMode(mode) {
       store.set('petMode', 'normal');
     }
   }
+  if (!fromSync) {
+    if (modeBroadcast) {
+      try { modeBroadcast.postMessage({ mode }); } catch { /* ignore */ }
+    }
+    send({ cmd: 'app-mode', mode, prevMode });
+  }
   if (typeof refreshHud === 'function') refreshHud();
   if (typeof refreshSettings === 'function') refreshSettings();
   if (typeof renderCleanOffice === 'function') renderCleanOffice();
   if (typeof renderPet === 'function') renderPet();
   if (typeof redraw === 'function') redraw(true);
+  if (WIDGET_WINDOW && typeof syncPetHeight === 'function') syncPetHeight();
 }
 
 function applyAppMode() {
@@ -139,14 +225,28 @@ function applyAppMode() {
   document.body.classList.toggle('mode-basic', !isOffice);
   const cleanView = $('officeCleanView');
   const canvas = $('office');
-  if (cleanView) cleanView.hidden = !isOffice;
-  if (canvas) canvas.hidden = isOffice;
+  const isWidgetList = typeof widgetOn === 'function' && widgetOn();
+  if (cleanView) {
+    const shouldHide = !isOffice || WIDGET_WINDOW || isWidgetList;
+    cleanView.hidden = shouldHide;
+    if (shouldHide) cleanView.style.display = 'none';
+    else cleanView.style.removeProperty('display');
+  }
+  if (canvas) canvas.hidden = isOffice || WIDGET_WINDOW || isWidgetList;
   if (isOffice) {
     if (typeof petMode !== 'undefined' && petMode === 'shimeji') {
       petMode = 'normal';
       store.set('petMode', 'normal');
     }
-    if (typeof renderCleanOffice === 'function') renderCleanOffice();
+    const petElObj = typeof petEl !== 'undefined' ? petEl : $('pet');
+    if (petElObj && petMode !== 'island') petElObj.classList.remove('nobg', 'compact');
+    if (WIDGET_WINDOW) {
+      send({ cmd: 'pet-backdrop', noBg: petMode === 'island' });
+    }
+    if (!WIDGET_WINDOW && typeof renderCleanOffice === 'function') renderCleanOffice();
+    if (typeof renderPet === 'function') renderPet();
+  } else {
+    if (WIDGET_WINDOW) send({ cmd: 'pet-backdrop', noBg: petNoBgOn() });
     if (typeof renderPet === 'function') renderPet();
   }
 }
@@ -166,7 +266,7 @@ function initModeSelectModal() {
 }
 
 function checkFirstLaunchMode() {
-  if (WIDGET_WINDOW || REMOTE) return;
+  if (SETTINGS_WINDOW || WIDGET_WINDOW || REMOTE || params.has('mode')) return;
   const chosen = store.get('appModeChosen', false);
   if (!chosen) {
     const modal = $('modeSelectModal');
@@ -494,6 +594,7 @@ function onSnapshot(snap) {
 
   data = snap;
   skew = (snap.now || Date.now()) - Date.now();
+  if (SETTINGS_WINDOW) return;
   if (WIDGET_WINDOW) { renderPet(); return; }
   if (appMode === 'office') renderCleanOffice();
   refreshHud();
@@ -2267,7 +2368,7 @@ function drawPixelCat(cat, t) {
   const stage = getCatGrowthStage(cat.type);
 
   if (stage === 'baby') {
-    const bboxW = 7;
+    const bboxW = 8;
     const cP = (dx, dy, c) => {
       const rx = dir === 1 ? x + dx : x + (bboxW - 1 - dx);
       P(rx, y + dy, c);
@@ -2279,105 +2380,117 @@ function drawPixelCat(cat, t) {
 
     if (cat.state === 'loaf' || cat.state === 'sit' || cat.state === 'onMonitor' || cat.state === 'onTower' || cat.state === 'onDesk') {
       const breath = tick(t, 800) ? 1 : 0;
-      cR(1, 2 - breath, 5, 3, pal.base);
-      cR(4, 1 - breath, 3, 3, pal.base);
+      cR(1, 2 - breath, 6, 3, pal.base);
+      cR(4, 1 - breath, 4, 3, pal.base);
       cP(4, -breath, pal.ear || pal.dark);
       cP(6, -breath, pal.ear || pal.dark);
-      cP(5, 1 - breath, pal.eye);
-      cP(6, 2 - breath, pal.nose);
-      cR(2, 4 - breath, 3, 1, pal.white);
+      cP(5, 2 - breath, pal.eye);
+      cP(6, 2 - breath, pal.eye);
+      cP(6, 3 - breath, pal.nose);
+      cP(7, 2 - breath, pal.base);
+      cR(2, 4 - breath, 4, 1, pal.white);
       if (cat.type === 'cheese') {
         cP(2, 2 - breath, pal.dark);
+        cP(4, 2 - breath, pal.dark);
       } else if (cat.type === 'calico') {
         cP(2, 2 - breath, pal.dark);
         cP(3, 3 - breath, pal.black);
       }
       const tailWag = tick(t, 250) ? 1 : 0;
-      cP(0, 2 - breath, pal.dark);
-      cP(0 - tailWag, 1 - breath, pal.base);
+      cP(0, 3 - breath, pal.dark);
+      cP(0, 2 - breath, pal.base);
     } else if (cat.state === 'inBox') {
-      cP(3, 0, pal.ear || pal.dark);
-      cP(5, 0, pal.ear || pal.dark);
-      cR(3, 1, 3, 2, pal.base);
-      cP(4, 1, pal.eye);
-      cP(5, 2, pal.nose);
-    } else if (cat.state === 'pooping') {
-      cR(1, 1, 4, 4, pal.base);
-      cR(4, 1, 3, 3, pal.base);
       cP(4, 0, pal.ear || pal.dark);
       cP(6, 0, pal.ear || pal.dark);
+      cR(3, 1, 4, 3, pal.base);
+      cP(4, 2, pal.eye);
+      cP(5, 2, pal.eye);
+      cP(5, 3, pal.nose);
+      cP(6, 2, pal.base);
+    } else if (cat.state === 'pooping') {
+      cR(1, 1, 5, 4, pal.base);
+      cR(4, 1, 4, 3, pal.base);
+      cP(4, 0, pal.ear || pal.dark);
+      cP(6, 0, pal.ear || pal.dark);
+      cP(5, 2, pal.eye);
       cP(6, 2, pal.nose);
-      cP(0, 2, pal.dark);
+      cP(7, 2, pal.base);
+      cP(0, 3, pal.dark);
     } else if (cat.state === 'eating') {
       const dip = tick(t, 200) ? 1 : 0;
-      cR(1, 2, 4, 3, pal.base);
-      cR(4, 2 + dip, 3, 3, pal.base);
-      cP(4, 1 + dip, pal.ear || pal.dark);
-      cP(6, 1 + dip, pal.ear || pal.dark);
+      cR(1, 2, 5, 3, pal.base);
+      cR(4, 1 + dip, 4, 3, pal.base);
+      cP(4, 0 + dip, pal.ear || pal.dark);
+      cP(6, 0 + dip, pal.ear || pal.dark);
       cP(6, 3 + dip, pal.nose);
+      cP(7, 2 + dip, pal.base);
+      cR(2, 4, 4, 1, pal.white);
       const tailWag = tick(t, 180) ? 1 : 0;
-      cP(0, 2, pal.dark);
-      cP(0 - tailWag, 1, pal.base);
-      cR(2, 4, 3, 1, pal.white);
+      cP(0, 3, pal.dark);
+      cP(0 - tailWag, 2, pal.base);
     } else if (cat.state === 'petted') {
       cR(1, 2, 5, 3, pal.base);
-      cR(4, 1, 3, 3, pal.base);
+      cR(4, 1, 4, 3, pal.base);
       cP(4, 0, pal.ear || pal.dark);
       cP(6, 0, pal.ear || pal.dark);
+      cP(5, 1, pal.dark);
+      cP(6, 1, pal.dark);
       cP(6, 2, pal.nose);
+      cP(7, 2, pal.base);
+      cR(2, 4, 4, 1, pal.white);
       const fastTail = tick(t, 100) ? 1 : 0;
-      cP(0, 1, pal.dark);
-      cP(0 + fastTail, 0, pal.base);
-      cR(2, 4, 3, 1, pal.white);
+      cP(0, 2, pal.dark);
+      cP(0 + fastTail, 1, pal.base);
     } else {
       const isWalk = cat.state === 'walk';
-      const step = isWalk ? tick(t, 120, 4) : 0;
+      const step = isWalk ? tick(t, 140, 4) : 0;
       const bob = isWalk && (step === 1 || step === 3) ? 1 : 0;
 
-      cR(1, 2 - bob, 4, 3, pal.base);
+      // 둥글고 통통한 아기 몸통 (w=5, h=3)
+      cR(1, 2 - bob, 5, 3, pal.base);
       if (cat.type === 'cheese') {
         cP(2, 2 - bob, pal.dark);
         cP(4, 2 - bob, pal.dark);
       } else if (cat.type === 'calico') {
         cP(2, 2 - bob, pal.dark);
-        cP(3, 3 - bob, pal.black);
+        cP(4, 3 - bob, pal.black);
       }
+      cR(2, 4 - bob, 3, 1, pal.white);
 
-      cR(4, 0 - bob, 3, 3, pal.base);
+      // 앙증맞은 대두 머리 (w=4, h=3)
+      cR(4, 0 - bob, 4, 3, pal.base);
       cP(4, -1 - bob, pal.ear || pal.dark);
       cP(6, -1 - bob, pal.ear || pal.dark);
 
+      // 초롱초롱한 큰 눈망울
       if (cat.type === 'white') {
         cP(5, 1 - bob, pal.eye);
         cP(6, 1 - bob, pal.eyeR || pal.eye);
       } else {
         cP(5, 1 - bob, pal.eye);
+        cP(6, 1 - bob, pal.eye);
       }
-      cP(6, 2 - bob, pal.nose);
-      cR(4, 3 - bob, 2, 1, pal.white);
 
-      const tailWag = tick(t, 200) ? 1 : 0;
+      // 얼굴 안쪽 핑크 코 & 볼살 (부리 모양 탈피)
+      cP(6, 2 - bob, pal.nose);
+      cP(7, 2 - bob, pal.base);
+      cR(5, 3 - bob, 2, 1, pal.white);
+
+      // 살짝 말린 앙증맞은 당근 꼬리
+      const tailWag = tick(t, 220) ? 1 : 0;
+      cP(0, 3 - bob, pal.dark);
       cP(0, 2 - bob, pal.dark);
       cP(0 - tailWag, 1 - bob, pal.base);
 
+      // 숏다리 솜방망이 발 (닭다리처럼 3px 뻗지 않고 1px 앙증맞은 발)
       if (isWalk) {
         const fstep = (step === 0 ? 1 : step === 2 ? -1 : 0);
         const bstep = (step === 1 ? 1 : step === 3 ? -1 : 0);
-        if (bob === 1) {
-          cP(4, 4, pal.base);
-          cP(2, 4, pal.base);
-        }
-        cP(4 + fstep, 5, pal.white);
-        cP(4 + fstep, 6, pal.white);
+        cP(5 + fstep, 5, pal.white);
         cP(2 + bstep, 5, pal.white);
-        cP(2 + bstep, 6, pal.white);
       } else {
-        cP(4, 4, pal.base);
-        cP(4, 5, pal.white);
-        cP(4, 6, pal.white);
-        cP(2, 4, pal.base);
+        cP(5, 5, pal.white);
         cP(2, 5, pal.white);
-        cP(2, 6, pal.white);
       }
     }
     return;
@@ -3702,7 +3815,7 @@ let lastFrame = 0;
 let windowHidden = false;   // PC 앱이 알림 영역으로 숨었을 때(true)는 캔버스를 그리지 않는다
 function frame(ts) {
   requestAnimationFrame(frame);
-  if (windowHidden || document.visibilityState === 'hidden') return;
+  if (SETTINGS_WINDOW || windowHidden || document.visibilityState === 'hidden') return;
   if (ts - lastFrame < 33) return;   // 약 30fps면 충분
   lastFrame = ts;
 
@@ -3807,7 +3920,7 @@ const nightShiftModalEl = $('nightShiftModal'), nsCloseBtn = $('nsClose'), nsTog
 const settingsEl = $('settings'), settingsBody = $('sBody'), drawerTab = $('drawerTab');
 
 function refreshHud() {
-  if (WIDGET_WINDOW) {
+  if (SETTINGS_WINDOW || WIDGET_WINDOW) {
     document.body.style.setProperty('--hud-h', '0px');
     return;
   }
@@ -3860,6 +3973,8 @@ function applyWidget() {
   const on = widgetOn();
   document.body.classList.toggle('widget', on);
   wlistEl.hidden = !on;
+  const cleanView = $('officeCleanView');
+  if (cleanView) cleanView.hidden = (appMode !== 'office') || WIDGET_WINDOW || on;
   btnWidget.classList.toggle('on', on);
   if (on) { selectedId = null; renderPanel(); setSettingsOpen(false); renderWidget(); }
   else { lastWidgetH = 0; layoutKey = ''; if (!LOCAL_WIDGET) send({ cmd: 'topmost', value: pinned }); }
@@ -3909,11 +4024,13 @@ let demoPetOpen = LOCAL_PET && (params.get('select') === 'pet' || store.get('pet
 let demoPetSessionId = store.get('petSessionId', '') || '';
 let demoPetCompact = store.get('petCompact', false);
 let demoPetNoBg = store.get('petNoBg', false);
+let demoPetTopmost = store.get('petTopmost', true);
 
 const petOn = () => (WIDGET_WINDOW ? true : LOCAL_PET ? demoPetOpen : !!appSettings?.pet);
 const petSessionPref = () => (LOCAL_PET ? demoPetSessionId : (appSettings?.petSessionId || ''));
 const petCompactOn = () => (LOCAL_PET ? demoPetCompact : !!appSettings?.petCompact);
 const petNoBgOn = () => (LOCAL_PET ? demoPetNoBg : !!appSettings?.petNoBg);
+const petTopmostOn = () => (LOCAL_PET ? demoPetTopmost : (appSettings?.petTopmost ?? true));
 
 function setPet(on) {
   if (on) markQuest('try_pet');
@@ -3962,6 +4079,20 @@ function setPetNoBg(v) {
   }
 }
 
+function setPetTopmost(v) {
+  const on = !!v;
+  if (LOCAL_PET) {
+    demoPetTopmost = on;
+    store.set('petTopmost', on);
+    if (petOn()) renderPet();
+    refreshSettings();
+  } else {
+    if (appSettings) appSettings.petTopmost = on;
+    send({ cmd: 'pet-topmost', value: on });
+    if (petOn()) renderPet();
+  }
+}
+
 /** 미니위젯에 표시할 대표 직원: 지정한 세션이 있으면 그 직원, 없거나 사라졌으면 확인 필요(✋) → 작업 중 → 최근 활동 순으로 고른다. */
 function resolvePetSession() {
   const list = data.sessions || [];
@@ -3996,7 +4127,7 @@ function applyPetState() {
 }
 
 let petDomBuilt = false;
-let petSelEl = null, petBgBtn = null, petFoldBtn = null, petStopBtn = null, petAlertEl = null, petAlertTargetId = '';
+let petSelEl = null, petBgBtn = null, petFoldBtn = null, petPinBtn = null, petStopBtn = null, petAlertEl = null, petAlertTargetId = '';
 let petStageEl = null, petCanvasEl = null, petCtx = null;
 let petBarNm = null, petBarSt = null, petAsksEl = null, petFeedEl = null, petFeedHd = null, petFeedTx = null;
 let petCmdWrap = null, petInputEl = null, petSendBtn = null, petNoteEl = null, petCancelBtn = null, petWakeBtn = null, petGuideBtn = null, petEmptyEl = null, petIslandEl = null;
@@ -4006,13 +4137,61 @@ const petAnswered = new Map();
 let petNote = null;   // { sid, at, text }
 let lastPetH = 0, lastPetW = 0;
 
+function setupWidgetResize(topEl, bottomEl) {
+  if (!WIDGET_WINDOW) return;
+  let activeEdge = null;
+  let startY = 0;
+
+  const onPointerDown = (e, edge) => {
+    if (e.button !== 0) return;
+    if (typeof petMode !== 'undefined' && petMode === 'island') return;
+    e.preventDefault();
+    e.stopPropagation();
+    activeEdge = edge;
+    startY = e.screenY;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    document.body.classList.add('pet-resizing');
+    send({ cmd: 'pet-resize-start', edge });
+  };
+
+  const onPointerMove = (e) => {
+    if (!activeEdge) return;
+    const dy = e.screenY - startY;
+    send({ cmd: 'pet-resize-move', edge: activeEdge, deltaY: dy });
+  };
+
+  const onPointerUp = (e) => {
+    if (!activeEdge) return;
+    const dy = e.screenY - startY;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    document.body.classList.remove('pet-resizing');
+    send({ cmd: 'pet-resize-end', edge: activeEdge, deltaY: dy });
+    activeEdge = null;
+  };
+
+  topEl.addEventListener('pointerdown', (e) => onPointerDown(e, 'top'));
+  topEl.addEventListener('pointermove', onPointerMove);
+  topEl.addEventListener('pointerup', onPointerUp);
+  topEl.addEventListener('pointercancel', onPointerUp);
+
+  bottomEl.addEventListener('pointerdown', (e) => onPointerDown(e, 'bottom'));
+  bottomEl.addEventListener('pointermove', onPointerMove);
+  bottomEl.addEventListener('pointerup', onPointerUp);
+  bottomEl.addEventListener('pointercancel', onPointerUp);
+}
+
 function ensurePetDom() {
   if (petDomBuilt) return;
   petDomBuilt = true;
 
   const head = elem('div', 'pet-head');
-  const badge = elem('span', 'pet-badge', (appMode === 'office') ? '💼' : '🪟');
-  badge.title = T('드래그해 위치 이동', 'Drag to move');
+  petPinBtn = elem('button', 'pet-ibtn btn-pet-pin', '📌');
+  petPinBtn.title = petTopmostOn()
+    ? T('항상 위 고정됨 (클릭 시 고정 해제하여 다른 창 뒤에 숨김)', 'Always on top (click to unpin and allow hiding behind windows)')
+    : T('항상 위 고정 해제됨 (클릭 시 항상 위로 고정)', 'Not on top (click to pin always on top)');
+  petPinBtn.classList.toggle('pinned', petTopmostOn());
+  petPinBtn.addEventListener('click', () => setPetTopmost(!petTopmostOn()));
+
   petSelEl = elem('select', 'pet-sel');
   petSelEl.title = T('대표 직원 선택(바탕화면 미니위젯에 표시할 세션)', 'Choose representative employee');
   petSelEl.addEventListener('change', () => setPetSession(petSelEl.value));
@@ -4056,7 +4235,7 @@ function ensurePetDom() {
   petWalkBtn.addEventListener('click', togglePetWalk);
 
   const petIslandBtn = elem('button', 'pet-ibtn btn-pet-island', '🏝️');
-  petIslandBtn.title = T('초슬림 다이내믹 아일랜드 모드', 'Ultra-slim Dynamic Island Mode');
+  petIslandBtn.title = T('미니바로 변경', 'Switch to Mini-bar');
   petIslandBtn.addEventListener('click', togglePetIsland);
 
   const petMemeBtn = elem('button', 'pet-ibtn btn-pet-meme', '💡');
@@ -4067,7 +4246,7 @@ function ensurePetDom() {
   closeBtn.title = T('바탕화면 미니위젯 닫기', 'Close Desktop MiniWidget');
   closeBtn.addEventListener('click', () => setPet(false));
 
-  head.append(badge, petSelEl, petBgBtn, petFoldBtn, petWalkBtn, petIslandBtn, petMemeBtn, petStopBtn, focusBtn, officeBtn, closeBtn);
+  head.append(petPinBtn, petSelEl, petBgBtn, petFoldBtn, petWalkBtn, petMemeBtn, petStopBtn, focusBtn, officeBtn, petIslandBtn, closeBtn);
 
   petAlertEl = elem('button', 'pet-alert');
   petAlertEl.hidden = true;
@@ -4092,14 +4271,16 @@ function ensurePetDom() {
   });
   petStageEl.append(petCanvasEl, bar);
 
-  // 헤더나 구석 방 그림(캔버스)을 잡고 끌면 창 이동
+  // 위젯/미니바의 빈 공간을 잡고 끌면 창 이동 (선택창·버튼·입력창 등 인터랙티브 요소는 제외)
   const startDrag = (e) => {
     if (e.button !== 0) return;
-    if (e.target instanceof Element && e.target.closest('select, button, input, textarea, .pet-bar')) return;
+    if (e.target instanceof Element && e.target.closest('select, button, input, textarea, a, option, .pet-bar, .pet-ask-card, .pet-feed, .pet-cmd, .pet-empty, .voice-btn, .reply-btn, .pet-resize-handle')) return;
     if (WIDGET_WINDOW) send({ cmd: 'pet-drag' });
   };
   head.addEventListener('mousedown', startDrag);
   petStageEl.addEventListener('mousedown', startDrag);
+  if (petEl) petEl.addEventListener('mousedown', startDrag);
+  if (WIDGET_WINDOW) document.addEventListener('mousedown', startDrag);
 
   petEmptyEl = elem('div', 'pet-empty');
   petAsksEl = elem('div', 'pet-asks');
@@ -4156,7 +4337,14 @@ function ensurePetDom() {
 
   petIslandEl = elem('div', 'island-wrap');
   petIslandEl.hidden = true;
-  petEl.replaceChildren(head, petAlertEl, petStageEl, petEmptyEl, petAsksEl, petFeedEl, petCmdWrap, petIslandEl);
+
+  const petResizeTop = elem('div', 'pet-resize-handle top');
+  petResizeTop.title = T('위아래로 드래그하여 높이 조절', 'Drag up/down to resize height');
+  const petResizeBottom = elem('div', 'pet-resize-handle bottom');
+  petResizeBottom.title = T('위아래로 드래그하여 높이 조절', 'Drag up/down to resize height');
+  setupWidgetResize(petResizeTop, petResizeBottom);
+
+  petEl.replaceChildren(petResizeTop, head, petAlertEl, petStageEl, petEmptyEl, petAsksEl, petFeedEl, petCmdWrap, petIslandEl, petResizeBottom);
 }
 
 // ───────────────────────────── 📱 모바일 & 원격 제어: Diff 아코디언 & 음성 지시 ─────────────────────────────
@@ -4231,7 +4419,6 @@ function triggerDevMeme(isAuto = false) {
   } else if (!WIDGET_WINDOW) {
     showToast(txt, '💡', MEME_DURATION);
   }
-  if (petFeedTx) petFeedTx.textContent = txt;
 }
 
 function checkDevMemeTimer() {
@@ -4256,7 +4443,9 @@ function checkDevMemeTimer() {
 }
 
 // ───────────────────────────── 🪟 Feature 4: 미니위젯 모드 (시메지 산책 & 다이내믹 아일랜드) ─────────────────────────────
-let petMode = store.get('petMode', 'normal'); // 'normal' | 'shimeji' | 'island'
+let petMode = (params.has('island') && params.get('island') === '1')
+  ? 'island'
+  : store.get('petMode', 'normal'); // 'normal' | 'shimeji' | 'island'
 let shimejiX = 24, shimejiVx = 1, shimejiState = 'walk', shimejiNextSwitch = 0, shimejiVy = 0, shimejiY = 0;
 let islandToastTimer = null;
 let islandToastText = null;
@@ -4295,10 +4484,6 @@ function togglePetWalk() {
 }
 
 function togglePetIsland() {
-  if (appMode === 'office') {
-    petMode = 'island';
-    return;
-  }
   petMode = (petMode === 'island') ? 'normal' : 'island';
   store.set('petMode', petMode);
   lastPetW = 0;
@@ -4308,9 +4493,9 @@ function togglePetIsland() {
 
   if (petMode === 'island') {
     if (WIDGET_WINDOW) send({ cmd: 'pet-backdrop', noBg: true });
-    showIslandToast(T('초슬림 모드 켜짐 · ✕로 복귀', 'Ultra-slim active · ✕ to restore'), '🏝️');
+    showIslandToast(T('초슬림 미니바 켜짐 · 🪟로 복귀', 'Ultra-slim mini-bar active · 🪟 to restore'), '🏝️');
   } else {
-    if (WIDGET_WINDOW) send({ cmd: 'pet-backdrop', noBg: petNoBgOn() });
+    if (WIDGET_WINDOW) send({ cmd: 'pet-backdrop', noBg: (appMode === 'office') ? false : petNoBgOn() });
     islandToastText = null;
     if (islandToastTimer) clearTimeout(islandToastTimer);
     if (petIslandEl) {
@@ -4319,6 +4504,7 @@ function togglePetIsland() {
     }
     petEl.classList.remove('pet-island');
   }
+  send({ cmd: 'pet-mode', mode: petMode });
   renderPet();
 }
 
@@ -4336,14 +4522,38 @@ function renderPetIsland(s) {
   const icon = isNotice ? islandToastText.icon : (s?.icon || '🏝️');
   const avatar = elem('span', 'island-avatar', icon);
   const info = elem('div', 'island-info');
-  const nameText = isNotice ? T('다이내믹 아일랜드', 'Dynamic Island') : (s ? displayName(s) : T('사무실', 'Office'));
-  const nm = elem('span', 'island-name', nameText);
-  nm.title = nameText;
-  const dot = elem('span', `island-dot ${isWait ? 'waiting' : ''}`);
-  const statusText = isNotice ? islandToastText.text : (s ? (s.text || T('대기 중', 'Standing by')) : T('직원 대기 중', 'Standing by'));
-  const tx = elem('span', `island-text ${isNotice ? 'island-notice' : ''}`, statusText);
-  tx.title = statusText;
-  info.append(nm, dot, tx);
+
+  if (isNotice) {
+    // 💡 아이스브레이킹 또는 멘트가 뜰 때: 버튼 영역을 제외한 바 전체 영역에 멘트 노출
+    const noticeTx = elem('span', 'island-notice-full', islandToastText.text);
+    noticeTx.title = islandToastText.text;
+    info.append(noticeTx);
+  } else {
+    // 콤보박스: 세션을 직접 선택해 바꿀 수 있게 지원
+    const sel = elem('select', 'island-sel');
+    sel.title = T('대표 직원 선택', 'Choose representative employee');
+    const pref = petSessionPref();
+    const autoLabel = s && !pref
+      ? T(`🌟 자동 · ${displayName(s)}`, `🌟 Auto · ${displayName(s)}`)
+      : T('🌟 자동 (최근 순)', '🌟 Auto (recent)');
+    const opts = [new Option(autoLabel, '')];
+    for (const item of (data.sessions || [])) {
+      const listening = remoteOf(item.id)?.listen;
+      opts.push(new Option(`${item.icon} ${displayName(item)}${listening ? ' · 📡' : ''}`, item.id));
+    }
+    sel.replaceChildren(...opts);
+    sel.value = pref && data.sessions.some((x) => x.id === pref) ? pref : '';
+    sel.onchange = (e) => {
+      e.stopPropagation();
+      setPetSession(sel.value);
+    };
+
+    const dot = elem('span', `island-dot ${isWait ? 'waiting' : ''}`);
+    const statusText = s ? (s.text || T('대기 중', 'Standing by')) : T('직원 대기 중', 'Standing by');
+    const tx = elem('span', 'island-text', statusText);
+    tx.title = statusText;
+    info.append(sel, dot, tx);
+  }
 
   const actions = elem('div', 'island-actions');
   if (s) {
@@ -4357,13 +4567,31 @@ function renderPetIsland(s) {
     actions.append(jumpBtn, stopBtn);
   }
 
-  if (appMode !== 'office') {
-    const restoreBtn = elem('button', 'island-btn btn-restore', '✕');
-    restoreBtn.title = T('일반 모드로 복귀', 'Restore normal mode');
-    restoreBtn.onclick = (e) => { e.stopPropagation(); togglePetIsland(); };
-    actions.append(restoreBtn);
-  }
-  petIslandEl.append(avatar, info, actions);
+  // 항상 위 고정(옷핀) 버튼
+  const isPinned = petTopmostOn();
+  const islandPinBtn = elem('button', `island-btn btn-pin ${isPinned ? 'pinned' : ''}`, '📌');
+  islandPinBtn.title = isPinned
+    ? T('항상 위 고정됨 (클릭 시 고정 해제하여 다른 창 뒤에 숨김)', 'Always on top (click to unpin and allow hiding behind windows)')
+    : T('항상 위 고정 해제됨 (클릭 시 항상 위로 고정)', 'Not on top (click to pin always on top)');
+  islandPinBtn.onclick = (e) => {
+    e.stopPropagation();
+    setPetTopmost(!petTopmostOn());
+  };
+  actions.append(islandPinBtn);
+
+  // 일반 위젯으로 전환 (창 모양 아이콘)
+  const restoreBtn = elem('button', 'island-btn btn-restore', (appMode === 'office') ? '💼' : '🪟');
+  restoreBtn.title = T('일반 위젯으로 복귀', 'Restore normal widget');
+  restoreBtn.onclick = (e) => { e.stopPropagation(); togglePetIsland(); };
+  actions.append(restoreBtn);
+
+  // 미니바 닫기 (✕ 버튼 - 최우측)
+  const closeBtn = elem('button', 'island-btn btn-close', '✕');
+  closeBtn.title = T('미니바 닫기', 'Close mini-bar');
+  closeBtn.onclick = (e) => { e.stopPropagation(); setPet(false); };
+  actions.append(closeBtn);
+  if (isNotice) petIslandEl.append(avatar, info, actions);
+  else petIslandEl.append(info, actions);
 }
 
 function drawShimejiPerson(x, y, L, vx, t, s, state) {
@@ -4895,7 +5123,10 @@ function closeConnectGuide() {
   if (!connectGuideEl) return;
   connectGuideEl.hidden = true;
   connectGuideSid = '';
-  if (WIDGET_WINDOW) syncPetHeight();
+  if (WIDGET_WINDOW) {
+    if (petMode === 'island') syncPetHeight();
+    else send({ cmd: 'pet-restore-height' });
+  }
 }
 
 function applyConnectGuideLang() {
@@ -4993,6 +5224,7 @@ function showToast(msg, icon = '⚡', durationMs = 2200) {
 
 // 💼 오피스 모드: 그래픽 요소를 제외한 깔끔한 비즈니스 대시보드 뷰 렌더링
 function renderCleanOffice() {
+  if (WIDGET_WINDOW) return;
   const container = $('ocvContent');
   const nameEl = $('ocvOfficeName');
   const statsEl = $('ocvStats');
@@ -6574,31 +6806,46 @@ function sendPetSay() {
   playRetroSound('send');
   const r = remoteOf(s.id);
   const listening = r && r.listen;
+  const connected = DEMO || claudeConnected();
   petNote = {
     sid: s.id,
     at: Date.now(),
     text: listening
       ? T('🚀 지시를 보냈어요…', '🚀 Instruction sent…')
-      : T('⏳ 최초 1회 연결 필요 — [🖥️ 터미널로] 클릭', '⏳ First connection needed — click [🖥️ Terminal]')
+      : (connected
+        ? T('⏳ 지시 등록 완료 (작업 완료 후 자동 전달)', '⏳ Queued (delivered after current task)')
+        : T('🔕 Claude Code 연결 필요 (⚙️ 설정 확인)', '🔕 Connect Claude Code in Settings'))
   };
   renderPet();
-  if (!listening && !store.get('skipConnectGuide', false)) {
+  if (selectedId) renderPanel();
+  if (!connected && !store.get('skipConnectGuide', false)) {
     openConnectGuide(s.id);
   }
 }
 
 function renderPet() {
   if (!WIDGET_WINDOW && !(DEMO && petOn())) return;
-  if (appMode === 'office' && petMode === 'shimeji') petMode = 'normal';
+  if (appMode === 'office' && petMode === 'shimeji') {
+    petMode = 'normal';
+    store.set('petMode', 'normal');
+  }
   ensurePetDom();
 
   const badgeEl = petEl ? petEl.querySelector('.pet-badge') : null;
-  if (badgeEl) badgeEl.textContent = (appMode === 'office') ? '💼' : '🪟';
+  if (badgeEl) badgeEl.remove();
+
+  if (petPinBtn) {
+    const isPinned = petTopmostOn();
+    petPinBtn.classList.toggle('pinned', isPinned);
+    petPinBtn.title = isPinned
+      ? T('항상 위 고정됨 (클릭 시 고정 해제하여 다른 창 뒤에 숨김)', 'Always on top (click to unpin and allow hiding behind windows)')
+      : T('항상 위 고정 해제됨 (클릭 시 항상 위로 고정)', 'Not on top (click to pin always on top)');
+  }
 
   const pref = petSessionPref();
   const s = resolvePetSession();
   const compact = (appMode === 'office') ? false : petCompactOn();
-  const noBg = petNoBgOn();
+  const noBg = (appMode === 'office') ? false : petNoBgOn();
 
   // 세션 선택 드롭다운 갱신: 바 안에는 깔끔하게 직원 이름만 넣고, 상태는 하단 상태 바에 표시
   if (document.activeElement !== petSelEl) {
@@ -6675,7 +6922,7 @@ function renderPet() {
     petAlertEl.hidden = true;
   }
 
-  const nmSpan = elem('span', 'nm-txt', `${s.icon} ${displayName(s)}`);
+  const nmSpan = elem('span', 'nm-txt', displayName(s));
   const teamSpan = elem('span', 'team-tag', teamLabel(s.team));
   petBarNm.replaceChildren(nmSpan, teamSpan);
   const dur = s.since ? ' · ' + fmtDur(now() - s.since) : '';
@@ -6709,16 +6956,27 @@ function renderPet() {
       petFeedEl.hidden = false;
       petFeedHd.textContent = T(`💬 마지막 답 · ${fmtTime(r.reply.t)}`, `💬 Last answer · ${fmtTime(r.reply.t)}`);
       petFeedTx.textContent = r.reply.text;
+      petFeedTx.classList.remove('empty-hint');
     } else if (s.reply) {
       petFeedEl.hidden = false;
       petFeedHd.textContent = T(`💬 마지막 답 · ${fmtTime(s.last)}`, `💬 Last answer · ${fmtTime(s.last)}`);
       petFeedTx.textContent = s.reply;
+      petFeedTx.classList.remove('empty-hint');
     } else if (s.prompt) {
       petFeedEl.hidden = false;
       petFeedHd.textContent = T('📨 마지막 지시', '📨 Last prompt');
       petFeedTx.textContent = s.prompt;
+      petFeedTx.classList.remove('empty-hint');
     } else {
-      petFeedEl.hidden = true;
+      if (WIDGET_WINDOW) {
+        petFeedEl.hidden = false;
+        petFeedHd.textContent = T('💬 마지막 답', '💬 Last answer');
+        petFeedTx.textContent = T('아직 완료된 답변이 없습니다.\n지시를 입력하면 결과가 여기에 표시됩니다.', 'No answers yet.\nSend an instruction to see the reply here.');
+        petFeedTx.classList.add('empty-hint');
+      } else {
+        petFeedEl.hidden = true;
+        petFeedTx.classList.remove('empty-hint');
+      }
     }
 
     const connected = DEMO || claudeConnected();
@@ -6752,21 +7010,10 @@ function renderPet() {
 function syncPetHeight() {
   if (!WIDGET_WINDOW) return;
   const guideOpen = connectGuideEl && !connectGuideEl.hidden;
-  let h;
   if (guideOpen) {
     const box = connectGuideEl.querySelector('.cg-box');
-    h = box ? Math.ceil(box.getBoundingClientRect().height) + 16 : 460;
-  } else {
-    h = Math.ceil(petEl.getBoundingClientRect().height);
-  }
-  const minH = (petMode === 'island') ? 40 : ((appMode === 'office') ? 80 : 120);
-  const targetW = (petMode === 'island') ? 440 : ((appMode === 'office') ? 320 : 300);
-  const hChanged = h >= 40 && Math.abs(h - lastPetH) > 1;
-  const wChanged = lastPetW !== targetW;
-  if (hChanged || wChanged) {
-    lastPetH = h;
-    lastPetW = targetW;
-    send({ cmd: 'pet-size', height: Math.min(620, Math.max(h, minH)), width: targetW });
+    const h = box ? Math.ceil(box.getBoundingClientRect().height) + 16 : 460;
+    send({ cmd: 'pet-size', height: h, width: 360 });
   }
 }
 
@@ -6900,11 +7147,14 @@ function drawPetFrame(ts) {
 
   // 말풍선(선명한 해상도로 위에 그리기, 꼬리가 직원 머리를 가리키도록)
   const a = actOf(s);
-  if (a.bubble !== 'none') {
+  const isMemeActive = currentDevMeme && ts < devMemeExpires;
+  if (isMemeActive || a.bubble !== 'none') {
     const h = headAnchor(deskObj, a.pose);
     const cx = h.x * scale, ay = h.y * scale;
     petCtx.setTransform((PW * k) / cssWidth, 0, 0, (PH * k) / cssHeight, 0, 0);
-    if (a.bubble === 'zzz') {
+    if (isMemeActive) {
+      drawPetBubble(petCtx, cx, ay, currentDevMeme, BUBBLE.thought, ts, cssWidth);
+    } else if (a.bubble === 'zzz') {
       // 컴퓨터 책상에 앉아 있을 때는 zzz 말풍선과 부유 애니메이션을 모두 노출
       let text = `${s.icon} ${s.text}`;
       drawPetBubble(petCtx, cx, ay, text, BUBBLE.thought, ts, cssWidth);
@@ -6919,18 +7169,61 @@ function drawPetFrame(ts) {
 }
 
 function drawPetBubble(c, cx, anchorY, text, st, t, maxW) {
-  const fb = 11.5;
+  const fb = typeof widgetSize !== 'undefined' && widgetSize === 'small' ? 9.5
+           : typeof widgetSize !== 'undefined' && widgetSize === 'medium' ? 10.5
+           : 11.5;
   c.font = `600 ${fb}px ${FONT}`;
   c.textAlign = 'left';
   c.textBaseline = 'middle';
-  const padX = 7, h = fb + 8;
-  let label = text;
-  if (c.measureText(label).width > maxW - 20) {
-    const chars = Array.from(label);
-    while (chars.length > 4 && c.measureText(chars.join('') + '…').width > maxW - 20) chars.pop();
-    label = chars.join('') + '…';
+  const padX = 7, lineH = Math.round(fb * 1.35);
+  const maxLineW = Math.max(80, maxW - 20);
+
+  let lines = [];
+  if (c.measureText(text).width <= maxLineW) {
+    lines = [text];
+  } else {
+    // 2줄 줄바꿈 지원: 띄어쓰기 기준으로 1차 시도, 없거나 너무 길면 글자 단위 분할
+    const words = text.split(' ');
+    let line1 = '', line2 = '';
+    let usedWords = 0;
+    for (let i = 0; i < words.length; i++) {
+      const test = line1 ? line1 + ' ' + words[i] : words[i];
+      if (c.measureText(test).width <= maxLineW) {
+        line1 = test;
+        usedWords++;
+      } else {
+        break;
+      }
+    }
+    if (usedWords === 0) {
+      const chars = Array.from(text);
+      for (const ch of chars) {
+        if (c.measureText(line1 + ch).width <= maxLineW) {
+          line1 += ch;
+        } else {
+          break;
+        }
+      }
+      line2 = text.slice(line1.length).trim();
+    } else {
+      line2 = words.slice(usedWords).join(' ');
+    }
+
+    if (line2) {
+      if (c.measureText(line2).width > maxLineW) {
+        const chars = Array.from(line2);
+        while (chars.length > 3 && c.measureText(chars.join('') + '…').width > maxLineW) chars.pop();
+        line2 = chars.join('') + '…';
+      }
+      lines = [line1, line2];
+    } else {
+      lines = [line1];
+    }
   }
-  const w = Math.ceil(c.measureText(label).width) + padX * 2;
+
+  const maxWInLines = Math.max(...lines.map(l => Math.ceil(c.measureText(l).width)));
+  const w = Math.min(maxLineW + padX * 2, maxWInLines + padX * 2);
+  const h = lines.length * lineH + 6;
   const lift = st.pulse ? Math.round(Math.abs(Math.sin(t / 220)) * 2) : 0;
   const x = clamp(Math.round(cx - w / 2), 5, Math.max(5, maxW - w - 5));
   const y = Math.max(2, Math.round(anchorY - h - 6 - lift));
@@ -6965,7 +7258,10 @@ function drawPetBubble(c, cx, anchorY, text, st, t, maxW) {
   }
 
   c.fillStyle = st.fg;
-  c.fillText(label, x + padX, y + h / 2 + 0.5);
+  for (let i = 0; i < lines.length; i++) {
+    const ly = y + 3 + (i + 0.5) * lineH;
+    c.fillText(lines[i], x + padX, ly);
+  }
 }
 
 function drawPetZzz(c, cx, y, t) {
@@ -7223,8 +7519,14 @@ let appSettings = null;
 
 function onApp(msg) {
   appSettings = msg;
+  if (msg.widgetSize && msg.widgetSize !== widgetSize) {
+    setWidgetSize(msg.widgetSize, true);
+  }
+  if (msg.appMode && msg.appMode !== appMode) {
+    setAppMode(msg.appMode, true);
+  }
   btnSettings.classList.toggle('dot', !!msg.update?.newer);   // 새 버전이 나오면 ⚙️ 에 점
-  if (!WIDGET_WINDOW && !!msg.widget !== document.body.classList.contains('widget')) applyWidget();
+  if (!WIDGET_WINDOW && !SETTINGS_WINDOW && !!msg.widget !== document.body.classList.contains('widget')) applyWidget();
   applyPetState();
   if (WIDGET_WINDOW || (DEMO && petOn())) renderPet();
   if (selectedId) renderPanel();
@@ -7362,6 +7664,20 @@ const SETTINGS = [
     tab: 'office', title: T('바탕화면 미니위젯 & 아이스브레이킹', 'Desktop MiniWidget & Icebreaker'),
     items: [
       { type: 'petcfg', pcOnly: true, enabled: () => LOCAL_PET || appReady() },
+      {
+        type: 'choice',
+        name: T('위젯 크기', 'Widget size'),
+        pcOnly: true,
+        desc: T('바탕화면 미니위젯의 크기와 픽셀 그래픽 규모를 선택합니다 (픽셀 그래픽이 다소 크고 부담스러울 때 보통 또는 작게로 축소).',
+          'Adjusts the size and pixel graphic scale of the desktop mini-widget (reduce to Medium or Small if the graphic feels too large).'),
+        options: [
+          ['large', T('크게 (기본)', 'Large (Default)')],
+          ['medium', T('보통', 'Medium')],
+          ['small', T('작게', 'Small')],
+        ],
+        get: () => getWidgetSize(),
+        set: (v) => { setWidgetSize(v); refreshSettings(); }
+      },
       {
         type: 'choice',
         name: T('💡 아이스브레이킹 개발자 밈 주기', '💡 Icebreaker Dev Memes Interval'),
@@ -7745,6 +8061,22 @@ const RENDER = {
     sel.addEventListener('change', () => setPetSession(sel.value));
     linePick.append(lblPick, sel);
 
+    const lineSize = elem('div', 'petcfg-line');
+    const sizeLeft = elem('div', '');
+    sizeLeft.append(
+      elem('div', 'lbl', T('위젯 크기', 'Widget size')),
+      elem('div', 'subdesc', T('바탕화면 미니위젯의 크기와 픽셀 그래픽 규모를 선택합니다 (픽셀 그래픽이 부담스러울 때 보통 또는 작게로 축소).',
+        'Choose the size and pixel graphic scale of the desktop mini-widget (reduce to Medium or Small if the pixel art feels too large).'))
+    );
+    const selSize = elem('select', 'field');
+    selSize.append(
+      new Option(T('크게 (기본)', 'Large (Default)'), 'large'),
+      new Option(T('보통', 'Medium'), 'medium'),
+      new Option(T('작게', 'Small'), 'small')
+    );
+    selSize.addEventListener('change', () => setWidgetSize(selSize.value));
+    lineSize.append(sizeLeft, selSize);
+
     const lineBg = elem('div', 'petcfg-line');
     const bgLeft = elem('div', '');
     bgLeft.append(
@@ -7758,13 +8090,28 @@ const RENDER = {
     swBg.addEventListener('click', () => setPetNoBg(!petNoBgOn()));
     lineBg.append(bgLeft, swBg);
 
-    sub.append(linePick, lineBg);
+    const lineTop = elem('div', 'petcfg-line');
+    const topLeft = elem('div', '');
+    topLeft.append(
+      elem('div', 'lbl', T('항상 위로 고정 (📌)', 'Always on top (📌)')),
+      elem('div', 'subdesc', T('다른 창 위에 항상 떠 있도록 고정합니다. 끄면 다른 창을 클릭했을 때 뒤로 숨길 수 있습니다.',
+        'Keep the mini-widget on top of other windows. Turn off to allow hiding behind other windows when they are clicked.'))
+    );
+    const swTop = elem('button', 'switch');
+    swTop.setAttribute('role', 'switch');
+    swTop.setAttribute('aria-label', T('항상 위로 고정', 'Always on top'));
+    swTop.addEventListener('click', () => setPetTopmost(!petTopmostOn()));
+    lineTop.append(topLeft, swTop);
+
+    sub.append(linePick, lineSize, lineBg, lineTop);
     row.append(top, sub);
 
     return (locked) => {
-      swOn.disabled = swBg.disabled = sel.disabled = locked;
+      swOn.disabled = swBg.disabled = swTop.disabled = sel.disabled = selSize.disabled = locked;
       swOn.setAttribute('aria-checked', String(!!petOn()));
       swBg.setAttribute('aria-checked', String(!!petNoBgOn()));
+      swTop.setAttribute('aria-checked', String(!!petTopmostOn()));
+      selSize.value = getWidgetSize();
       if (document.activeElement !== sel) {
         const pref = petSessionPref();
         const cur = resolvePetSession();
@@ -8006,6 +8353,10 @@ function refreshSettings() {
 
 /** 설정 팝업 열기·닫기. 가운데에 뜨고 뒤(사무실·직원 상세 패널)는 그대로 둔다. tab: 그 탭으로 열기 */
 function setSettingsOpen(open, tab) {
+  if (SETTINGS_WINDOW && !open) {
+    send({ cmd: 'close-settings' });
+    return;
+  }
   settingsEl.hidden = !open;
   btnSettings.classList.toggle('on', open);
   if (open) {
@@ -8060,6 +8411,14 @@ drawerTab.addEventListener('click', () => setDrawerFolded(!drawerFolded));
 btnSettings.addEventListener('click', () => setSettingsOpen(settingsEl.hidden));
 $('sClose').addEventListener('click', () => setSettingsOpen(false));
 settingsEl.addEventListener('click', (e) => { if (e.target === settingsEl) setSettingsOpen(false); });   // 팝업 바깥(어두운 곳)을 누르면 닫기
+const sHead = document.querySelector('#settings .mhead');
+if (sHead) {
+  sHead.addEventListener('mousedown', (e) => {
+    if (SETTINGS_WINDOW && e.button === 0 && !(e.target instanceof Element && e.target.closest('button, input, a, select'))) {
+      send({ cmd: 'settings-drag' });
+    }
+  });
+}
 
 // ───────────────────────────── 📱 캔버스 터치 핀치 줌 & 팬 & 더블 탭 포커스 ─────────────────────────────
 
@@ -9078,10 +9437,10 @@ let rCancelBtn = null, rWakeBtn = null, rGuideBtn = null;
  * 상세 패널의 지시·승인 칸 — 휴대폰 화면뿐 아니라 PC 본창 상세 패널에서도(Claude Code 와 연결했을 때) 바로 지시를 보내고 승인·거절·질문 선택을 할 수 있다.
  */
 function renderRemote(s) {
-  const r = remoteOf(s.id);
-  const canShow = DEMO || (REMOTE ? !!r : claudeConnected() && s.act !== 'away');
-  $('pRemote').hidden = !r || !canShow;
-  if ($('pRemote').hidden) return;
+  const r = remoteOf(s.id) || {};
+  const connected = DEMO || claudeConnected();
+  // 메인 창 상세 페이지에서는 지시·승인 창을 상시 노출하여 바로 지시할 수 있게 한다
+  $('pRemote').hidden = false;
   const h3 = $('pRemote').querySelector('h3');
   if (h3) h3.textContent = REMOTE ? T('📱 휴대폰 지시·승인', '📱 Instruct & approve from the phone') : T('💬 지시 · 승인', '💬 Instruct & approve');
 
@@ -9186,8 +9545,9 @@ function renderRemote(s) {
 function saidText(d, working) {
   if (!d) return '';
   const when = fmtTime(d.t);
+  const connected = DEMO || (typeof claudeConnected === 'function' && claudeConnected());
   return d.state === 'delivered' ? T(`✅ 지시 전달 완료 · ${when}`, `✅ Delivered · ${when}`)
-    : d.state === 'queued' ? (working
+    : d.state === 'queued' ? (working || connected
       ? T(`⏳ 대기열 등록됨 · ${when} (작업 완료 후 자동 전달)`, `⏳ Queued · ${when} (delivered after current task)`)
       : T(`⏳ 최초 1회 연결 필요 · ${when} — [🖥️ 터미널로] 클릭`, `⏳ First-time connection needed · ${when} — click [🖥️ Terminal]`))
     : T(`⚠️ 전하지 못했어요 · ${when} (PC 작업 중)`, `⚠️ Not delivered · ${when} (PC in use)`);
@@ -9332,15 +9692,19 @@ async function sendSay() {
     playRetroSound('send');
     const r = remoteOf(sid);
     const listening = r && r.listen;
+    const connected = DEMO || claudeConnected();
     remoteNote = {
       sid,
       at: Date.now(),
       text: listening
         ? T('🚀 지시를 보냈어요…', '🚀 Instruction sent…')
-        : T('⏳ 최초 1회 연결 필요 — [🖥️ 터미널로] 클릭', '⏳ First connection needed — click [🖥️ Terminal]')
+        : (connected
+          ? T('⏳ 지시 등록 완료 (작업 완료 후 자동 전달)', '⏳ Queued (delivered after current task)')
+          : T('🔕 Claude Code 연결 필요 (⚙️ 설정 확인)', '🔕 Connect Claude Code in Settings'))
     };
     renderPanel();
-    if (!listening && !store.get('skipConnectGuide', false)) {
+    if (petOn()) renderPet();
+    if (!connected && !store.get('skipConnectGuide', false)) {
       openConnectGuide(sid);
     }
     return;
@@ -9574,10 +9938,20 @@ initAchieveModal();
 refreshButtons();
 applyPetState();
 applyAppMode();
+applyWidgetSize();
+if (typeof send === 'function') {
+  send({ cmd: 'app-mode', mode: appMode, initial: true });
+  send({ cmd: 'widget-size-mode', size: widgetSize, initial: true });
+}
 initModeSelectModal();
 checkFirstLaunchMode();
 refreshHud();
-if (selectedId === 'settings') setSettingsOpen(true, params.get('tab'));   // 화면 점검용: ?select=settings&tab=phone
+if (SETTINGS_WINDOW) {
+  if (document.documentElement) document.documentElement.classList.add('settings-window');
+  if (document.body) document.body.classList.add('settings-window');
+  setSettingsOpen(true, params.get('tab') || 'office');
+}
+else if (selectedId === 'settings') setSettingsOpen(true, params.get('tab'));   // 화면 점검용: ?select=settings&tab=phone
 if (selectedId === 'pet') selectedId = null;   // ?select=pet 은 바탕화면 미니위젯 미리보기를 켠다
 window.addEventListener('resize', () => { layoutKey = ''; });
 
@@ -9605,6 +9979,46 @@ if (REMOTE) {
     else if (m?.type === 'reset') resetScreenSettings();
     else if (m?.type === 'visible') windowHidden = !m.value;
     else if (m?.type === 'sound') playRetroSound(m.kind);
+    else if (m?.type === 'app-mode') {
+      if (m.mode && m.mode !== appMode) {
+        setAppMode(m.mode, true);
+      }
+    }
+    else if (m?.type === 'widget-size-mode') {
+      if (m.size && m.size !== widgetSize) {
+        setWidgetSize(m.size, true);
+      }
+    }
+    else if (m?.type === 'pet-mode') {
+      if (m.mode && m.mode !== petMode) {
+        petMode = m.mode;
+        store.set('petMode', petMode);
+        lastPetW = 0;
+        if (petMode === 'island') {
+          if (WIDGET_WINDOW) send({ cmd: 'pet-backdrop', noBg: true });
+          showIslandToast(T('초슬림 미니바 켜짐 · 🪟로 복귀', 'Ultra-slim mini-bar active · 🪟 to restore'), '🏝️');
+        } else {
+          if (WIDGET_WINDOW) send({ cmd: 'pet-backdrop', noBg: (appMode === 'office') ? false : petNoBgOn() });
+          islandToastText = null;
+          if (islandToastTimer) clearTimeout(islandToastTimer);
+          if (petIslandEl) {
+            petIslandEl.hidden = true;
+            petIslandEl.replaceChildren();
+          }
+          petEl.classList.remove('pet-island');
+        }
+        renderPet();
+      }
+    }
+    else if (m?.type === 'settings') {
+      setSettingsOpen(true, m.tab);
+    }
+    else if (m?.type === 'pet-topmost') {
+      if (appSettings) appSettings.petTopmost = !!m.value;
+      demoPetTopmost = !!m.value;
+      if (petOn()) renderPet();
+      refreshSettings();
+    }
     else onSnapshot(m);
   });
   send({ cmd: 'ready' });   // 앱이 저장해 둔 별명·메모(share)를 돌려주면 합쳐서 다시 보낸다(onSavedShare)

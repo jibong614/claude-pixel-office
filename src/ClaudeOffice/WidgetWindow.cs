@@ -20,8 +20,33 @@ namespace ClaudeOffice;
 /// </summary>
 internal sealed class WidgetWindow : Window
 {
-    public const double DefaultWidth = 300;
-    private const double MinPetHeight = 44, MaxPetHeight = 640;
+    public const double WidthLarge = 360;
+    public const double WidthMedium = 300;
+    public const double WidthSmall = 260;
+
+    public const double GraphicLarge = 230;
+    public const double GraphicMedium = 190;
+    public const double GraphicSmall = 160;
+
+    public const double DefaultLarge = 510;
+    public const double DefaultMedium = 450;
+    public const double DefaultSmall = 400;
+
+    public const double DefaultOfficeLarge = 280;
+    public const double DefaultOfficeMedium = 260;
+    public const double DefaultOfficeSmall = 240;
+
+    public const double DefaultWidth = WidthLarge;
+    public const double DefaultHeight = DefaultLarge;
+    public const double DefaultOfficeHeight = DefaultOfficeLarge;
+    public const double GraphicHeight = GraphicLarge;
+    public const double MinWidgetHeight = 180;
+    public const double MinBasicHeight = 380;
+    public const double MinOfficeHeight = 180;
+    public const double MaxWidgetHeight = 840;
+    public const double MiniBarWidth = 540;
+    public const double MiniBarHeight = 44;
+    private const double MinPetHeight = 40, MaxPetHeight = 840;
 
     private readonly WebView2 _web = new();
     private readonly string _virtualHost;
@@ -31,6 +56,10 @@ internal sealed class WidgetWindow : Window
     private bool _ready;
     private bool _allowClose;
     private bool _subclassed;
+    private double _dragStartTop;
+    private double _dragStartHeight;
+    private string _currentAppMode = App.Settings.AppMode ?? "basic";
+    private string _currentWidgetSize = App.Settings.WidgetSize ?? "large";
 
     public WidgetWindow(string virtualHost, string webRoot, Action<CoreWebView2WebMessageReceivedEventArgs> onMessage, Action onUserClose)
     {
@@ -40,14 +69,22 @@ internal sealed class WidgetWindow : Window
         _webSubclass = OnWebChildWndProc;
 
         Title = "Claude Office — MiniWidget";
-        Width = DefaultWidth;
-        Height = 260;
-        MinWidth = 260;
+        Width = App.Settings.PetIsland ? MiniBarWidth : GetWidthForSize();
+        Height = App.Settings.PetIsland ? MiniBarHeight : GetSavedWidgetHeight();
+        MinWidth = 240;
         MaxWidth = 800;
         MinHeight = MinPetHeight;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
-        Topmost = true;
+        Topmost = App.Settings.PetTopmost;
+        StateChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Minimized)
+            {
+                WindowState = WindowState.Normal;
+                if (App.Settings.PetTopmost) Topmost = true;
+            }
+        };
         ShowInTaskbar = false;
         Background = Brushes.Transparent;
         WindowChrome.SetWindowChrome(this, new WindowChrome
@@ -65,6 +102,14 @@ internal sealed class WidgetWindow : Window
         {
             var hwnd = new WindowInteropHelper(this).Handle;
             HwndSource.FromHwnd(hwnd)?.AddHook(OnParentWndProc);
+
+            // WS_EX_TOOLWINDOW: Alt+Tab 제외 및 Shell 전체 최소화(Win+D) 대상에서 분리
+            try
+            {
+                var exStyle = (long)GetWindowLongPtr(hwnd, -20 /* GWL_EXSTYLE */);
+                SetWindowLongPtr(hwnd, -20, new IntPtr(exStyle | 0x00000080 /* WS_EX_TOOLWINDOW */));
+            }
+            catch { }
             ApplyBackdrop(App.Settings.PetNoBg);
         };
         Loaded += OnLoaded;
@@ -96,14 +141,15 @@ internal sealed class WidgetWindow : Window
         var margins = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
         DwmExtendFrameIntoClientArea(hwnd, ref margins);
 
-        // 배경 숨기기(투명)일 때는 Windows 11 사각형 창 테두리와 그림자를 끄고, 구석 방 카드일 때는 둥근 모서리와 그림자를 켠다
-        int ncrp = noBg ? 1 /* DWMNCRP_DISABLED */ : 2 /* DWMNCRP_ENABLED */;
+        // Windows 11 외곽 회색 테두리 선 완전 제거:
+        // HTML/CSS가 자체적으로 둥근 모서리와 카드 테두리를 렌더링하므로, OS 창 테두리(DWMWA_BORDER_COLOR)를 완전 비활성화(DWMWA_COLOR_NONE)한다.
+        int ncrp = 1 /* DWMNCRP_DISABLED */;
         DwmSetWindowAttribute(hwnd, 2 /* DWMWA_NCRENDERING_POLICY */, ref ncrp, sizeof(int));
 
-        int corner = noBg ? 1 /* DWMWCP_DONOTROUND */ : 2 /* DWMWCP_ROUND */;
+        int corner = 1 /* DWMWCP_DONOTROUND */;
         DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref corner, sizeof(int));
 
-        int border = noBg ? unchecked((int)0xFFFFFFFE) /* DWMWA_COLOR_NONE */ : unchecked((int)0xFFFFFFFF) /* DWMWA_COLOR_DEFAULT */;
+        int border = unchecked((int)0xFFFFFFFE) /* DWMWA_COLOR_NONE */;
         DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, ref border, sizeof(int));
 
         InvalidateRect(hwnd, IntPtr.Zero, true);
@@ -128,7 +174,7 @@ internal sealed class WidgetWindow : Window
         Close();
     }
 
-    private string PageUrl() => $"https://{_virtualHost}/index.html?widget_window=1&pet=1" + (L.En ? "&lang=en" : "");
+    private string PageUrl() => $"https://{_virtualHost}/index.html?widget_window=1&pet=1" + (App.Settings.PetIsland ? "&island=1" : "") + (L.En ? "&lang=en" : "");
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -180,6 +226,38 @@ internal sealed class WidgetWindow : Window
             handled = true;
             return new IntPtr(1);
         }
+        if (msg == 0x0112 /* WM_SYSCOMMAND */)
+        {
+            int sc = (int)wParam & 0xFFF0;
+            if (sc == 0xF020 /* SC_MINIMIZE */)
+            {
+                // Win + D 나 시스템 전체 최소화 명령 무시 (바탕화면 위젯이므로 숨거나 최소화되지 않음)
+                handled = true;
+                return IntPtr.Zero;
+            }
+        }
+        if (msg == 0x0046 /* WM_WINDOWPOSCHANGING */ && lParam != IntPtr.Zero)
+        {
+            try
+            {
+                var wp = Marshal.PtrToStructure<WindowPosStruct>(lParam);
+                if ((wp.flags & 0x0080 /* SWP_HIDEWINDOW */) != 0)
+                {
+                    wp.flags &= ~0x0080u;
+                    Marshal.StructureToPtr(wp, lParam, false);
+                }
+            }
+            catch { }
+        }
+        if (msg == 0x0018 /* WM_SHOWWINDOW */)
+        {
+            // Win + D 로 인해 Shell이 창을 강제 숨김 처리하려는 경우(wParam == 0, lParam != 0) 방어
+            if (wParam == IntPtr.Zero && lParam != IntPtr.Zero)
+            {
+                handled = true;
+                return IntPtr.Zero;
+            }
+        }
         return IntPtr.Zero;
     }
 
@@ -194,6 +272,69 @@ internal sealed class WidgetWindow : Window
         return DefSubclassProc(hWnd, uMsg, wParam, lParam);
     }
 
+    public static double GetWidthForSize(string? size = null)
+    {
+        size ??= App.Settings.WidgetSize;
+        return size switch
+        {
+            "small" => WidthSmall,
+            "medium" => WidthMedium,
+            _ => WidthLarge
+        };
+    }
+
+    public static double GetGraphicHeightForSize(string? size = null)
+    {
+        size ??= App.Settings.WidgetSize;
+        return size switch
+        {
+            "small" => GraphicSmall,
+            "medium" => GraphicMedium,
+            _ => GraphicLarge
+        };
+    }
+
+    public static double GetDefaultHeightForMode(string? mode = null, string? size = null)
+    {
+        mode ??= App.Settings.AppMode;
+        size ??= App.Settings.WidgetSize;
+        if (mode == "office")
+        {
+            return size switch
+            {
+                "small" => DefaultOfficeSmall,
+                "medium" => DefaultOfficeMedium,
+                _ => DefaultOfficeLarge
+            };
+        }
+        return size switch
+        {
+            "small" => DefaultSmall,
+            "medium" => DefaultMedium,
+            _ => DefaultLarge
+        };
+    }
+
+    public static double GetMinHeightForCurrent(string? mode = null, string? size = null)
+    {
+        mode ??= App.Settings.AppMode;
+        size ??= App.Settings.WidgetSize;
+        if (mode == "office") return MinOfficeHeight;
+        return size switch
+        {
+            "small" => 310,
+            "medium" => 340,
+            _ => MinBasicHeight
+        };
+    }
+
+    public static double GetSavedWidgetHeight(string? mode = null, string? size = null)
+    {
+        var h = App.Settings.MiniWidgetPlacement?.Height;
+        if (h >= MinWidgetHeight && h <= MaxWidgetHeight) return h.Value;
+        return GetDefaultHeightForMode(mode, size);
+    }
+
     /// <summary>기본 위치는 바탕화면 오른쪽 아래(작업표시줄 위 여백 20px). 이전에 옮긴 자리가 화면 안에 있으면 그곳으로.</summary>
     public void RestorePlacement()
     {
@@ -206,17 +347,44 @@ internal sealed class WidgetWindow : Window
             return;
         }
         var wa = SystemParameters.WorkArea;
-        if ((App.Settings.MiniWidgetPlacement ?? App.Settings.MiniWidgetWindow) is { } w && OnScreen(w))
+        double wWidth = GetWidthForSize(_currentWidgetSize);
+        if (App.Settings.PetIsland)
         {
-            if (w.Width >= 260 && w.Width <= 800) Width = w.Width;
-            if (w.Height >= MinPetHeight && w.Height <= MaxPetHeight) Height = w.Height;
-            Left = w.Left;
-            Top = w.Top;
+            Width = MiniBarWidth;
+            Height = MiniBarHeight;
+            if (App.Settings.MiniBarPlacement is { } bar && OnScreen(bar, MiniBarWidth, MiniBarHeight))
+            {
+                Left = bar.Left;
+                Top = bar.Top;
+            }
+            else if ((App.Settings.MiniWidgetPlacement ?? App.Settings.MiniWidgetWindow) is { } w && OnScreen(w, wWidth, DefaultHeight))
+            {
+                double wH = (w.Height >= MinWidgetHeight && w.Height <= MaxWidgetHeight) ? w.Height : GetDefaultHeightForMode();
+                double curBottom = w.Top + wH;
+                double curRight = w.Left + wWidth;
+                Left = Math.Clamp(curRight - MiniBarWidth, wa.Left + 8, wa.Right - MiniBarWidth - 8);
+                Top = Math.Clamp(curBottom - MiniBarHeight, wa.Top + 8, wa.Bottom - MiniBarHeight - 8);
+            }
+            else
+            {
+                Left = wa.Right - MiniBarWidth - 20;
+                Top = wa.Bottom - MiniBarHeight - 20;
+            }
         }
         else
         {
-            Left = wa.Right - Width - 20;
-            Top = wa.Bottom - Height - 20;
+            Width = wWidth;
+            Height = GetSavedWidgetHeight();
+            if ((App.Settings.MiniWidgetPlacement ?? App.Settings.MiniWidgetWindow) is { } w && OnScreen(w, wWidth, Height))
+            {
+                Left = w.Left;
+                Top = w.Top;
+            }
+            else
+            {
+                Left = wa.Right - Width - 20;
+                Top = wa.Bottom - Height - 20;
+            }
         }
     }
 
@@ -224,8 +392,9 @@ internal sealed class WidgetWindow : Window
     public void FitHeight(double contentHeight)
     {
         if (WindowState != WindowState.Normal) return;
+        if (App.Settings.PetIsland) return; // 미니바는 높이 고정(44px)
         double chrome = ActualHeight > 0 && _web.ActualHeight > 0 ? Math.Max(0, ActualHeight - _web.ActualHeight) : 0;
-        double target = Math.Clamp(Math.Ceiling(contentHeight + chrome) + 2, MinPetHeight, MaxPetHeight);
+        double target = Math.Clamp(Math.Ceiling(contentHeight + chrome), MinWidgetHeight, MaxWidgetHeight);
         if (Math.Abs(Height - target) < 1) return;
         double curH = ActualHeight > 0 ? ActualHeight : Height;
         double bottom = Top + curH;
@@ -235,24 +404,259 @@ internal sealed class WidgetWindow : Window
             var wa = SystemParameters.WorkArea;
             Top = Math.Clamp(bottom - target, wa.Top + 8, wa.Bottom - target - 8);
         }
-        SavePlacement();
+        SaveWidgetPlacement();
     }
 
-    /// <summary>미니위젯 내용 너비에 창 너비를 맞추되, 바탕화면 오른쪽 정렬(Right 고정)을 유지하여 좌측으로 확장/축소되게 한다.</summary>
+    /// <summary>미니위젯 내용 너비에 창 너비를 맞춘다.</summary>
     public void FitWidth(double contentWidth)
     {
         if (WindowState != WindowState.Normal) return;
-        double target = Math.Clamp(Math.Ceiling(contentWidth), 260, 800);
-        if (Math.Abs(Width - target) < 1) return;
-        double curW = ActualWidth > 0 ? ActualWidth : Width;
-        double right = Left + curW;
-        Width = target;
-        if (!App.Offscreen && right > 0)
+        if (App.Settings.PetIsland)
         {
-            var wa = SystemParameters.WorkArea;
-            Left = Math.Clamp(right - target, wa.Left + 8, wa.Right - target - 8);
+            Width = MiniBarWidth;
+            return;
         }
+        Width = DefaultWidth;
+    }
+
+    public void SetTopmost(bool on)
+    {
+        App.Settings.PetTopmost = on;
+        Topmost = on;
         SavePlacement();
+    }
+
+    public void OnResizeStart(string edge)
+    {
+        if (App.Settings.PetIsland) return; // 미니바는 리사이즈 불가
+        _dragStartTop = Top;
+        _dragStartHeight = ActualHeight > 0 ? ActualHeight : Height;
+    }
+
+    public void OnResizeMove(string edge, double deltaY)
+    {
+        if (WindowState != WindowState.Normal) return;
+        if (App.Settings.PetIsland) return;
+        var wa = SystemParameters.WorkArea;
+        double maxH = (wa.Height > 0) ? Math.Min(MaxWidgetHeight, wa.Height - 40) : MaxWidgetHeight;
+        double minH = GetMinHeightForCurrent(_currentAppMode, _currentWidgetSize);
+
+        if (edge == "bottom")
+        {
+            double targetH = Math.Clamp(_dragStartHeight + deltaY, minH, maxH);
+            if (!App.Offscreen && wa.Bottom > 0 && Top + targetH > wa.Bottom)
+                targetH = Math.Max(minH, wa.Bottom - Top);
+            Height = targetH;
+        }
+        else if (edge == "top")
+        {
+            double fixedBottom = _dragStartTop + _dragStartHeight;
+            double targetH = Math.Clamp(_dragStartHeight - deltaY, minH, maxH);
+            double targetTop = fixedBottom - targetH;
+            if (!App.Offscreen && wa.Top >= 0 && targetTop < wa.Top)
+            {
+                targetTop = wa.Top;
+                targetH = Math.Max(minH, fixedBottom - targetTop);
+            }
+            Top = targetTop;
+            Height = targetH;
+        }
+    }
+
+    public void OnResizeEnd(string edge, double deltaY)
+    {
+        if (App.Settings.PetIsland) return;
+        OnResizeMove(edge, deltaY);
+        SaveWidgetPlacement();
+    }
+
+    /// <summary>
+    /// 💼 오피스 모드 ↔ 기본 모드 전환 시 위젯 창 높이 조정:
+    /// - 기본 모드로 전환: 그래픽 요소 영역(+GraphicHeight)을 더해 도트 그래픽이 본래 크기로 출력되게 하고, 바탕화면 하단 모서리를 고정
+    /// - 오피스 모드로 전환: 그래픽 요소 영역(-GraphicHeight)을 빼서 텍스트 영역 비율을 유지한 채 컴팩트하게 정돈
+    /// - 미니바(초슬림 아일랜드) 상태에서는 위젯 저장 배치 정보만 갱신
+    /// </summary>
+    public void SetAppMode(string newMode, bool initial = false)
+    {
+        if (newMode != "basic" && newMode != "office") newMode = "basic";
+        if (initial)
+        {
+            _currentAppMode = newMode;
+            return;
+        }
+        if (_currentAppMode == newMode) return;
+
+        string prevMode = _currentAppMode;
+        _currentAppMode = newMode;
+
+        double currentGraphicH = GetGraphicHeightForSize(_currentWidgetSize);
+
+        if (App.Settings.PetIsland)
+        {
+            if (App.Settings.MiniWidgetPlacement is { } p)
+            {
+                double delta = (newMode == "basic") ? currentGraphicH : -currentGraphicH;
+                double savedH = (p.Height >= MinWidgetHeight && p.Height <= MaxWidgetHeight)
+                    ? p.Height
+                    : (newMode == "basic" ? GetDefaultHeightForMode("office", _currentWidgetSize) : GetDefaultHeightForMode("basic", _currentWidgetSize));
+                double newSavedH = Math.Clamp(savedH + delta, MinWidgetHeight, MaxWidgetHeight);
+                p.Top = p.Top - (newSavedH - savedH);
+                p.Height = newSavedH;
+                try { App.Settings.Save(); } catch { }
+            }
+            return;
+        }
+
+        double hDelta = (newMode == "basic") ? currentGraphicH : -currentGraphicH;
+        double curH = ActualHeight > 0 ? ActualHeight : Height;
+        var wa = SystemParameters.WorkArea;
+        double maxH = (wa.Height > 0) ? Math.Min(MaxWidgetHeight, wa.Height - 40) : MaxWidgetHeight;
+        double minH = GetMinHeightForCurrent(newMode, _currentWidgetSize);
+        double targetH = Math.Clamp(curH + hDelta, minH, maxH);
+
+        double fixedBottom = Top + curH;
+        double targetTop = fixedBottom - targetH;
+        if (!App.Offscreen && wa.Height > 0 && wa.Width > 0)
+        {
+            if (targetTop < wa.Top)
+            {
+                targetTop = wa.Top;
+                targetH = Math.Max(minH, fixedBottom - targetTop);
+            }
+            targetTop = Math.Clamp(targetTop, wa.Top + 8, wa.Bottom - targetH - 8);
+        }
+
+        Top = targetTop;
+        Height = targetH;
+        SaveWidgetPlacement();
+    }
+
+    /// <summary>
+    /// 📐 위젯 크기 옵션 변경 (large: 크게 360px · 기본 / medium: 보통 300px / small: 작게 260px)
+    /// - 픽셀 그래픽 규모와 창 너비가 함께 비례 조정되며 우측/하단 모서리를 고정
+    /// </summary>
+    public void SetWidgetSize(string newSize)
+    {
+        if (newSize != "large" && newSize != "medium" && newSize != "small") newSize = "large";
+        string prevSize = _currentWidgetSize;
+        _currentWidgetSize = newSize;
+        App.Settings.WidgetSize = newSize;
+
+        double targetW = GetWidthForSize(newSize);
+        double prevGraphicH = GetGraphicHeightForSize(prevSize);
+        double newGraphicH = GetGraphicHeightForSize(newSize);
+        double graphicDelta = newGraphicH - prevGraphicH;
+
+        if (App.Settings.PetIsland)
+        {
+            if (App.Settings.MiniWidgetPlacement is { } p)
+            {
+                double savedH = (p.Height >= MinWidgetHeight && p.Height <= MaxWidgetHeight)
+                    ? p.Height
+                    : GetDefaultHeightForMode(App.Settings.AppMode, prevSize);
+                double newSavedH = (_currentAppMode == "basic")
+                    ? Math.Clamp(savedH + graphicDelta, MinWidgetHeight, MaxWidgetHeight)
+                    : savedH;
+                double hDiff = newSavedH - savedH;
+                p.Top = p.Top - hDiff;
+                p.Left = p.Left + (p.Width - targetW);
+                p.Width = targetW;
+                p.Height = newSavedH;
+                try { App.Settings.Save(); } catch { }
+            }
+            return;
+        }
+
+        double curH = ActualHeight > 0 ? ActualHeight : Height;
+        double curW = ActualWidth > 0 ? ActualWidth : Width;
+        var wa = SystemParameters.WorkArea;
+        double maxH = (wa.Height > 0) ? Math.Min(MaxWidgetHeight, wa.Height - 40) : MaxWidgetHeight;
+        double minH = GetMinHeightForCurrent(_currentAppMode, newSize);
+
+        double targetH = (_currentAppMode == "basic")
+            ? Math.Clamp(curH + graphicDelta, minH, maxH)
+            : Math.Clamp(curH, MinOfficeHeight, maxH);
+
+        double fixedBottom = Top + curH;
+        double fixedRight = Left + curW;
+
+        double targetTop = fixedBottom - targetH;
+        double targetLeft = fixedRight - targetW;
+
+        if (!App.Offscreen && wa.Height > 0 && wa.Width > 0)
+        {
+            if (targetTop < wa.Top)
+            {
+                targetTop = wa.Top;
+                targetH = Math.Max(minH, fixedBottom - targetTop);
+            }
+            targetTop = Math.Clamp(targetTop, wa.Top + 8, wa.Bottom - targetH - 8);
+            targetLeft = Math.Clamp(targetLeft, wa.Left + 8, wa.Right - targetW - 8);
+        }
+
+        Top = targetTop;
+        Left = targetLeft;
+        Width = targetW;
+        Height = targetH;
+
+        SaveWidgetPlacement();
+    }
+
+    public void RestoreSavedHeight()
+    {
+        if (App.Settings.PetIsland) return;
+        Width = GetWidthForSize(_currentWidgetSize);
+        Height = GetSavedWidgetHeight();
+    }
+
+    public void SetPetMode(bool island)
+    {
+        var wa = SystemParameters.WorkArea;
+        double curBottom = Top + (ActualHeight > 0 ? ActualHeight : Height);
+        double curRight = Left + (ActualWidth > 0 ? ActualWidth : Width);
+
+        if (island)
+        {
+            // 위젯 -> 미니바: 위젯의 하단(Bottom) 및 우측(Right) 기준 정렬
+            double targetW = MiniBarWidth;
+            double targetH = MiniBarHeight;
+            double newTop = curBottom - targetH;
+            double newLeft = curRight - targetW;
+
+            if (!App.Offscreen && wa.Width > 0 && wa.Height > 0)
+            {
+                newTop = Math.Clamp(newTop, wa.Top + 8, wa.Bottom - targetH - 8);
+                newLeft = Math.Clamp(newLeft, wa.Left + 8, wa.Right - targetW - 8);
+            }
+
+            Width = targetW;
+            Height = targetH;
+            Top = newTop;
+            Left = newLeft;
+
+            SaveMiniBarPlacement();
+        }
+        else
+        {
+            // 미니바 -> 위젯: 미니바의 하단(Bottom) 및 우측(Right) 기준 정렬, 위젯 커스텀 높이 복원
+            double targetW = GetWidthForSize(_currentWidgetSize);
+            double targetH = GetSavedWidgetHeight();
+            double newTop = curBottom - targetH;
+            double newLeft = curRight - targetW;
+
+            if (!App.Offscreen && wa.Width > 0 && wa.Height > 0)
+            {
+                newTop = Math.Clamp(newTop, wa.Top + 8, wa.Bottom - targetH - 8);
+                newLeft = Math.Clamp(newLeft, wa.Left + 8, wa.Right - targetW - 8);
+            }
+
+            Width = targetW;
+            Height = targetH;
+            Top = newTop;
+            Left = newLeft;
+
+            SaveWidgetPlacement();
+        }
     }
 
     /// <summary>WebView2 안에서 마우스로 끌어 창을 옮긴다.</summary>
@@ -269,22 +673,47 @@ internal sealed class WidgetWindow : Window
     public void SavePlacement()
     {
         if (App.Offscreen || App.DemoMode || !IsLoaded || Left <= -10000) return;
+        if (App.Settings.PetIsland)
+            SaveMiniBarPlacement();
+        else
+            SaveWidgetPlacement();
+    }
+
+    public void SaveWidgetPlacement()
+    {
+        if (App.Offscreen || App.DemoMode || !IsLoaded || Left <= -10000) return;
+        double h = ActualHeight > 0 ? ActualHeight : Height;
+        double savedH = (h >= MinWidgetHeight && h <= MaxWidgetHeight) ? h : GetSavedWidgetHeight();
         App.Settings.MiniWidgetPlacement = new AppSettings.WindowPlacement
         {
             Left = Left,
             Top = Top,
-            Width = Width,
-            Height = ActualHeight > 0 ? ActualHeight : Height,
+            Width = GetWidthForSize(_currentWidgetSize),
+            Height = savedH,
         };
         try { App.Settings.Save(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
-    private static bool OnScreen(AppSettings.WindowPlacement w)
+    public void SaveMiniBarPlacement()
+    {
+        if (App.Offscreen || App.DemoMode || !IsLoaded || Left <= -10000) return;
+        App.Settings.MiniBarPlacement = new AppSettings.WindowPlacement
+        {
+            Left = Left,
+            Top = Top,
+            Width = MiniBarWidth,
+            Height = MiniBarHeight,
+        };
+        try { App.Settings.Save(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    private static bool OnScreen(AppSettings.WindowPlacement w, double width, double height)
     {
         var screen = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
                               SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
-        return screen.IntersectsWith(new Rect(w.Left + 40, w.Top + 20, Math.Max(1, DefaultWidth - 80), 40));
+        return screen.IntersectsWith(new Rect(w.Left + 20, w.Top + 10, Math.Max(1, width - 40), Math.Max(1, height - 20)));
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -327,4 +756,22 @@ internal sealed class WidgetWindow : Window
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowPosStruct
+    {
+        public IntPtr hwnd;
+        public IntPtr hwndInsertAfter;
+        public int x;
+        public int y;
+        public int cx;
+        public int cy;
+        public uint flags;
+    }
 }

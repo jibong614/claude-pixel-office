@@ -18,14 +18,29 @@ internal sealed class TrayIcon : IDisposable
     private readonly Forms.NotifyIcon _icon;
     private readonly Icon _normalIcon;
     private readonly Icon _waitingIcon;
-    private readonly Forms.ToolStripItem _openItem, _reportItem, _exitItem;
-    private readonly Forms.ToolStripMenuItem _waitItem, _petItem, _widgetItem;
+    public enum PetTrayMode { None, Normal, Island }
+
+    private readonly Forms.ToolStripItem _openItem, _reportItem, _settingsItem, _exitItem;
+    private readonly Forms.ToolStripMenuItem _waitItem;
+    // 메인 창 보기 스위치 (크게보기 vs 작게보기)
+    private readonly Forms.ToolStripMenuItem _largeItem, _compactItem;
+    // 바탕화면 위젯 스위치 (사용안함 vs 미니위젯 vs 미니바)
+    private readonly Forms.ToolStripMenuItem _petNoneItem, _petNormalItem, _petIslandItem;
     private string? _waitingSid;
     private int _waitingCount;
     private string? _waitingName;
     private bool _hintShown;
 
-    public TrayIcon(Action open, Action<string> openSession, Action togglePet, Action toggleWidget, Action exit)
+    public TrayIcon(
+        Action open,
+        Action<string> openSession,
+        Action showLarge,
+        Action showCompact,
+        Action turnOffPet,
+        Action turnOnPetNormal,
+        Action turnOnPetIsland,
+        Action openSettings,
+        Action exit)
     {
         _normalIcon = LoadIcon();
         _waitingIcon = MakeWaitingIcon(_normalIcon);
@@ -40,11 +55,26 @@ internal sealed class TrayIcon : IDisposable
         }) { Visible = false };
         menu.Items.Add(_waitItem);
         _reportItem = menu.Items.Add("", null, (_, _) => openSession("@today"));
-        _petItem = new Forms.ToolStripMenuItem("", null, (_, _) => togglePet());
-        menu.Items.Add(_petItem);
-        _widgetItem = new Forms.ToolStripMenuItem("", null, (_, _) => toggleWidget());
-        menu.Items.Add(_widgetItem);
+
+        // ── 메인 창 보기 모드 스위치 ──
         menu.Items.Add(new Forms.ToolStripSeparator());
+        _largeItem = new Forms.ToolStripMenuItem("", null, (_, _) => showLarge());
+        menu.Items.Add(_largeItem);
+        _compactItem = new Forms.ToolStripMenuItem("", null, (_, _) => showCompact());
+        menu.Items.Add(_compactItem);
+
+        // ── 바탕화면 위젯 / 미니바 모드 스위치 ──
+        menu.Items.Add(new Forms.ToolStripSeparator());
+        _petNoneItem = new Forms.ToolStripMenuItem("", null, (_, _) => turnOffPet());
+        menu.Items.Add(_petNoneItem);
+        _petNormalItem = new Forms.ToolStripMenuItem("", null, (_, _) => turnOnPetNormal());
+        menu.Items.Add(_petNormalItem);
+        _petIslandItem = new Forms.ToolStripMenuItem("", null, (_, _) => turnOnPetIsland());
+        menu.Items.Add(_petIslandItem);
+
+        // ── 설정 및 종료 ──
+        menu.Items.Add(new Forms.ToolStripSeparator());
+        _settingsItem = menu.Items.Add("", null, (_, _) => openSettings());
         _exitItem = menu.Items.Add("", null, (_, _) => exit());
         ApplyLanguage();
 
@@ -64,15 +94,33 @@ internal sealed class TrayIcon : IDisposable
     {
         _openItem.Text = L.T("열기", "Open");
         _reportItem.Text = L.T("📊 오늘의 근무 일지", "📊 Today's work log");
-        _petItem.Text = L.T("🪟 바탕화면 미니위젯", "🪟 Desktop MiniWidget");
-        _widgetItem.Text = L.T("📋 작게 보기(목록)", "📋 Compact view (list)");
+
+        _largeItem.Text = L.T("🖥️ 크게 보기", "🖥️ Full view");
+        _compactItem.Text = L.T("📋 작게 보기(목록)", "📋 Compact view (list)");
+
+        _petNoneItem.Text = L.T("❌ 위젯, 미니바 사용 안 함", "❌ Disable Widget & Mini-bar");
+        _petNormalItem.Text = L.T("🪟 미니위젯 켜기", "🪟 Turn on MiniWidget");
+        _petIslandItem.Text = L.T("🏝️ 미니바 켜기", "🏝️ Turn on Mini-bar");
+
+        _settingsItem.Text = L.T("⚙️ 설정", "⚙️ Settings");
         _exitItem.Text = L.T("끝내기", "Exit");
         RefreshWaitingLabel();
     }
 
-    public void SetPetChecked(bool on) => _petItem.Checked = on;
+    /// <summary>메인 창 보기 모드 스위치(크게보기 vs 작게보기) 체크 상태 갱신</summary>
+    public void SetViewMode(bool compact)
+    {
+        _largeItem.Checked = !compact;
+        _compactItem.Checked = compact;
+    }
 
-    public void SetWidgetChecked(bool on) => _widgetItem.Checked = on;
+    /// <summary>위젯/미니바 스위치(사용안함 vs 미니위젯 vs 미니바) 체크 상태 갱신</summary>
+    public void SetPetMode(PetTrayMode mode)
+    {
+        _petNoneItem.Checked = mode == PetTrayMode.None;
+        _petNormalItem.Checked = mode == PetTrayMode.Normal;
+        _petIslandItem.Checked = mode == PetTrayMode.Island;
+    }
 
     /// <summary>승인·질문 대기 상태에 따라 트레이 아이콘의 주황색 점과 빠른 열기 메뉴를 갱신한다.</summary>
     public void SetWaiting(int count, string? firstId, string? firstName)

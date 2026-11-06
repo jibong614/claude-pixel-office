@@ -2114,14 +2114,24 @@ body.widget canvas#office, body.widget #hud, body.widget #drawerTab { display: n
 
 /* ───── 바탕화면 미니위젯(대표 직원 구석 창) ───── */
 html:has(body.widget-window), html:has(body.pet-window), body.widget-window, body.pet-window {
+  height: 100% !important;
   padding-top: 0 !important;
-  overflow: hidden;
+  margin: 0 !important;
+  overflow: hidden !important;
   background: transparent !important;
+  box-sizing: border-box !important;
 }
 body.widget-window canvas#office, body.widget-window #hud, body.widget-window #drawerTab, body.widget-window #empty,
-body.pet-window canvas#office, body.pet-window #hud, body.pet-window #drawerTab, body.pet-window #empty {
+body.widget-window #officeCleanView, body.widget-window #wlist, body.widget-window #modeSelectModal, body.widget-window #panel, body.widget-window #settings,
+body.pet-window canvas#office, body.pet-window #hud, body.pet-window #drawerTab, body.pet-window #empty,
+body.pet-window #officeCleanView, body.pet-window #wlist, body.pet-window #modeSelectModal, body.pet-window #panel, body.pet-window #settings {
   display: none !important;
 }
+#officeCleanView[hidden],
+.office-clean-view[hidden] {
+  display: none !important;
+}
+
 #pet {
   position: relative;
   box-sizing: border-box;
@@ -2217,9 +2227,7 @@ body.panel-open.pet-float #pet {
 }
 .pet-head:active { cursor: grabbing; }
 .pet-badge {
-  flex: 0 0 auto;
-  font-size: 13px;
-  line-height: 1;
+  display: none !important;
 }
 .pet-sel {
   flex: 1 1 auto;
@@ -3285,8 +3293,8 @@ body.pet-float #pet.pet-island {
   right: 50%;
   transform: translateX(50%);
   width: auto;
-  min-width: 440px;
-  max-width: 580px;
+  min-width: 540px;
+  max-width: 680px;
   z-index: 80;
 }
 #pet.pet-island {
@@ -3673,15 +3681,15 @@ body.pet-float #pet.pet-island {
   line-height: 1.4;
 }
 
-/* 💼 오피스 모드: 비즈니스 대시보드 뷰 */
+/* 💼 오피스 모드: 비즈니스 대시보드 뷰 (상단 여백 틈새 없이 top: 0부터 통일된 단일 배경) */
 .office-clean-view {
   position: absolute;
-  top: var(--hud-h, 44px);
+  top: 0;
   left: 0;
   right: 0;
   bottom: 0;
   background: #0d0f17;
-  padding: 20px 24px;
+  padding: calc(var(--hud-h, 44px) + 16px) 24px 24px;
   overflow-y: auto;
   box-sizing: border-box;
   color: #f1f5f9;
@@ -3905,12 +3913,27 @@ body.panel-open .office-clean-view {
   line-height: 1.6;
 }
 
-/* 💼 오피스 모드 적용 시 게임/꾸미기 요소 전면 숨김 및 클린 비즈니스 위젯 */
+/* 💼 오피스 모드 적용 시 게임/꾸미기 요소 전면 숨김 및 단일 다크톤(#0d0f17) 배경 통일 */
+body.mode-office {
+  background: #0d0f17 !important;
+}
 body.mode-office canvas#office {
   display: none !important;
 }
-body.mode-office #officeCleanView {
+body.mode-office:not(.widget-window):not(.pet-window):not(.widget) #officeCleanView:not([hidden]) {
   display: block !important;
+}
+body.mode-office #hud {
+  z-index: 10;
+}
+body.mode-office #hud button,
+body.mode-office #summary {
+  background: rgba(20, 23, 36, 0.85);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+body.mode-office .drawer {
+  background: #111420;
+  border-left-color: rgba(255, 255, 255, 0.08);
 }
 body.mode-office #btnCoins {
   display: none !important;
@@ -3932,7 +3955,9 @@ body.mode-office .cat-speech-bubble {
 }
 
 /* 💼 오피스 모드 위젯: 픽셀 그래픽(캐릭터·방) 제거 및 요약/지시/답변 상시 표시 */
-body.mode-office canvas#petCanvas {
+body.mode-office canvas#petCanvas,
+body.mode-office #pet canvas#petCanvas,
+body.mode-office #pet:not(.pet-island) canvas#petCanvas {
   display: none !important;
 }
 body.mode-office .pet-stage {
@@ -3955,13 +3980,13 @@ body.mode-office .pet-bar {
 body.mode-office .pet-bar:hover {
   background: #1c2032 !important;
 }
-body.mode-office #pet {
+body.mode-office #pet:not(.pet-island) {
   background: #0d0f17 !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
   border-radius: 12px !important;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6) !important;
   padding: 8px 10px !important;
-  width: 320px !important;
+  width: 100% !important;
   box-sizing: border-box !important;
 }
 body.mode-office .pet-head {
@@ -3994,9 +4019,635 @@ body.mode-office .btn-pet-bg {
 body.mode-office .btn-pet-meme {
   display: none !important;
 }
-body.mode-office .btn-pet-island {
-  display: none !important;
-}
 body.mode-office .pet-shimeji {
   display: none !important;
+}
+
+
+.btn-pet-island {
+  color: #a78bfa !important;
+}
+.btn-pet-island:hover {
+  background: rgba(167, 139, 250, 0.2) !important;
+  border-color: rgba(167, 139, 250, 0.5) !important;
+}
+
+/* 🏝️ 미니바 세션 콤보박스: 위젯의 .pet-sel 과 완전히 동일한 테두리(var(--line)) 및 반투명 배경 일치 */
+.island-sel {
+  flex: 0 1 auto;
+  max-width: 175px;
+  min-width: 100px;
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font: 600 11.5px var(--font);
+  cursor: pointer;
+  outline: none;
+  box-sizing: border-box;
+}
+.island-sel:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(167, 139, 250, 0.4);
+}
+.island-sel:focus {
+  border-color: var(--accent);
+}
+.island-sel option {
+  background: var(--panel);
+  color: var(--text);
+}
+
+/* 📌 바탕화면 미니위젯 & 미니바 항상 위(Topmost) 고정 버튼 및 드래그 커서 */
+#pet {
+  cursor: grab;
+}
+#pet:active {
+  cursor: grabbing;
+}
+#pet select, #pet button, #pet input, #pet textarea, #pet .pet-bar, #pet .pet-ask-card {
+  cursor: auto;
+}
+#pet .pet-feed, #pet .pet-feed * {
+  cursor: text !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+#pet button, #pet select, #pet .pet-bar, #pet .pet-ask-btn {
+  cursor: pointer;
+}
+#pet.pet-island {
+  cursor: grab !important;
+}
+#pet.pet-island:active {
+  cursor: grabbing !important;
+}
+#pet.pet-island select, #pet.pet-island button {
+  cursor: pointer;
+}
+.island-info {
+  cursor: grab;
+}
+.island-info:active {
+  cursor: grabbing;
+}
+.island-info select {
+  cursor: pointer;
+}
+
+.btn-pet-pin {
+  filter: grayscale(1) opacity(0.45);
+  transition: all 0.15s ease;
+}
+.btn-pet-pin:hover {
+  filter: grayscale(0.5) opacity(0.85);
+}
+.btn-pet-pin.pinned {
+  filter: grayscale(0) !important;
+  opacity: 1 !important;
+}
+
+.island-btn.btn-pin {
+  font-size: 11px;
+  filter: grayscale(1) opacity(0.45);
+  transition: all 0.15s ease;
+}
+.island-btn.btn-pin:hover {
+  filter: grayscale(0.5) opacity(0.85);
+}
+.island-btn.btn-pin.pinned {
+  filter: grayscale(0) !important;
+  opacity: 1 !important;
+}
+
+.island-btn.btn-close:hover {
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  color: #f87171 !important;
+}
+
+
+/* ↕ 바탕화면 미니위젯 상단/하단 높이 조절 핸들 (너비는 고정, 높이만 조절) */
+.pet-resize-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 10px;
+  z-index: 9999;
+  cursor: ns-resize !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.pet-resize-handle.top {
+  top: 0;
+}
+.pet-resize-handle.bottom {
+  bottom: 0;
+}
+.pet-resize-handle::after {
+  content: '';
+  width: 44px;
+  height: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.pet-resize-handle:hover::after,
+body.pet-resizing .pet-resize-handle::after {
+  background: rgba(167, 139, 250, 0.75);
+  box-shadow: 0 0 6px rgba(167, 139, 250, 0.55);
+}
+body.pet-resizing,
+body.pet-resizing * {
+  cursor: ns-resize !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+#pet.pet-island .pet-resize-handle {
+  display: none !important;
+}
+
+/* 📐 미니위젯 창 높이 반응형 레이아웃: 컨텐츠는 고정, 마지막답 칸만 height: * 로 유연 확장 */
+body.widget-window #pet:not(.pet-island) {
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  border-radius: 13px !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+body.widget-window #pet:not(.pet-island) > .pet-head {
+  flex: 0 0 auto !important;
+}
+body.widget-window #pet:not(.pet-island) > .pet-alert {
+  flex: 0 0 auto !important;
+}
+body.widget-window #pet:not(.pet-island) > .pet-stage {
+  flex: 0 0 auto !important;
+}
+body.widget-window:not(.mode-office) #pet:not(.pet-island) canvas#petCanvas {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  max-height: none !important;
+  flex: 0 0 auto !important;
+}
+body.widget-window #pet:not(.pet-island) > .pet-asks {
+  flex: 0 0 auto !important;
+}
+body.widget-window #pet:not(.pet-island) > .pet-empty {
+  flex: 1 1 0px !important;
+}
+body.widget-window #pet:not(.pet-island) > .pet-cmd {
+  flex: 0 0 auto !important;
+  margin-top: auto !important;
+}
+
+/* ⭐ 마지막답: height: * (flex: 1 1 0px) 로 나머지 공간을 전부 채우며 커지고 작아짐 */
+body.widget-window #pet:not(.pet-island) .pet-feed:not([hidden]) {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 0px !important;
+  min-height: 48px !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+body.widget-window #pet:not(.pet-island) .pet-feed .hd {
+  flex: 0 0 auto !important;
+  color: var(--dim);
+  font-size: 10.5px;
+  margin-bottom: 3px;
+}
+body.widget-window #pet:not(.pet-island) .pet-feed .tx {
+  flex: 1 1 0px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  max-height: none !important;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  font-size: 11px;
+  line-height: 1.45;
+}
+body.widget-window #pet:not(.pet-island) .pet-feed .tx.empty-hint {
+  color: var(--dim) !important;
+}
+body.widget-window #pet:not(.pet-island) .pet-feed .tx::-webkit-scrollbar {
+  width: 4px;
+}
+body.widget-window #pet:not(.pet-island) .pet-feed .tx::-webkit-scrollbar-track {
+  background: transparent;
+}
+body.widget-window #pet:not(.pet-island) .pet-feed .tx::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+body.widget-window #pet:not(.pet-island) .pet-feed .tx::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* ───────────────────────────── ⚙️ 독립 설정 전용 창 (?settings_window=1) ───────────────────────────── */
+body.settings-window canvas#office,
+body.settings-window #hud,
+body.settings-window #drawerTab,
+body.settings-window #empty,
+body.settings-window #officeCleanView,
+body.settings-window #wlist,
+body.settings-window #modeSelectModal,
+body.settings-window #panel,
+body.settings-window #pet,
+body.settings-window #tooltip,
+body.settings-window #toast,
+body.settings-window #connectGuide {
+  display: none !important;
+}
+
+html.settings-window,
+html:has(body.settings-window),
+body.settings-window {
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+body.settings-window #settings.modal {
+  position: fixed;
+  inset: 0;
+  display: flex !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  padding: 0;
+  margin: 0;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+body.settings-window #settings .mbox {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  box-sizing: border-box;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: none !important;
+  overflow: hidden;
+  user-select: text;
+}
+
+body.settings-window .mhead {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--line);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.settings-window .mhead:active {
+  cursor: grabbing;
+}
+
+body.settings-window .mbox .close {
+  cursor: pointer;
+  top: 14px;
+  right: 16px;
+  font-size: 15px;
+  padding: 4px 6px;
+}
+
+
+/* ───────────────────────────── 📐 위젯 크기별 (보통 / 작게) 폰트 및 버튼 반응형 스케일 ───────────────────────────── */
+
+/* ── 보통 크기 (Medium · 폭 300px) ── */
+body.widget-size-medium #pet:not(.pet-island),
+#pet.size-medium:not(.pet-island) {
+  padding: 6px 7px 7px;
+  gap: 5px;
+}
+
+body.widget-size-medium #pet:not(.pet-island) .pet-head,
+#pet.size-medium:not(.pet-island) .pet-head {
+  gap: 3px;
+}
+
+body.widget-size-medium #pet:not(.pet-island) .pet-ibtn,
+#pet.size-medium:not(.pet-island) .pet-ibtn {
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  font-size: 10.5px;
+  border-radius: 5px;
+}
+
+body.widget-size-medium #pet:not(.pet-island) .pet-sel,
+#pet.size-medium:not(.pet-island) .pet-sel {
+  font-size: 10.5px;
+  padding: 2px 5px;
+  border-radius: 6px;
+}
+
+body.widget-size-medium #pet:not(.pet-island) .pet-bar,
+#pet.size-medium:not(.pet-island) .pet-bar {
+  padding: 4px 6px;
+  font-size: 10.5px;
+  gap: 6px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-bar .nm,
+#pet.size-medium:not(.pet-island) .pet-bar .nm {
+  font-size: 10.5px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-bar .nm-txt,
+#pet.size-medium:not(.pet-island) .pet-bar .nm-txt {
+  max-width: 105px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-bar .team-tag,
+#pet.size-medium:not(.pet-island) .pet-bar .team-tag {
+  font-size: 9px;
+  padding: 1px 4px;
+  max-width: 75px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-bar .st,
+#pet.size-medium:not(.pet-island) .pet-bar .st {
+  font-size: 10px;
+}
+
+body.widget-size-medium #pet:not(.pet-island) .pet-alert,
+#pet.size-medium:not(.pet-island) .pet-alert {
+  padding: 4px 6px;
+  font-size: 10.5px;
+  gap: 5px;
+  border-radius: 7px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-alert .go,
+#pet.size-medium:not(.pet-island) .pet-alert .go {
+  font-size: 9px;
+  padding: 1px 5px;
+}
+
+body.widget-size-medium #pet:not(.pet-island) .pet-ask,
+#pet.size-medium:not(.pet-island) .pet-ask {
+  padding: 5px 6px;
+  font-size: 10.5px;
+  border-radius: 7px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-ask .what,
+#pet.size-medium:not(.pet-island) .pet-ask .what,
+body.widget-size-medium #pet:not(.pet-island) .pet-ask .qtxt,
+#pet.size-medium:not(.pet-island) .pet-ask .qtxt {
+  font-size: 10.5px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-ask .cmd,
+#pet.size-medium:not(.pet-island) .pet-ask .cmd {
+  font-size: 9.5px;
+  padding: 3px 5px;
+  max-height: 65px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-ask .field,
+#pet.size-medium:not(.pet-island) .pet-ask .field {
+  padding: 3px 5px;
+  font-size: 10px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-btn,
+#pet.size-medium:not(.pet-island) .pet-btn {
+  padding: 2.5px 7px;
+  font-size: 10px;
+  border-radius: 5px;
+}
+
+body.widget-size-medium #pet:not(.pet-island) .pet-feed,
+#pet.size-medium:not(.pet-island) .pet-feed {
+  padding: 5px 7px;
+  border-radius: 7px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-feed .hd,
+#pet.size-medium:not(.pet-island) .pet-feed .hd {
+  font-size: 9.5px;
+  margin-bottom: 2px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-feed .tx,
+#pet.size-medium:not(.pet-island) .pet-feed .tx {
+  font-size: 10px !important;
+  line-height: 1.4;
+}
+
+body.widget-size-medium #pet:not(.pet-island) .pet-cmd,
+#pet.size-medium:not(.pet-island) .pet-cmd {
+  gap: 3px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-input-row,
+#pet.size-medium:not(.pet-island) .pet-input-row {
+  gap: 4px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-input-row textarea.field,
+#pet.size-medium:not(.pet-island) .pet-input-row textarea.field {
+  padding: 4px 6px;
+  font-size: 10.5px;
+  min-height: 28px;
+  border-radius: 7px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-input-row .voice-btn,
+#pet.size-medium:not(.pet-island) .pet-input-row .voice-btn {
+  height: 25px;
+  width: 25px;
+  font-size: 11.5px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-send,
+#pet.size-medium:not(.pet-island) .pet-send {
+  padding: 0 8px;
+  font-size: 10.5px;
+  min-height: 28px;
+  border-radius: 7px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-note,
+#pet.size-medium:not(.pet-island) .pet-note {
+  font-size: 9.5px;
+}
+body.widget-size-medium #pet:not(.pet-island) .cancel-q,
+#pet.size-medium:not(.pet-island) .cancel-q,
+body.widget-size-medium #pet:not(.pet-island) .wake-term,
+#pet.size-medium:not(.pet-island) .wake-term,
+body.widget-size-medium #pet:not(.pet-island) .guide-link,
+#pet.size-medium:not(.pet-island) .guide-link {
+  font-size: 9.5px;
+  padding: 1px 5px;
+}
+body.widget-size-medium #pet:not(.pet-island) .pet-empty,
+#pet.size-medium:not(.pet-island) .pet-empty {
+  padding: 12px 6px;
+  font-size: 10.5px;
+}
+
+/* ── 작게 크기 (Small · 폭 260px) ── */
+body.widget-size-small #pet:not(.pet-island),
+#pet.size-small:not(.pet-island) {
+  padding: 5px 6px 6px;
+  gap: 4px;
+}
+
+body.widget-size-small #pet:not(.pet-island) .pet-head,
+#pet.size-small:not(.pet-island) .pet-head {
+  gap: 2.5px;
+}
+
+body.widget-size-small #pet:not(.pet-island) .pet-ibtn,
+#pet.size-small:not(.pet-island) .pet-ibtn {
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  font-size: 9.5px;
+  border-radius: 4px;
+}
+
+body.widget-size-small #pet:not(.pet-island) .pet-sel,
+#pet.size-small:not(.pet-island) .pet-sel {
+  font-size: 9.5px;
+  padding: 1.5px 4px;
+  border-radius: 5px;
+}
+
+body.widget-size-small #pet:not(.pet-island) .pet-bar,
+#pet.size-small:not(.pet-island) .pet-bar {
+  padding: 3px 5px;
+  font-size: 9.5px;
+  gap: 4px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-bar .nm,
+#pet.size-small:not(.pet-island) .pet-bar .nm {
+  font-size: 9.5px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-bar .nm-txt,
+#pet.size-small:not(.pet-island) .pet-bar .nm-txt {
+  max-width: 85px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-bar .team-tag,
+#pet.size-small:not(.pet-island) .pet-bar .team-tag {
+  font-size: 8.5px;
+  padding: 0.5px 3.5px;
+  max-width: 60px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-bar .st,
+#pet.size-small:not(.pet-island) .pet-bar .st {
+  font-size: 9px;
+}
+
+body.widget-size-small #pet:not(.pet-island) .pet-alert,
+#pet.size-small:not(.pet-island) .pet-alert {
+  padding: 3px 5px;
+  font-size: 9.5px;
+  gap: 4px;
+  border-radius: 6px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-alert .go,
+#pet.size-small:not(.pet-island) .pet-alert .go {
+  font-size: 8px;
+  padding: 0.5px 4px;
+}
+
+body.widget-size-small #pet:not(.pet-island) .pet-ask,
+#pet.size-small:not(.pet-island) .pet-ask {
+  padding: 4px 5px;
+  font-size: 9.5px;
+  border-radius: 6px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-ask .what,
+#pet.size-small:not(.pet-island) .pet-ask .what,
+body.widget-size-small #pet:not(.pet-island) .pet-ask .qtxt,
+#pet.size-small:not(.pet-island) .pet-ask .qtxt {
+  font-size: 9.5px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-ask .cmd,
+#pet.size-small:not(.pet-island) .pet-ask .cmd {
+  font-size: 8.5px;
+  padding: 2px 4px;
+  max-height: 55px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-ask .field,
+#pet.size-small:not(.pet-island) .pet-ask .field {
+  padding: 2px 4px;
+  font-size: 9px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-btn,
+#pet.size-small:not(.pet-island) .pet-btn {
+  padding: 2px 5px;
+  font-size: 9px;
+  border-radius: 4px;
+}
+
+body.widget-size-small #pet:not(.pet-island) .pet-feed,
+#pet.size-small:not(.pet-island) .pet-feed {
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-feed .hd,
+#pet.size-small:not(.pet-island) .pet-feed .hd {
+  font-size: 8.5px;
+  margin-bottom: 2px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-feed .tx,
+#pet.size-small:not(.pet-island) .pet-feed .tx {
+  font-size: 9px !important;
+  line-height: 1.35;
+}
+
+body.widget-size-small #pet:not(.pet-island) .pet-cmd,
+#pet.size-small:not(.pet-island) .pet-cmd {
+  gap: 2.5px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-input-row,
+#pet.size-small:not(.pet-island) .pet-input-row {
+  gap: 3px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-input-row textarea.field,
+#pet.size-small:not(.pet-island) .pet-input-row textarea.field {
+  padding: 3px 5px;
+  font-size: 9.5px;
+  min-height: 24px;
+  border-radius: 6px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-input-row .voice-btn,
+#pet.size-small:not(.pet-island) .pet-input-row .voice-btn {
+  height: 22px;
+  width: 22px;
+  font-size: 10.5px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-send,
+#pet.size-small:not(.pet-island) .pet-send {
+  padding: 0 6px;
+  font-size: 9.5px;
+  min-height: 24px;
+  border-radius: 6px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-note,
+#pet.size-small:not(.pet-island) .pet-note {
+  font-size: 8.5px;
+}
+body.widget-size-small #pet:not(.pet-island) .cancel-q,
+#pet.size-small:not(.pet-island) .cancel-q,
+body.widget-size-small #pet:not(.pet-island) .wake-term,
+#pet.size-small:not(.pet-island) .wake-term,
+body.widget-size-small #pet:not(.pet-island) .guide-link,
+#pet.size-small:not(.pet-island) .guide-link {
+  font-size: 8.5px;
+  padding: 0.5px 4px;
+}
+body.widget-size-small #pet:not(.pet-island) .pet-empty,
+#pet.size-small:not(.pet-island) .pet-empty {
+  padding: 10px 5px;
+  font-size: 9.5px;
 }
