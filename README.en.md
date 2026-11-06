@@ -1,6 +1,8 @@
-# 🏢 Claude Pixel Office
-
 <div align="center">
+
+<img src="src/ClaudeOffice/wwwroot/icons/icon-192.png" width="96" height="96" alt="Claude Pixel Office">
+
+# 🧑‍💻 Claude Pixel Office
 
 [한국어](README.md) · **English**
 
@@ -31,7 +33,7 @@
 ## 📸 Screenshots
 
 ### 💻 Main Screens
-| 🏢 Pixel Office Mode | 💼 Business Dashboard Mode (`Shortcut O`) |
+| 🧑‍💻 Pixel Office Mode | 💼 Business Dashboard Mode (`Shortcut O`) |
 | :---: | :---: |
 | <img src="docs/screenshots/basic_office.png" width="460" alt="Pixel Office Mode"> | <img src="docs/screenshots/office_mode.png" width="460" alt="Business Dashboard Mode"> |
 | *Pixel art agents, desks, subagent interns, autonomous idle behaviors* | *Clean, dot-free card grid with a unified dark tone (`#0d0f17`)* |
@@ -58,7 +60,7 @@
 
 ## ✨ Key Features
 
-### 1. 🏢 Intuitive Multi-Session Visualization & Business Mode
+### 1. 🧑‍💻 Intuitive Multi-Session Visualization & Business Mode
 - **Session = Agent, Folder = Team Area (Rug), Subagent = Intern**: Keep track of multiple terminal sessions at a glance without switching windows.
 - **Real-Time Action Speech Bubbles**: Shows reading (`Read`), searching (`Grep/Glob`), writing code (`Edit/Write`), running commands (`Bash/PowerShell`), and web queries in clear speech bubbles.
 - **Modern Clean Dashboard (`Shortcut O`)**: Switch between the retro pixel office and an enterprise-ready card grid view with a unified dark background (`#0d0f17`).
@@ -208,6 +210,7 @@ No. The server only transmits AES-256-GCM encrypted binary blobs. The decryption
 ## 📄 License & Credits
 
 - Licensed under the [MIT License](LICENSE).
+- **Official App Icon**: The pixel-art employee at their desk (`src/ClaudeOffice/Assets/office_pixel.png`, `src/ClaudeOffice/wwwroot/icons/icon-192.png`) — MIT License
 - All pixel art and office graphics are rendered dynamically in code on HTML5 Canvas without external image files.
 - QR Code generation: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 1.4.4 (MIT License).
 - "Claude" is a trademark of Anthropic. This project is not affiliated with Anthropic.

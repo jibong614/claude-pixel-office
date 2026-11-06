@@ -1,6 +1,8 @@
-# 🏢 Claude Pixel Office
-
 <div align="center">
+
+<img src="src/ClaudeOffice/wwwroot/icons/icon-192.png" width="96" height="96" alt="Claude Pixel Office">
+
+# 🧑‍💻 Claude Pixel Office
 
 **한국어** · [English](README.en.md)
 
@@ -30,7 +32,7 @@
 ## 📸 스크린샷
 
 ### 💻 메인 화면
-| 🏢 픽셀 오피스 모드 | 💼 비즈니스 대시보드 모드 (`단축키 O`) |
+| 🧑‍💻 픽셀 오피스 모드 | 💼 비즈니스 대시보드 모드 (`단축키 O`) |
 | :---: | :---: |
 | <img src="docs/screenshots/basic_office.png" width="460" alt="픽셀 오피스 모드"> | <img src="docs/screenshots/office_mode.png" width="460" alt="비즈니스 대시보드 모드"> |
 | *세션별 픽셀 캐릭터, 책상, 인턴, 자율 행동 시각화* | *도트 없는 단일 다크톤(`#0d0f17`) 카드 그리드 전문 업무 뷰* |
@@ -57,7 +59,7 @@
 
 ## ✨ 주요 기능
 
-### 1. 🏢 직관적인 다중 세션 시각화 & 비즈니스 모드
+### 1. 🧑‍💻 직관적인 다중 세션 시각화 & 비즈니스 모드
 - **세션 = 직원, 폴더 = 팀 구역(카펫), 서브에이전트 = 인턴**: 여러 터미널을 번갈아 확인하지 않아도 누가 어떤 작업을 하는지 즉시 파악할 수 있습니다.
 - **실시간 작업 상태 말풍선**: 읽기(`Read`), 검색(`Grep/Glob`), 코드 작성(`Edit/Write`), 명령 실행(`Bash/PowerShell`), 웹 탐색 등 실제 동작을 친근한 한글 말풍선으로 표현합니다.
 - **모던 클린 대시보드 (`단축키 O`)**: 픽셀 그래픽 대신 카드 그리드로 대화 상태와 터미널 점프를 한눈에 관리하는 비즈니스 모드(단일 다크톤 `#0d0f17`)를 지원합니다.
@@ -207,6 +209,7 @@ Claude Code 연결 훅을 등록하지 않으면 파일 수정 지연 시간으�
 ## 📄 라이선스 & 크레딧
 
 - 본 프로젝트는 [MIT License](LICENSE)에 따라 자유롭게 사용, 수정, 배포할 수 있습니다.
+- **공식 앱 아이콘**: 사무실 화면의 픽셀아트 직원 (`src/ClaudeOffice/Assets/office_pixel.png`, `src/ClaudeOffice/wwwroot/icons/icon-192.png`) — MIT License
 - 픽셀 캐릭터 및 오피스 그래픽 에셋은 외부 이미지 없이 순수 자바스크립트 캔버스 코드로 렌더링됩니다.
 - QR 코드 생성: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 1.4.4 (MIT License).
 - "Claude"는 Anthropic의 상표이며, 본 프로젝트는 Anthropic과 공식적으로 관련이 없습니다.
