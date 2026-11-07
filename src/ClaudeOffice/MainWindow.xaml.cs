@@ -77,11 +77,15 @@ public partial class MainWindow : Window
                 TurnOffPet,
                 TurnOnPetNormal,
                 TurnOnPetIsland,
+                TurnOnPetWalk,
                 () => OpenSettingsWindow(),
                 ExitApp);
             _tray.SetText(Title);
             _tray.SetViewMode(App.Settings.Widget);
-            _tray.SetPetMode(App.Settings.Pet ? (App.Settings.PetIsland ? TrayIcon.PetTrayMode.Island : TrayIcon.PetTrayMode.Normal) : TrayIcon.PetTrayMode.None);
+            _tray.SetPetMode(!App.Settings.Pet ? TrayIcon.PetTrayMode.None
+                : App.Settings.PetIsland ? TrayIcon.PetTrayMode.Island
+                : App.Settings.PetWalk ? TrayIcon.PetTrayMode.Walk
+                : TrayIcon.PetTrayMode.Normal);
             if (App.Updated)
                 _tray.Notify(L.T($"{App.Version} 버전으로 업데이트했어요", $"Updated to {App.Version}"),
                              L.T("바뀐 내용은 ⚙️ → 정보 → 버전에서 GitHub 릴리스로", "See what's new: ⚙️ → About → Version (GitHub release)"),
@@ -310,7 +314,7 @@ public partial class MainWindow : Window
                 "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
-    // ───────────────────────── 자리 비움 원격 · 바탕화면 미니펫 ─────────────────────────
+    // ───────────────────────── 자리 비움 원격 · 바탕화면 미니위젯 ─────────────────────────
 
     /// <summary>원격 상태를 휴대폰 업로드·화면에 알린다(아무 스레드에서나).</summary>
     private void OnRemoteChanged()
@@ -325,7 +329,11 @@ public partial class MainWindow : Window
         if (sid != null) App.Settings.PetSessionId = string.IsNullOrWhiteSpace(sid) ? null : sid.Trim();
         App.Settings.Pet = on;
         TrySaveSettings();
-        _tray?.SetPetMode(on ? (App.Settings.PetIsland ? TrayIcon.PetTrayMode.Island : TrayIcon.PetTrayMode.Normal) : TrayIcon.PetTrayMode.None);
+        var trayMode = !on ? TrayIcon.PetTrayMode.None
+            : App.Settings.PetIsland ? TrayIcon.PetTrayMode.Island
+            : App.Settings.PetWalk ? TrayIcon.PetTrayMode.Walk
+            : TrayIcon.PetTrayMode.Normal;
+        _tray?.SetPetMode(trayMode);
         _remote.SetPet(on, App.Settings.PetSessionId);
         ApplyWidgetWindow();
         Post(AppSettingsJson());
@@ -339,9 +347,10 @@ public partial class MainWindow : Window
     private void TurnOnPetNormal()
     {
         App.Settings.PetIsland = false;
+        App.Settings.PetWalk = false;
         TrySaveSettings();
         SetPet(true, null);
-        _widgetWindow?.SetPetMode(false);
+        _widgetWindow?.SetPetMode(false, false);
         _widgetWindow?.Post(JsonSerializer.Serialize(new { type = "pet-mode", mode = "normal" }));
         _tray?.SetPetMode(TrayIcon.PetTrayMode.Normal);
     }
@@ -349,11 +358,23 @@ public partial class MainWindow : Window
     private void TurnOnPetIsland()
     {
         App.Settings.PetIsland = true;
+        App.Settings.PetWalk = false;
         TrySaveSettings();
         SetPet(true, null);
-        _widgetWindow?.SetPetMode(true);
+        _widgetWindow?.SetPetMode(true, false);
         _widgetWindow?.Post(JsonSerializer.Serialize(new { type = "pet-mode", mode = "island" }));
         _tray?.SetPetMode(TrayIcon.PetTrayMode.Island);
+    }
+
+    private void TurnOnPetWalk()
+    {
+        App.Settings.PetIsland = false;
+        App.Settings.PetWalk = true;
+        TrySaveSettings();
+        SetPet(true, null);
+        _widgetWindow?.SetPetMode(false, true);
+        _widgetWindow?.Post(JsonSerializer.Serialize(new { type = "pet-mode", mode = "shimeji" }));
+        _tray?.SetPetMode(TrayIcon.PetTrayMode.Walk);
     }
 
     private void OpenSettings(string? tab = null)
@@ -790,6 +811,7 @@ public partial class MainWindow : Window
             petCompact = s.PetCompact,
             petNoBg = s.PetNoBg,
             petIsland = s.PetIsland,
+            petWalk = s.PetWalk,
             petTopmost = s.PetTopmost,
             appMode = s.AppMode,
             widgetSize = s.WidgetSize,
@@ -1003,10 +1025,34 @@ public partial class MainWindow : Window
                     if (!App.DemoMode && root.TryGetProperty("mode", out var pmd) && pmd.GetString() is { } modeStr)
                     {
                         bool isIsland = modeStr == "island";
+                        bool isWalk = modeStr == "shimeji" || modeStr == "walk";
                         App.Settings.PetIsland = isIsland;
+                        App.Settings.PetWalk = isWalk;
                         TrySaveSettings();
-                        _widgetWindow?.SetPetMode(isIsland);
-                        _tray?.SetPetMode(App.Settings.Pet ? (isIsland ? TrayIcon.PetTrayMode.Island : TrayIcon.PetTrayMode.Normal) : TrayIcon.PetTrayMode.None);
+                        _widgetWindow?.SetPetMode(isIsland, isWalk);
+                        var trayMode = !App.Settings.Pet ? TrayIcon.PetTrayMode.None
+                            : isIsland ? TrayIcon.PetTrayMode.Island
+                            : isWalk ? TrayIcon.PetTrayMode.Walk
+                            : TrayIcon.PetTrayMode.Normal;
+                        _tray?.SetPetMode(trayMode);
+                        Post(AppSettingsJson());
+                        _widgetWindow?.Post(JsonSerializer.Serialize(new { type = "pet-mode", mode = modeStr }));
+                    }
+                    break;
+                case "pet-mode-menu":
+                    if (!App.DemoMode && _widgetWindow != null)
+                    {
+                        double left = root.TryGetProperty("left", out var pl) && pl.TryGetDouble(out var dl) ? dl : 0;
+                        double top = root.TryGetProperty("top", out var pt) && pt.TryGetDouble(out var dt) ? dt : 0;
+                        double right = root.TryGetProperty("right", out var pr) && pr.TryGetDouble(out var dr) ? dr : left + 24;
+                        double bottom = root.TryGetProperty("bottom", out var pb) && pb.TryGetDouble(out var db) ? db : top + 24;
+                        bool isIsland = root.TryGetProperty("island", out var pi) && pi.GetBoolean();
+
+                        _widgetWindow.ShowPetModeMenu(
+                            left, top, right, bottom, isIsland,
+                            TurnOnPetNormal,
+                            TurnOnPetIsland,
+                            TurnOnPetWalk);
                     }
                     break;
                 case "pet-say":

@@ -70,6 +70,8 @@ internal sealed class AppSettings
     public bool PetNoBg { get; set; }
     /// <summary>미니위젯을 초슬림 미니바(아일랜드) 모드로 보여 줄지.</summary>
     public bool PetIsland { get; set; }
+    /// <summary>미니위젯을 시메지 산책 모드로 보여 줄지.</summary>
+    public bool PetWalk { get; set; }
     /// <summary>미니위젯을 항상 위(Topmost)에 둘지. 해제 시 다른 일반 창 뒤로 숨는다.</summary>
     public bool PetTopmost { get; set; } = true;
     /// <summary>바탕화면 미니위젯 위치·크기 (높이는 사용자 조절 가능, 폭은 360 고정).</summary>

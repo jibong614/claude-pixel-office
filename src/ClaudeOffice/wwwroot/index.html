@@ -41,24 +41,24 @@
       <button id="hudSearchClear" title="지우기" data-en-title="Clear">✕</button>
     </div>
     <!-- 영어 화면이면 office.js 가 data-en(글)·data-en-title·data-en-ph 로 바꾼다 -->
-    <button id="btnSearch" title="직원 빠른 검색 (단축키: /)" data-en-title="Quick search employees (Shortcut: /)">🔍</button>
-    <button id="btnPet" title="산책모드 (단축키: M) — 직원을 바탕화면에서 자유롭게 산책시키기" data-en-title="Walk Mode (Shortcut: M)">🪟</button>
-    <button id="btnCoins" class="hud-coins" title="상점 & 보관함 열기 (단축키: S)" data-en-title="Current Coins — open shop (Shortcut: S)">🪙 <span id="hudCoins">0</span></button>
-    <button id="btnPin" title="항상 위에 표시">📌</button>
+    <button id="btnSearch" title="직원 빠른 검색 (단축키: /)" data-en-title="Quick search employees (Shortcut: /)"><span class="px-icon px-search"></span></button>
+    <button id="btnPet" title="바탕화면 미니위젯 (단축키: M) — 직원을 바탕화면 구석에 꺼내 두고 실시간 모니터링" data-en-title="Desktop MiniWidget (Shortcut: M) — Pin employee to desktop corner for real-time monitoring"><span class="px-icon px-laptop"></span></button>
+    <button id="btnCoins" class="hud-coins" title="상점 & 보관함 열기 (단축키: S)" data-en-title="Current Coins — open shop (Shortcut: S)"><span class="px-icon px-coin"></span> <span id="hudCoins">0</span></button>
+    <button id="btnPin" title="항상 위에 표시" data-en-title="Always on top">📌</button>
     <div class="hud-more-wrap">
       <button id="btnMore" title="더 많은 메뉴 (근무일지·업적·브로드캐스트 등)" data-en-title="More Options">⋯</button>
       <div id="hudMoreMenu" class="hud-more-menu" hidden>
-        <button id="btnWidget" class="more-item" type="button"><span class="m-icon">📋</span> <span class="m-txt" data-en="Compact view (W)">작게 보기 (W)</span></button>
-        <button id="btnToday" class="more-item" type="button"><span class="m-icon">📊</span> <span class="m-txt" data-en="Work log (R)">근무 일지 (R)</span></button>
-        <button id="btnAchieve" class="more-item" type="button"><span class="m-icon">🏆</span> <span class="m-txt" data-en="Achievements (A)">업적 도감 (A)</span></button>
-        <button id="btnAway" class="more-item" type="button"><span class="m-icon">🚪</span> <span class="m-txt" data-en="Toggle absent staff">퇴근 직원 표시</span></button>
+        <button id="btnWidget" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-doc"></span></span> <span class="m-txt" data-en="Compact list view (W)">목록형 작게 보기 (W)</span></button>
+        <button id="btnToday" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-chart"></span></span> <span class="m-txt" data-en="Work log (R)">근무 일지 (R)</span></button>
+        <button id="btnAchieve" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-trophy"></span></span> <span class="m-txt" data-en="Achievements (A)">업적 도감 (A)</span></button>
+        <button id="btnAway" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-moon"></span></span> <span class="m-txt" data-en="Toggle absent staff">퇴근 직원 표시</span></button>
         <div class="more-divider"></div>
         <div class="more-sec-lbl" data-en="Advanced Features">고급 기능</div>
         <button id="btnBroadcast" class="more-item" type="button"><span class="m-icon">📢</span> <span class="m-txt" data-en="Broadcast (B)">전체 브로드캐스트 (B)</span></button>
-        <button id="btnNightShift" class="more-item" type="button"><span class="m-icon">🌙</span> <span class="m-txt" data-en="Night Shift (N)">야간 당직 모드 (N)</span></button>
+        <button id="btnNightShift" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-moon"></span></span> <span class="m-txt" data-en="Night Shift (N)">야간 당직 모드 (N)</span></button>
       </div>
     </div>
-    <button id="btnSettings" title="설정" data-en-title="Settings">⚙️</button>
+    <button id="btnSettings" title="설정" data-en-title="Settings"><span class="px-icon px-gear"></span></button>
     <button id="btnHook" hidden>??</button>
     <button id="btnShop" hidden></button>
   </div>
@@ -79,7 +79,7 @@
     <div id="pMain">
     <h2 id="pName"></h2>
     <div id="pTitle" class="dim"></div>
-    <div class="pbar"><div id="pState" class="state"></div><button id="pFocusConsoleTop" class="mini btn-console-jump" title="이 직원의 터미널/VS Code 창으로 즉시 점프 (단축키: Alt+1~9)" data-en-title="Jump to this session's terminal/VS Code window (Alt+1~9)" data-en="⚡ Console Jump">⚡ 콘솔 점프</button><button id="pPet" class="mini" title="이 직원을 바탕화면 미니펫으로 꺼내기" data-en-title="Show this employee as the desktop MiniPet" data-en="🐾 MiniPet">🐾 미니펫</button></div>
+    <div class="pbar"><div id="pState" class="state"></div><button id="pFocusConsoleTop" class="mini btn-console-jump" title="이 직원의 터미널/VS Code 창으로 즉시 점프 (단축키: Alt+1~9)" data-en-title="Jump to this session's terminal/VS Code window (Alt+1~9)" data-en="⚡ Console Jump">⚡ 콘솔 점프</button><button id="pPet" class="mini" title="이 직원을 바탕화면 미니위젯 대표 직원으로 꺼내기" data-en-title="Pin this employee to Desktop MiniWidget" data-en="🪟 MiniWidget">🪟 미니위젯</button></div>
 
     <!-- 1) 휴대폰/PC 지시·승인 (기본 노출) -->
     <section id="pRemote" hidden>
@@ -154,7 +154,7 @@
   <div id="settings" class="modal" hidden>
     <div class="mbox" role="dialog" aria-modal="true" aria-labelledby="sTitle">
       <div class="mhead">
-        <h2 id="sTitle" data-en="⚙️ Settings">⚙️ 설정</h2>
+        <h2 id="sTitle"><span class="px-icon px-gear"></span> <span data-en="Settings">설정</span></h2>
         <div id="sVer"></div>
         <button id="sClose" class="close" title="닫기" data-en-title="Close">✕</button>
       </div>
@@ -201,7 +201,7 @@
             <div class="cg-num">3</div>
             <div class="cg-info">
               <div class="cg-stitle" id="cgS3Title" data-en="3. Connection Complete!">✅ 3. 실시간 연결 완료!</div>
-              <div class="cg-sdesc" id="cgS3Desc" data-en="Once Claude finishes this reply, future instructions will be sent directly from the Office / MiniPet.">Claude의 첫 답변이 끝나면 연결이 완료되어, 다음부터는 터미널로 이동할 필요 없이 오피스나 미니펫에서 바로 지시가 전달됩니다!</div>
+              <div class="cg-sdesc" id="cgS3Desc" data-en="Once Claude finishes this reply, future instructions will be sent directly from the Office / MiniWidget.">Claude의 첫 답변이 끝나면 연결이 완료되어, 다음부터는 터미널로 이동할 필요 없이 오피스나 미니위젯에서 바로 지시가 전달됩니다!</div>
             </div>
           </div>
         </div>
@@ -246,7 +246,7 @@
     <div class="mbox ac-box" role="dialog" aria-modal="true" aria-labelledby="acTitle">
       <div class="mhead ac-head">
         <div class="ac-head-info">
-          <h2 id="acTitle" data-en="🏆 Achievements & Hall of Fame">🏆 전사 업적 도감 & 명예의 전당</h2>
+          <h2 id="acTitle"><span class="px-icon px-trophy"></span> <span data-en="Achievements &amp; Hall of Fame">전사 업적 도감 &amp; 명예의 전당</span></h2>
           <span id="acSummary" class="ac-summary">전체 업적 현황</span>
         </div>
         <button id="acClose" class="close" title="닫기" data-en-title="Close">✕</button>
@@ -268,11 +268,11 @@
     <div class="mbox shop-box" role="dialog" aria-modal="true" aria-labelledby="shopTitle">
       <div class="mhead shop-head">
         <div class="shop-head-info">
-          <h2 id="shopTitle" data-en="🛋️ Furniture & Decor Shop">🛋️ 오피스 인테리어 & 가구 상점</h2>
+          <h2 id="shopTitle"><span class="px-icon px-sofa"></span> <span data-en="Furniture &amp; Decor Shop">오피스 인테리어 &amp; 가구 상점</span></h2>
           <span id="shopSummary" class="shop-summary" data-en="Decorate your office with coins earned from coding & quests!">작업 완료 및 도전 과제로 모은 코인으로 사무실을 아늑하게 꾸며보세요!</span>
         </div>
         <div class="shop-coin-badge">
-          🪙 <span id="shopCoinsTotal">0</span> <span data-en="Coins">코인</span>
+          <span class="px-icon px-coin"></span> <span id="shopCoinsTotal">0</span> <span data-en="Coins">코인</span>
         </div>
         <button id="shopClose" class="close" title="닫기" data-en-title="Close">✕</button>
       </div>
@@ -329,7 +329,7 @@
     <div class="mbox ns-box" role="dialog" aria-modal="true" aria-labelledby="nsTitle">
       <div class="mhead ns-head">
         <div class="ns-head-info">
-          <h2 id="nsTitle" data-en="🌙 Night Shift &amp; Morning Briefing">🌙 야간 당직 &amp; 아침 브리핑</h2>
+          <h2 id="nsTitle"><span class="px-icon px-moon"></span> <span data-en="Night Shift &amp; Morning Briefing">야간 당직 &amp; 아침 브리핑</span></h2>
           <span id="nsSummary" class="ns-summary" data-en="Overnight autonomous monitoring &amp; morning productivity report">야간 무인 모니터링 및 밤샘 작업 요약 브리핑</span>
         </div>
         <button id="nsClose" class="close" title="닫기" data-en-title="Close">✕</button>
@@ -337,7 +337,7 @@
       <div class="ns-body">
         <div class="ns-status-card">
           <div class="ns-status-main">
-            <div class="ns-status-icon" id="nsStatusIcon">🌙</div>
+            <div class="ns-status-icon" id="nsStatusIcon"><span class="px-icon px-icon-xl px-moon"></span></div>
             <div class="ns-status-info">
               <div class="ns-status-title" id="nsStatusTitle">야간 당직 대기 중</div>
               <div class="ns-status-desc" id="nsStatusDesc">당직 모드를 켜면 야간 작업 내역을 자동 집계하고 아침 브리핑을 작성합니다.</div>
@@ -390,7 +390,7 @@
             <div class="mode-icon">🎮</div>
             <div class="mode-info">
               <div class="mode-title" data-en="Basic Mode (Pixel Office)">기본 모드 (픽셀 오피스)</div>
-              <div class="mode-sub" data-en="Adorable pixel characters, furniture decor, cats and walk mode.">도트 캐릭터, 가구 인테리어, 고양이와 산책 모드가 포함된 기본 모드</div>
+              <div class="mode-sub" data-en="Adorable pixel characters, furniture decor, cats and Desktop MiniWidget.">도트 캐릭터, 가구 인테리어, 고양이와 바탕화면 미니위젯이 포함된 기본 모드</div>
             </div>
           </button>
           <button type="button" class="mode-card" data-mode="office">

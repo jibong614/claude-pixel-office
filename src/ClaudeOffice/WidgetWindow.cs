@@ -10,6 +10,7 @@ using System.Windows.Shell;
 using ClaudeOffice.Monitoring;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using Forms = System.Windows.Forms;
 
 namespace ClaudeOffice;
 
@@ -60,6 +61,13 @@ internal sealed class WidgetWindow : Window
     private double _dragStartHeight;
     private string _currentAppMode = App.Settings.AppMode ?? "basic";
     private string _currentWidgetSize = App.Settings.WidgetSize ?? "large";
+    private Forms.ContextMenuStrip? _modeMenu;
+    private Forms.ToolStripMenuItem? _itemNormal;
+    private Forms.ToolStripMenuItem? _itemIsland;
+    private Forms.ToolStripMenuItem? _itemWalk;
+    private Action? _onNormal;
+    private Action? _onIsland;
+    private Action? _onWalk;
 
     public WidgetWindow(string virtualHost, string webRoot, Action<CoreWebView2WebMessageReceivedEventArgs> onMessage, Action onUserClose)
     {
@@ -115,6 +123,12 @@ internal sealed class WidgetWindow : Window
         Loaded += OnLoaded;
         Closing += (_, e) =>
         {
+            if (_modeMenu != null && !_modeMenu.IsDisposed)
+            {
+                _modeMenu.Close();
+                _modeMenu.Dispose();
+                _modeMenu = null;
+            }
             SavePlacement();
             if (_allowClose)
             {
@@ -170,11 +184,20 @@ internal sealed class WidgetWindow : Window
     public void CloseForce()
     {
         _allowClose = true;
+        if (_modeMenu != null && !_modeMenu.IsDisposed)
+        {
+            _modeMenu.Close();
+            _modeMenu.Dispose();
+            _modeMenu = null;
+        }
         SavePlacement();
         Close();
     }
 
-    private string PageUrl() => $"https://{_virtualHost}/index.html?widget_window=1&pet=1" + (App.Settings.PetIsland ? "&island=1" : "") + (L.En ? "&lang=en" : "");
+    private string PageUrl() => $"https://{_virtualHost}/index.html?widget_window=1&pet=1"
+        + (App.Settings.PetIsland ? "&island=1" : "")
+        + (App.Settings.PetWalk ? "&walk=1" : "")
+        + (L.En ? "&lang=en" : "");
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -294,6 +317,18 @@ internal sealed class WidgetWindow : Window
         };
     }
 
+    /// <summary>산책 모드(시메지) 전용 높이: 캐릭터 캔버스 및 상단 툴바 여백을 포함한 컴팩트 높이</summary>
+    public static double GetWalkHeightForSize(string? size = null)
+    {
+        size ??= App.Settings.WidgetSize;
+        return size switch
+        {
+            "small" => GraphicSmall + 16,
+            "medium" => GraphicMedium + 16,
+            _ => GraphicLarge + 16
+        };
+    }
+
     public static double GetDefaultHeightForMode(string? mode = null, string? size = null)
     {
         mode ??= App.Settings.AppMode;
@@ -369,6 +404,23 @@ internal sealed class WidgetWindow : Window
             {
                 Left = wa.Right - MiniBarWidth - 20;
                 Top = wa.Bottom - MiniBarHeight - 20;
+            }
+        }
+        else if (App.Settings.PetWalk)
+        {
+            Width = wWidth;
+            Height = GetWalkHeightForSize(_currentWidgetSize);
+            if ((App.Settings.MiniWidgetPlacement ?? App.Settings.MiniWidgetWindow) is { } w && OnScreen(w, wWidth, Height))
+            {
+                Left = w.Left;
+                double savedH = (w.Height >= MinWidgetHeight && w.Height <= MaxWidgetHeight) ? w.Height : GetDefaultHeightForMode();
+                double curBottom = w.Top + savedH;
+                Top = Math.Clamp(curBottom - Height, wa.Top + 8, wa.Bottom - Height - 8);
+            }
+            else
+            {
+                Left = wa.Right - Width - 20;
+                Top = wa.Bottom - Height - 20;
             }
         }
         else
@@ -609,7 +661,7 @@ internal sealed class WidgetWindow : Window
         Height = GetSavedWidgetHeight();
     }
 
-    public void SetPetMode(bool island)
+    public void SetPetMode(bool island, bool walk = false)
     {
         var wa = SystemParameters.WorkArea;
         double curBottom = Top + (ActualHeight > 0 ? ActualHeight : Height);
@@ -617,7 +669,7 @@ internal sealed class WidgetWindow : Window
 
         if (island)
         {
-            // 위젯 -> 미니바: 위젯의 하단(Bottom) 및 우측(Right) 기준 정렬
+            // 위젯/산책 -> 미니바: 하단(Bottom) 및 우측(Right) 기준 정렬
             double targetW = MiniBarWidth;
             double targetH = MiniBarHeight;
             double newTop = curBottom - targetH;
@@ -636,9 +688,30 @@ internal sealed class WidgetWindow : Window
 
             SaveMiniBarPlacement();
         }
+        else if (walk)
+        {
+            // 미니바/위젯 -> 산책 모드: 하단(Bottom) 및 우측(Right) 기준 정렬, 캐릭터 캔버스 높이 적용
+            double targetW = GetWidthForSize(_currentWidgetSize);
+            double targetH = GetWalkHeightForSize(_currentWidgetSize);
+            double newTop = curBottom - targetH;
+            double newLeft = curRight - targetW;
+
+            if (!App.Offscreen && wa.Width > 0 && wa.Height > 0)
+            {
+                newTop = Math.Clamp(newTop, wa.Top + 8, wa.Bottom - targetH - 8);
+                newLeft = Math.Clamp(newLeft, wa.Left + 8, wa.Right - targetW - 8);
+            }
+
+            Width = targetW;
+            Height = targetH;
+            Top = newTop;
+            Left = newLeft;
+
+            ApplyBackdrop(true); // 산책 모드는 바탕화면 위를 자유롭게 걸어야 하므로 항상 완전 투명
+        }
         else
         {
-            // 미니바 -> 위젯: 미니바의 하단(Bottom) 및 우측(Right) 기준 정렬, 위젯 커스텀 높이 복원
+            // 미니바/산책 -> 위젯: 하단(Bottom) 및 우측(Right) 기준 정렬, 위젯 커스텀 높이 복원
             double targetW = GetWidthForSize(_currentWidgetSize);
             double targetH = GetSavedWidgetHeight();
             double newTop = curBottom - targetH;
@@ -656,6 +729,116 @@ internal sealed class WidgetWindow : Window
             Left = newLeft;
 
             SaveWidgetPlacement();
+            ApplyBackdrop(App.Settings.PetNoBg);
+        }
+    }
+
+    private void EnsureModeMenu(Action onNormal, Action onIsland, Action onWalk)
+    {
+        _onNormal = onNormal;
+        _onIsland = onIsland;
+        _onWalk = onWalk;
+
+        if (_modeMenu != null && !_modeMenu.IsDisposed) return;
+
+        var menu = new Forms.ContextMenuStrip();
+        if (System.Drawing.SystemFonts.MenuFont is { } mf)
+            menu.Font = mf;
+
+        _itemNormal = new Forms.ToolStripMenuItem(
+            L.T("🪟 바탕화면 미니위젯", "🪟 Desktop MiniWidget"),
+            null,
+            (_, _) => { if (_onNormal != null) Dispatcher.InvokeAsync(_onNormal); });
+
+        _itemIsland = new Forms.ToolStripMenuItem(
+            L.T("🏝️ 미니바 (초슬림)", "🏝️ Mini-bar (Ultra-slim)"),
+            null,
+            (_, _) => { if (_onIsland != null) Dispatcher.InvokeAsync(_onIsland); });
+
+        _itemWalk = new Forms.ToolStripMenuItem(
+            L.T("🐾 산책 모드", "🐾 Walk Mode"),
+            null,
+            (_, _) => { if (_onWalk != null) Dispatcher.InvokeAsync(_onWalk); });
+
+        menu.Items.Add(_itemNormal);
+        menu.Items.Add(_itemIsland);
+        menu.Items.Add(_itemWalk);
+
+        _modeMenu = menu;
+    }
+
+    /// <summary>
+    /// 화면 모드 변경(미니위젯 · 미니바 · 산책 모드) 컨텍스트 메뉴를 띄운다.
+    /// 미니바(높이 44px)나 화면 하단 근처에서는 메뉴가 잘리지 않도록 위쪽 방향(AboveLeft)으로 띄운다.
+    /// </summary>
+    public void ShowPetModeMenu(
+        double clientLeft,
+        double clientTop,
+        double clientRight,
+        double clientBottom,
+        bool isIsland,
+        Action onNormal,
+        Action onIsland,
+        Action onWalk)
+    {
+        if (_web.Handle == IntPtr.Zero || !IsVisible) return;
+
+        if (_modeMenu != null && !_modeMenu.IsDisposed && _modeMenu.Visible)
+        {
+            _modeMenu.Close();
+            return;
+        }
+
+        EnsureModeMenu(onNormal, onIsland, onWalk);
+        if (_modeMenu == null || _modeMenu.IsDisposed) return;
+
+        if (_itemNormal != null)
+        {
+            _itemNormal.Text = L.T("🪟 바탕화면 미니위젯", "🪟 Desktop MiniWidget");
+            _itemNormal.Checked = !App.Settings.PetIsland && !App.Settings.PetWalk;
+        }
+        if (_itemIsland != null)
+        {
+            _itemIsland.Text = L.T("🏝️ 미니바 (초슬림)", "🏝️ Mini-bar (Ultra-slim)");
+            _itemIsland.Checked = App.Settings.PetIsland;
+        }
+        if (_itemWalk != null)
+        {
+            _itemWalk.Text = L.T("🐾 산책 모드", "🐾 Walk Mode");
+            _itemWalk.Checked = App.Settings.PetWalk;
+            _itemWalk.Enabled = App.Settings.AppMode != "office";
+            _itemWalk.ToolTipText = _itemWalk.Enabled ? "" : L.T("오피스 모드에서는 비활성화됨", "Disabled in office mode");
+        }
+
+        System.Windows.Point screenBottomRight;
+        System.Windows.Point screenTopLeft;
+        try
+        {
+            screenBottomRight = _web.PointToScreen(new System.Windows.Point(clientRight, clientBottom));
+            screenTopLeft = _web.PointToScreen(new System.Windows.Point(clientLeft, clientTop));
+        }
+        catch
+        {
+            screenBottomRight = new System.Windows.Point(Left + clientRight, Top + clientBottom);
+            screenTopLeft = new System.Windows.Point(Left + clientLeft, Top + clientTop);
+        }
+
+        var ptBottomRight = new System.Drawing.Point((int)Math.Round(screenBottomRight.X), (int)Math.Round(screenBottomRight.Y));
+        var ptTopRight = new System.Drawing.Point((int)Math.Round(screenBottomRight.X), (int)Math.Round(screenTopLeft.Y));
+
+        var screen = Forms.Screen.FromPoint(ptTopRight);
+        var wa = screen.WorkingArea;
+
+        // 미니바(island) 모드이거나 화면 하단 근처에 있으면 위쪽 방향으로 열기
+        bool openUp = isIsland || (ptBottomRight.Y + 120 > wa.Bottom);
+
+        if (openUp)
+        {
+            _modeMenu.Show(ptTopRight, Forms.ToolStripDropDownDirection.AboveLeft);
+        }
+        else
+        {
+            _modeMenu.Show(ptBottomRight, Forms.ToolStripDropDownDirection.BelowLeft);
         }
     }
 

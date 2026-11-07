@@ -2101,7 +2101,21 @@ body.widget canvas#office, body.widget #hud, body.widget #drawerTab { display: n
 .wrow:hover { background: rgba(124, 107, 224, 0.18); }
 .wrow.wait { background: rgba(255, 179, 71, 0.16); box-shadow: inset 3px 0 0 #ffb347; }
 .wrow.away { opacity: 0.5; }
-.wrow .ic { grid-row: span 2; text-align: center; }
+.wrow .ic {
+  grid-row: span 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 15px;
+  line-height: 1;
+}
+.wrow .ic .px-icon {
+  transform: scale(1.125);
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
 .wrow .nm { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wrow .tm { font-size: 11px; color: var(--dim); white-space: nowrap; }
 .wrow .tx { grid-column: 2 / 4; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3266,17 +3280,30 @@ canvas#office {
   border: none !important;
 }
 #pet.pet-shimeji .pet-head {
+  position: absolute !important;
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  z-index: 10;
+  padding: 3px 5px;
+  border-radius: 8px;
+  background: rgba(23, 20, 42, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s;
 }
-#pet.pet-shimeji:hover .pet-head {
+#pet.pet-shimeji:hover .pet-head,
+#pet.pet-shimeji:focus-within .pet-head {
   opacity: 1;
   pointer-events: auto;
 }
 #pet.pet-shimeji .pet-bar,
 #pet.pet-shimeji .pet-feed,
-#pet.pet-shimeji .pet-cmd {
+#pet.pet-shimeji .pet-cmd,
+#pet.pet-shimeji .btn-pet-fold,
+#pet.pet-shimeji .pet-empty {
   display: none !important;
 }
 #pet.pet-shimeji .pet-stage {
@@ -3414,7 +3441,7 @@ body.pet-float #pet.pet-island {
   color: #5eead4;
   border-color: rgba(94, 234, 212, 0.3);
 }
-.island-btn.btn-restore {
+.island-btn.btn-pet-mode {
   font-size: 12px;
   padding: 3px 6px;
 }
@@ -4024,10 +4051,10 @@ body.mode-office .pet-shimeji {
 }
 
 
-.btn-pet-island {
+.btn-pet-mode {
   color: #a78bfa !important;
 }
-.btn-pet-island:hover {
+.btn-pet-mode:hover {
   background: rgba(167, 139, 250, 0.2) !important;
   border-color: rgba(167, 139, 250, 0.5) !important;
 }
@@ -4207,13 +4234,13 @@ body.widget-window #pet:not(.pet-island) > .pet-asks {
 body.widget-window #pet:not(.pet-island) > .pet-empty {
   flex: 1 1 0px !important;
 }
-body.widget-window #pet:not(.pet-island) > .pet-cmd {
+body.widget-window #pet:not(.pet-island):not(.pet-shimeji) > .pet-cmd {
   flex: 0 0 auto !important;
   margin-top: auto !important;
 }
 
 /* ⭐ 마지막답: height: * (flex: 1 1 0px) 로 나머지 공간을 전부 채우며 커지고 작아짐 */
-body.widget-window #pet:not(.pet-island) .pet-feed:not([hidden]) {
+body.widget-window #pet:not(.pet-island):not(.pet-shimeji) .pet-feed:not([hidden]) {
   display: flex !important;
   flex-direction: column !important;
   flex: 1 1 0px !important;
@@ -4650,4 +4677,271 @@ body.widget-size-small #pet:not(.pet-island) .pet-empty,
 #pet.size-small:not(.pet-island) .pet-empty {
   padding: 10px 5px;
   font-size: 9.5px;
+}
+
+
+/* === Pixel Art Icons (44 Master Confirmed) === */
+.px-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-image: url('icons/pixel_sprites.png');
+  background-repeat: no-repeat;
+  background-size: 128px 96px;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  vertical-align: middle;
+  line-height: 1;
+}
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .px-icon {
+    background-image: url('icons/pixel_sprites@2x.png');
+  }
+}
+.px-icon-sm { transform: scale(0.875); transform-origin: center center; }
+.px-icon-lg { width: 24px; height: 24px; background-size: 192px 144px; }
+.px-icon-xl { width: 32px; height: 32px; background-size: 256px 192px; }
+.px-stop { background-position: -0px -0px; }
+.px-icon-lg.px-stop { background-position: -0.0px -0.0px; }
+.px-icon-xl.px-stop { background-position: -0px -0px; }
+.px-hand { background-position: -16px -0px; }
+.px-icon-lg.px-hand { background-position: -24.0px -0.0px; }
+.px-icon-xl.px-hand { background-position: -32px -0px; }
+.px-gear { background-position: -32px -0px; }
+.px-icon-lg.px-gear { background-position: -48.0px -0.0px; }
+.px-icon-xl.px-gear { background-position: -64px -0px; }
+.px-search { background-position: -48px -0px; }
+.px-icon-lg.px-search { background-position: -72.0px -0.0px; }
+.px-icon-xl.px-search { background-position: -96px -0px; }
+.px-coffee { background-position: -64px -0px; }
+.px-icon-lg.px-coffee { background-position: -96.0px -0.0px; }
+.px-icon-xl.px-coffee { background-position: -128px -0px; }
+.px-moon { background-position: -80px -0px; }
+.px-icon-lg.px-moon { background-position: -120.0px -0.0px; }
+.px-icon-xl.px-moon { background-position: -160px -0px; }
+.px-chart { background-position: -96px -0px; }
+.px-icon-lg.px-chart { background-position: -144.0px -0.0px; }
+.px-icon-xl.px-chart { background-position: -192px -0px; }
+.px-broom { background-position: -112px -0px; }
+.px-icon-lg.px-broom { background-position: -168.0px -0.0px; }
+.px-icon-xl.px-broom { background-position: -224px -0px; }
+.px-coin { background-position: -0px -16px; }
+.px-icon-lg.px-coin { background-position: -0.0px -24.0px; }
+.px-icon-xl.px-coin { background-position: -0px -32px; }
+.px-trophy { background-position: -16px -16px; }
+.px-icon-lg.px-trophy { background-position: -24.0px -24.0px; }
+.px-icon-xl.px-trophy { background-position: -32px -32px; }
+.px-caution { background-position: -32px -16px; }
+.px-icon-lg.px-caution { background-position: -48.0px -24.0px; }
+.px-icon-xl.px-caution { background-position: -64px -32px; }
+.px-chat { background-position: -48px -16px; }
+.px-icon-lg.px-chat { background-position: -72.0px -24.0px; }
+.px-icon-xl.px-chat { background-position: -96px -32px; }
+.px-laptop { background-position: -64px -16px; }
+.px-icon-lg.px-laptop { background-position: -96.0px -24.0px; }
+.px-icon-xl.px-laptop { background-position: -128px -32px; }
+.px-bulb { background-position: -80px -16px; }
+.px-icon-lg.px-bulb { background-position: -120.0px -24.0px; }
+.px-icon-xl.px-bulb { background-position: -160px -32px; }
+.px-browser { background-position: -96px -16px; }
+.px-icon-lg.px-browser { background-position: -144.0px -24.0px; }
+.px-icon-xl.px-browser { background-position: -192px -32px; }
+.px-rocket { background-position: -112px -16px; }
+.px-icon-lg.px-rocket { background-position: -168.0px -24.0px; }
+.px-icon-xl.px-rocket { background-position: -224px -32px; }
+.px-sleep { background-position: -0px -32px; }
+.px-icon-lg.px-sleep { background-position: -0.0px -48.0px; }
+.px-icon-xl.px-sleep { background-position: -0px -64px; }
+.px-hourglass { background-position: -16px -32px; }
+.px-icon-lg.px-hourglass { background-position: -24.0px -48.0px; }
+.px-icon-xl.px-hourglass { background-position: -32px -64px; }
+.px-check { background-position: -32px -32px; }
+.px-icon-lg.px-check { background-position: -48.0px -48.0px; }
+.px-icon-xl.px-check { background-position: -64px -64px; }
+.px-cross { background-position: -48px -32px; }
+.px-icon-lg.px-cross { background-position: -72.0px -48.0px; }
+.px-icon-xl.px-cross { background-position: -96px -64px; }
+.px-doc { background-position: -64px -32px; }
+.px-icon-lg.px-doc { background-position: -96.0px -48.0px; }
+.px-icon-xl.px-doc { background-position: -128px -64px; }
+.px-pencil { background-position: -80px -32px; }
+.px-icon-lg.px-pencil { background-position: -120.0px -48.0px; }
+.px-icon-xl.px-pencil { background-position: -160px -64px; }
+.px-keyboard { background-position: -96px -32px; }
+.px-icon-lg.px-keyboard { background-position: -144.0px -48.0px; }
+.px-icon-xl.px-keyboard { background-position: -192px -64px; }
+.px-team { background-position: -112px -32px; }
+.px-icon-lg.px-team { background-position: -168.0px -48.0px; }
+.px-icon-xl.px-team { background-position: -224px -64px; }
+.px-thought { background-position: -0px -48px; }
+.px-icon-lg.px-thought { background-position: -0.0px -72.0px; }
+.px-icon-xl.px-thought { background-position: -0px -96px; }
+.px-lock { background-position: -16px -48px; }
+.px-icon-lg.px-lock { background-position: -24.0px -72.0px; }
+.px-icon-xl.px-lock { background-position: -32px -96px; }
+.px-party { background-position: -32px -48px; }
+.px-icon-lg.px-party { background-position: -48.0px -72.0px; }
+.px-icon-xl.px-party { background-position: -64px -96px; }
+.px-paw { background-position: -48px -48px; }
+.px-icon-lg.px-paw { background-position: -72.0px -72.0px; }
+.px-icon-xl.px-paw { background-position: -96px -96px; }
+.px-fish { background-position: -64px -48px; }
+.px-icon-lg.px-fish { background-position: -96.0px -72.0px; }
+.px-icon-xl.px-fish { background-position: -128px -96px; }
+.px-crown { background-position: -80px -48px; }
+.px-icon-lg.px-crown { background-position: -120.0px -72.0px; }
+.px-icon-xl.px-crown { background-position: -160px -96px; }
+.px-star { background-position: -96px -48px; }
+.px-icon-lg.px-star { background-position: -144.0px -72.0px; }
+.px-icon-xl.px-star { background-position: -192px -96px; }
+.px-lightning { background-position: -112px -48px; }
+.px-icon-lg.px-lightning { background-position: -168.0px -72.0px; }
+.px-icon-xl.px-lightning { background-position: -224px -96px; }
+.px-sofa { background-position: -0px -64px; }
+.px-icon-lg.px-sofa { background-position: -0.0px -96.0px; }
+.px-icon-xl.px-sofa { background-position: -0px -128px; }
+.px-box { background-position: -16px -64px; }
+.px-icon-lg.px-box { background-position: -24.0px -96.0px; }
+.px-icon-xl.px-box { background-position: -32px -128px; }
+.px-heart { background-position: -32px -64px; }
+.px-icon-lg.px-heart { background-position: -48.0px -96.0px; }
+.px-icon-xl.px-heart { background-position: -64px -128px; }
+.px-bowl { background-position: -48px -64px; }
+.px-icon-lg.px-bowl { background-position: -72.0px -96.0px; }
+.px-icon-xl.px-bowl { background-position: -96px -128px; }
+.px-litter { background-position: -64px -64px; }
+.px-icon-lg.px-litter { background-position: -96.0px -96.0px; }
+.px-icon-xl.px-litter { background-position: -128px -128px; }
+.px-plant { background-position: -80px -64px; }
+.px-icon-lg.px-plant { background-position: -120.0px -96.0px; }
+.px-icon-xl.px-plant { background-position: -160px -128px; }
+.px-books { background-position: -96px -64px; }
+.px-icon-lg.px-books { background-position: -144.0px -96.0px; }
+.px-icon-xl.px-books { background-position: -192px -128px; }
+.px-joystick { background-position: -112px -64px; }
+.px-icon-lg.px-joystick { background-position: -168.0px -96.0px; }
+.px-icon-xl.px-joystick { background-position: -224px -128px; }
+.px-radio { background-position: -0px -80px; }
+.px-icon-lg.px-radio { background-position: -0.0px -120.0px; }
+.px-icon-xl.px-radio { background-position: -0px -160px; }
+.px-soda { background-position: -16px -80px; }
+.px-icon-lg.px-soda { background-position: -24.0px -120.0px; }
+.px-icon-xl.px-soda { background-position: -32px -160px; }
+.px-donut { background-position: -32px -80px; }
+.px-icon-lg.px-donut { background-position: -48.0px -120.0px; }
+.px-icon-xl.px-donut { background-position: -64px -160px; }
+.px-pizza { background-position: -48px -80px; }
+.px-icon-lg.px-pizza { background-position: -72.0px -120.0px; }
+.px-icon-xl.px-pizza { background-position: -96px -160px; }
+
+
+/* === Pixel Art Icon Component Alignments & Enhancements === */
+#hud button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+#hud .hud-coins .px-icon {
+  margin-right: 3px;
+  vertical-align: middle;
+}
+.mhead h2 .px-icon,
+.ac-head h2 .px-icon,
+.shop-head h2 .px-icon,
+.ns-head-info h2 .px-icon {
+  transform: scale(1.25);
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+.shop-card-icon .px-icon {
+  transform: scale(1.6);
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+.gen-toast .px-icon {
+  vertical-align: -2px;
+  margin-right: 5px;
+}
+.m-icon .px-icon {
+  vertical-align: middle;
+}
+.pet-ibtn .px-icon,
+.island-btn .px-icon {
+  vertical-align: middle;
+}
+.shop-btn .px-icon,
+.mini .px-icon,
+.btn-stop .px-icon,
+.btn-stop-remote .px-icon,
+.ocv-btn .px-icon {
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+
+/* ───────────────────────────── 🐾 미니위젯 화면 모드 전환 컨텍스트 메뉴 ───────────────────────────── */
+.pet-mode-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 175px;
+  background: rgba(22, 18, 38, 0.96);
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 14px rgba(139, 92, 246, 0.25);
+  border-radius: 9px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  backdrop-filter: blur(14px);
+  user-select: none;
+  animation: petMenuFadeIn 0.12s ease-out;
+}
+@keyframes petMenuFadeIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pet-mode-menu[hidden] {
+  display: none !important;
+}
+.pet-mode-menu button.mode-menu-item {
+  all: unset;
+  cursor: pointer;
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  color: var(--text, #e2e8f0) !important;
+  transition: background 0.12s ease, color 0.12s ease;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  line-height: 1.3 !important;
+  text-align: left !important;
+}
+.pet-mode-menu button.mode-menu-item:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.28) !important;
+  color: #fff !important;
+}
+.pet-mode-menu button.mode-menu-item.active {
+  color: #c4b5fd !important;
+  font-weight: 600;
+}
+.pet-mode-menu .m-check {
+  width: 14px;
+  font-size: 12px;
+  color: #a78bfa;
+  font-weight: bold;
+  text-align: center;
+  flex-shrink: 0;
+}
+.pet-mode-menu .m-icon {
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.pet-mode-menu .m-txt {
+  flex: 1;
+  white-space: nowrap;
 }

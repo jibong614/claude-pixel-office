@@ -18,14 +18,14 @@ internal sealed class TrayIcon : IDisposable
     private readonly Forms.NotifyIcon _icon;
     private readonly Icon _normalIcon;
     private readonly Icon _waitingIcon;
-    public enum PetTrayMode { None, Normal, Island }
+    public enum PetTrayMode { None, Normal, Island, Walk }
 
     private readonly Forms.ToolStripItem _openItem, _reportItem, _settingsItem, _exitItem;
     private readonly Forms.ToolStripMenuItem _waitItem;
     // 메인 창 보기 스위치 (크게보기 vs 작게보기)
     private readonly Forms.ToolStripMenuItem _largeItem, _compactItem;
     // 바탕화면 위젯 스위치 (사용안함 vs 미니위젯 vs 미니바)
-    private readonly Forms.ToolStripMenuItem _petNoneItem, _petNormalItem, _petIslandItem;
+    private readonly Forms.ToolStripMenuItem _petNoneItem, _petNormalItem, _petIslandItem, _petWalkItem;
     private string? _waitingSid;
     private int _waitingCount;
     private string? _waitingName;
@@ -39,6 +39,7 @@ internal sealed class TrayIcon : IDisposable
         Action turnOffPet,
         Action turnOnPetNormal,
         Action turnOnPetIsland,
+        Action turnOnPetWalk,
         Action openSettings,
         Action exit)
     {
@@ -71,6 +72,8 @@ internal sealed class TrayIcon : IDisposable
         menu.Items.Add(_petNormalItem);
         _petIslandItem = new Forms.ToolStripMenuItem("", null, (_, _) => turnOnPetIsland());
         menu.Items.Add(_petIslandItem);
+        _petWalkItem = new Forms.ToolStripMenuItem("", null, (_, _) => turnOnPetWalk());
+        menu.Items.Add(_petWalkItem);
 
         // ── 설정 및 종료 ──
         menu.Items.Add(new Forms.ToolStripSeparator());
@@ -98,9 +101,10 @@ internal sealed class TrayIcon : IDisposable
         _largeItem.Text = L.T("🖥️ 크게 보기", "🖥️ Full view");
         _compactItem.Text = L.T("📋 작게 보기(목록)", "📋 Compact view (list)");
 
-        _petNoneItem.Text = L.T("❌ 위젯, 미니바 사용 안 함", "❌ Disable Widget & Mini-bar");
+        _petNoneItem.Text = L.T("❌ 위젯 사용 안 함", "❌ Disable Desktop Widget");
         _petNormalItem.Text = L.T("🪟 미니위젯 켜기", "🪟 Turn on MiniWidget");
         _petIslandItem.Text = L.T("🏝️ 미니바 켜기", "🏝️ Turn on Mini-bar");
+        _petWalkItem.Text = L.T("🐾 산책모드 켜기", "🐾 Turn on Walk Mode");
 
         _settingsItem.Text = L.T("⚙️ 설정", "⚙️ Settings");
         _exitItem.Text = L.T("끝내기", "Exit");
@@ -120,6 +124,7 @@ internal sealed class TrayIcon : IDisposable
         _petNoneItem.Checked = mode == PetTrayMode.None;
         _petNormalItem.Checked = mode == PetTrayMode.Normal;
         _petIslandItem.Checked = mode == PetTrayMode.Island;
+        _petWalkItem.Checked = mode == PetTrayMode.Walk;
     }
 
     /// <summary>승인·질문 대기 상태에 따라 트레이 아이콘의 주황색 점과 빠른 열기 메뉴를 갱신한다.</summary>

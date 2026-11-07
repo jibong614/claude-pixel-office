@@ -146,11 +146,11 @@ internal static class SnapshotBuilder
     private static (Activity, string, string, DateTime) View(TranscriptState s, DateTime now, bool hooksOn)
     {
         if (s.EndedUtc != default && s.EndedUtc >= s.LastActivityUtc)
-            return (Activity.Away, "🚪", L.T("퇴근", "Gone home"), s.EndedUtc);   // 세션을 닫음(SessionEnd 훅). 다시 이어서 대화하면 풀린다
+            return (Activity.Away, "🌙", L.T("퇴근", "Gone home"), s.EndedUtc);   // 세션을 닫음(SessionEnd 훅). 다시 이어서 대화하면 풀린다
 
         var quiet = now - s.LastActivityUtc;
         if (quiet > ToAway)
-            return (Activity.Away, "🚪", L.T("퇴근", "Gone home"), s.LastActivityUtc);
+            return (Activity.Away, "🌙", L.T("퇴근", "Gone home"), s.LastActivityUtc);
 
         if (s.Wait is { } w)   // 훅이 알려 준 확실한 대기(승인 창·입력 요청)
             return (w.Kind == WaitKind.Input ? Activity.Asking : Activity.Waiting, "✋", w.Text, w.Utc);

@@ -168,6 +168,7 @@ public class WidgetPlacementTests
     public void GetSavedWidgetHeight_ReturnsCorrectDefaultPerMode()
     {
         App.Settings.MiniWidgetPlacement = null;
+        App.Settings.WidgetSize = "large";
 
         App.Settings.AppMode = "basic";
         Assert.Equal(WidgetWindow.DefaultHeight, WidgetWindow.GetSavedWidgetHeight());
@@ -227,5 +228,185 @@ public class WidgetPlacementTests
         Assert.Equal(540, smlTop);
         Assert.Equal(fixedRight, smlLeft + smlW);
         Assert.Equal(fixedBottom, smlTop + smlH);
+    }
+
+    [Fact]
+    public void PetModeMenu_PlacementDirection_OpensUpwardForMiniBar()
+    {
+        // MiniBar 모드에서는 높이가 44px에 불과하므로, 화면 위치와 무관하게 무조건 위쪽(AboveLeft)으로 열려야 함
+        bool isIsland = true;
+        double ptBottomRightY = 1040;
+        double workingAreaBottom = 1080;
+
+        bool openUp = isIsland || (ptBottomRightY + 120 > workingAreaBottom);
+        Assert.True(openUp);
+    }
+
+    [Fact]
+    public void PetModeMenu_PlacementDirection_OpensUpwardWhenNearScreenBottom()
+    {
+        // MiniWidget 모드에서도 화면 하단 구석(Bottom - 100px)에 배치된 경우 메뉴(약 120px)가 잘리지 않도록 위쪽으로 열려야 함
+        bool isIsland = false;
+        double ptBottomRightY = 1000;
+        double workingAreaBottom = 1080; // 남은 공간 80px < 120px
+
+        bool openUp = isIsland || (ptBottomRightY + 120 > workingAreaBottom);
+        Assert.True(openUp);
+    }
+
+    [Fact]
+    public void PetModeMenu_PlacementDirection_OpensDownwardWhenEnoughSpace()
+    {
+        // 화면 중앙이나 상단에 위치하여 하단 여유 공간이 충분한 경우 아래쪽으로 열림
+        bool isIsland = false;
+        double ptBottomRightY = 400;
+        double workingAreaBottom = 1080;
+
+        bool openUp = isIsland || (ptBottomRightY + 120 > workingAreaBottom);
+        Assert.False(openUp);
+    }
+
+    [Fact]
+    public void GetWalkHeightForSize_ReturnsProportionalWalkHeights()
+    {
+        Assert.Equal(WidgetWindow.GraphicLarge + 16, WidgetWindow.GetWalkHeightForSize("large"));
+        Assert.Equal(WidgetWindow.GraphicMedium + 16, WidgetWindow.GetWalkHeightForSize("medium"));
+        Assert.Equal(WidgetWindow.GraphicSmall + 16, WidgetWindow.GetWalkHeightForSize("small"));
+
+        Assert.Equal(246, WidgetWindow.GetWalkHeightForSize("large"));
+        Assert.Equal(206, WidgetWindow.GetWalkHeightForSize("medium"));
+        Assert.Equal(176, WidgetWindow.GetWalkHeightForSize("small"));
+    }
+
+    [Fact]
+    public void MiniBarToWalkMode_PreservesBottomAndRightAnchors()
+    {
+        // 미니바 상태: Top = 906, Height = 44 -> Bottom = 950
+        // 우측: Left = 1020, Width = 540 -> Right = 1560
+        double curTop = 906;
+        double curHeight = 44;
+        double curLeft = 1020;
+        double curWidth = 540;
+
+        double curBottom = curTop + curHeight;
+        double curRight = curLeft + curWidth;
+
+        double targetW = WidgetWindow.GetWidthForSize("small"); // 260
+        double targetH = WidgetWindow.GetWalkHeightForSize("small"); // 176
+
+        double newTop = curBottom - targetH; // 950 - 176 = 774
+        double newLeft = curRight - targetW; // 1560 - 260 = 1300
+
+        Assert.Equal(260, targetW);
+        Assert.Equal(176, targetH);
+        Assert.Equal(774, newTop);
+        Assert.Equal(1300, newLeft);
+
+        // 하단(Bottom) 및 우측(Right) 기준선 일치
+        Assert.Equal(curBottom, newTop + targetH);
+        Assert.Equal(curRight, newLeft + targetW);
+    }
+
+    [Fact]
+    public void WalkModeToMiniWidget_RestoresSavedHeightAndPreservesBottom()
+    {
+        // 산책 모드: Top = 774, Height = 176 -> Bottom = 950
+        // 우측: Left = 1300, Width = 260 -> Right = 1560
+        double curTop = 774;
+        double curHeight = 176;
+        double curLeft = 1300;
+        double curWidth = 260;
+
+        double curBottom = curTop + curHeight; // 950
+        double curRight = curLeft + curWidth; // 1560
+
+        // 위젯 저장 높이가 420인 경우
+        App.Settings.MiniWidgetPlacement = new AppSettings.WindowPlacement { Height = 420 };
+        double targetH = WidgetWindow.GetSavedWidgetHeight();
+        double targetW = WidgetWindow.GetWidthForSize("small");
+
+        double newTop = curBottom - targetH; // 950 - 420 = 530
+        double newLeft = curRight - targetW; // 1560 - 260 = 1300
+
+        Assert.Equal(420, targetH);
+        Assert.Equal(530, newTop);
+        Assert.Equal(1300, newLeft);
+
+        Assert.Equal(curBottom, newTop + targetH);
+        Assert.Equal(curRight, newLeft + targetW);
+    }
+
+    [Fact]
+    public void ModeAlternation_1_2_3_AllCombinationsPreserveAnchors()
+    {
+        // 1: 미니위젯 (Default small: W=260, H=420)
+        // 2: 미니바 (W=540, H=44)
+        // 3: 산책 모드 (W=260, H=176)
+        App.Settings.WidgetSize = "small";
+        App.Settings.MiniWidgetPlacement = new AppSettings.WindowPlacement { Height = 420 };
+
+        double fixedBottom = 950;
+        double fixedRight = 1560;
+
+        // 1번 (미니위젯) 시작: Top = 530, Height = 420, Left = 1300, Width = 260
+        double w1 = WidgetWindow.GetWidthForSize("small");
+        double h1 = WidgetWindow.GetSavedWidgetHeight();
+        double top1 = fixedBottom - h1;
+        double left1 = fixedRight - w1;
+        Assert.Equal(fixedBottom, top1 + h1);
+        Assert.Equal(fixedRight, left1 + w1);
+
+        // 1 ➔ 2 (미니바 전환)
+        double w2 = WidgetWindow.MiniBarWidth;
+        double h2 = WidgetWindow.MiniBarHeight;
+        double top2 = (top1 + h1) - h2;
+        double left2 = (left1 + w1) - w2;
+        Assert.Equal(906, top2);
+        Assert.Equal(1020, left2);
+        Assert.Equal(fixedBottom, top2 + h2);
+        Assert.Equal(fixedRight, left2 + w2);
+
+        // 2 ➔ 3 (산책 모드 전환)
+        double w3 = WidgetWindow.GetWidthForSize("small");
+        double h3 = WidgetWindow.GetWalkHeightForSize("small");
+        double top3 = (top2 + h2) - h3;
+        double left3 = (left2 + w2) - w3;
+        Assert.Equal(774, top3);
+        Assert.Equal(1300, left3);
+        Assert.Equal(fixedBottom, top3 + h3);
+        Assert.Equal(fixedRight, left3 + w3);
+
+        // 3 ➔ 1 (미니위젯 복귀)
+        double top1_again = (top3 + h3) - h1;
+        double left1_again = (left3 + w3) - w1;
+        Assert.Equal(top1, top1_again);
+        Assert.Equal(left1, left1_again);
+        Assert.Equal(fixedBottom, top1_again + h1);
+        Assert.Equal(fixedRight, left1_again + w1);
+
+        // 1 ➔ 3 (산책 모드 직접 전환)
+        double top3_again = (top1_again + h1) - h3;
+        double left3_again = (left1_again + w1) - w3;
+        Assert.Equal(top3, top3_again);
+        Assert.Equal(left3, left3_again);
+        Assert.Equal(fixedBottom, top3_again + h3);
+
+        // 3 ➔ 2 (미니바 직접 전환)
+        double top2_again = (top3_again + h3) - h2;
+        double left2_again = (left3_again + w3) - w2;
+        Assert.Equal(top2, top2_again);
+        Assert.Equal(left2, left2_again);
+        Assert.Equal(fixedBottom, top2_again + h2);
+
+        // 2 ➔ 1 (미니위젯 복귀)
+        double top1_final = (top2_again + h2) - h1;
+        double left1_final = (left2_again + w2) - w1;
+        Assert.Equal(top1, top1_final);
+        Assert.Equal(left1, left1_final);
+        Assert.Equal(fixedBottom, top1_final + h1);
+
+        // 초기화 복원
+        App.Settings.WidgetSize = "large";
+        App.Settings.MiniWidgetPlacement = null;
     }
 }

@@ -98,8 +98,8 @@ internal sealed class RemoteHub
         if (stopRequested)
         {
             Log("pretool-stop", h.Sid, h.Tool ?? "-");
-            var msg = L.T("🛑 사용자가 모바일/미니펫에서 긴급 작업 중단을 요청했습니다. 작업을 즉시 중단하고 대기하세요.",
-                          "🛑 The user requested an emergency stop from mobile/MiniPet. Halt the task immediately and wait.");
+            var msg = L.T("🛑 사용자가 모바일/미니위젯에서 긴급 작업 중단을 요청했습니다. 작업을 즉시 중단하고 대기하세요.",
+                          "🛑 The user requested an emergency stop from mobile/MiniWidget. Halt the task immediately and wait.");
             return Task.FromResult(Encoding.UTF8.GetBytes(msg));
         }
         return Task.FromResult(Array.Empty<byte>());
