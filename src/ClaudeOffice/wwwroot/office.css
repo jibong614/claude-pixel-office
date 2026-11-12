@@ -5556,8 +5556,23 @@ body.settings-window .scanline-overlay {
 }
 .lofi-track-bar {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 6px;
+}
+@media (max-width: 480px) {
+  .lofi-track-bar {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 3px;
+  }
+  .lofi-track-btn {
+    padding: 6px 2px;
+  }
+  .lofi-tr-num {
+    font-size: 11px;
+  }
+  .lofi-tr-name {
+    font-size: 9px;
+  }
 }
 .lofi-track-btn {
   background: rgba(30, 41, 59, 0.85);
