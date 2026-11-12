@@ -50,6 +50,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ApplyAppIcon();
         Title = WithVersion("Claude Office");   // 화면이 뜨기 전에도 버전이 보이게
 
         if (App.Offscreen)
@@ -163,10 +164,16 @@ public partial class MainWindow : Window
         // 저장해 둔 사무실 이름·별명·메모(창을 띄우기 전부터 휴대폰·알림에 쓴다)
         if (LoadShare() is { } share) ApplyShare(share);
 
-        // 예전 버전이 넣은 휴대폰 지시 훅은 새 명령으로(1.1.9: 앱이 꺼져 있던 동안에도 포기하지 않고 다시 붙음)
-        if (!App.DemoMode)
+        // 사용자가 명시적으로 연결을 끄지 않은 한, 기본값으로 항상 Claude Code 와 자동 연결 보장
+        if (!App.DemoMode && !App.Settings.HooksDisabledByUser)
         {
-            try { HookSetup.UpgradeRemote(); }
+            try
+            {
+                if (!HookSetup.IsInstalled() || !HookSetup.IsRemoteInstalled())
+                    HookSetup.InstallRemote();
+                else
+                    HookSetup.UpgradeRemote();
+            }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException) { }
         }
 
@@ -217,6 +224,7 @@ public partial class MainWindow : Window
 
         _updates.Checked += () => Dispatcher.InvokeAsync(OnUpdateChecked);
         _updater.Changed += () => Dispatcher.InvokeAsync(() => Post(AppSettingsJson()));   // 받는 중 진행률
+        _updates.SetInterval(TimeSpan.FromHours(App.Settings.UpdateIntervalHours));
         _updates.Start();
 
         if (App.Settings.Pet) ApplyWidgetWindow();
@@ -581,6 +589,7 @@ public partial class MainWindow : Window
             if (!string.IsNullOrWhiteSpace(e.Memo)) n["memo"] = e.Memo;
             if (prev?["look"] is { } lk) n["look"] = lk.DeepClone();
             if (prev?["deco"] is { } dc) n["deco"] = dc.DeepClone();
+            if (prev?["gender"] is { } gd) n["gender"] = gd.DeepClone();
             n["t"] = e.T;
             notes[e.Id] = n;
             applied++;
@@ -801,8 +810,12 @@ public partial class MainWindow : Window
     {
         App.Settings.ConnectAsked = true;
         TrySaveSettings();
-        if (HookSetup.IsInstalled() && HookSetup.IsRemoteInstalled()) return;
-        ToggleHooks(firstRun: true);
+        if (App.Settings.HooksDisabledByUser) return;
+        if (!HookSetup.IsInstalled() || !HookSetup.IsRemoteInstalled())
+        {
+            try { HookSetup.InstallRemote(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException) { }
+        }
     }
 
     /// <summary>화면 주소: 견본이면 ?demo(&amp;select=), 영어 화면이면 lang=en(한국어는 붙이지 않는다 — 예전 주소 그대로).</summary>
@@ -816,6 +829,16 @@ public partial class MainWindow : Window
         }
         if (L.En) q.Add("lang=en");
         return $"https://{VirtualHost}/index.html" + (q.Count > 0 ? "?" + string.Join("&", q) : "");
+    }
+
+    private void ApplyAppIcon()
+    {
+        var iconKey = App.Settings.AppIcon is "b" or "c" ? App.Settings.AppIcon : "a";
+        try
+        {
+            Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri($"pack://application:,,,/Assets/office_{iconKey}.ico"));
+        }
+        catch { }
     }
 
     /// <summary>
@@ -853,7 +876,6 @@ public partial class MainWindow : Window
             quietEnabled = s.QuietEnabled,
             quietStart = s.QuietStart,
             quietEnd = s.QuietEnd,
-            updateCheck = s.UpdateCheck,
             widget = s.Widget,
             pet = s.Pet,
             petSessionId = s.PetSessionId ?? "",
@@ -863,10 +885,14 @@ public partial class MainWindow : Window
             petWalk = s.PetWalk,
             petTopmost = s.PetTopmost,
             appMode = s.AppMode,
+            appIcon = s.AppIcon,
+            sessionTarget = s.SessionTarget,
             widgetSize = s.WidgetSize,
             language = s.Language == "en" ? "en" : "ko",
             remoteAwayOnLock = s.RemoteAwayOnLock,
             remoteAwayIdleMinutes = s.RemoteAwayIdleMinutes,
+            updateCheck = s.UpdateCheck,
+            updateIntervalHours = s.UpdateIntervalHours,
             update = new
             {
                 latest = _updates.Latest, newer = _updates.IsNewer, url = _updates.Url, error = _updates.Error, checkedAt = _updates.CheckedMs,
@@ -937,7 +963,23 @@ public partial class MainWindow : Window
                                     s.UpdateCheck = on;
                                     if (on) _ = _updates.CheckAsync();
                                     break;
+                                case "updateIntervalHours":
+                                    s.UpdateIntervalHours = num is 1 or 5 or 12 ? num : 1;
+                                    _updates.SetInterval(TimeSpan.FromHours(s.UpdateIntervalHours));
+                                    break;
                                 case "autoStart": AutoStart.Set(on); break;
+                                case "appIcon":
+                                {
+                                    var ic = val.ValueKind == JsonValueKind.String ? val.GetString()?.ToLowerInvariant() : null;
+                                    if (ic is "a" or "b" or "c") s.AppIcon = ic;
+                                    break;
+                                }
+                                case "sessionTarget":
+                                {
+                                    var st = val.ValueKind == JsonValueKind.String ? val.GetString()?.ToLowerInvariant() : null;
+                                    if (st is "auto" or "vscode" or "desktop" or "terminal") s.SessionTarget = st;
+                                    break;
+                                }
                                 case "language":   // 화면 언어(값은 글자 "ko" | "en") — 저장한 뒤 새 언어로 다시 연다(아래)
                                 {
                                     var lang = val.ValueKind == JsonValueKind.String && val.GetString() == "en" ? "en" : "ko";
@@ -963,6 +1005,38 @@ public partial class MainWindow : Window
                         var json = share.GetRawText();
                         ApplyShare(json);
                         SaveShare(json);
+                        _widgetWindow?.Post("{\"type\":\"share\",\"data\":" + json + "}");
+                        _settingsWindow?.Post("{\"type\":\"share\",\"data\":" + json + "}");
+                    }
+                    break;
+                case "gender-update":
+                    {
+                        var gVal = root.TryGetProperty("gender", out var g) ? g.GetString() : null;
+                        var msg = JsonSerializer.Serialize(new { type = "gender-update", gender = gVal });
+                        _widgetWindow?.Post(msg);
+                        _settingsWindow?.Post(msg);
+                    }
+                    break;
+                case "change-app-icon":
+                    if (!App.DemoMode && root.TryGetProperty("icon", out var iconProp))
+                    {
+                        var iconChoice = iconProp.GetString()?.ToLowerInvariant();
+                        if (iconChoice is "a" or "b" or "c")
+                        {
+                            App.Settings.AppIcon = iconChoice;
+                            App.Settings.Save();
+
+                            try
+                            {
+                                var exePath = Environment.ProcessPath;
+                                if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath))
+                                {
+                                    Process.Start(new ProcessStartInfo(exePath) { UseShellExecute = true });
+                                }
+                            }
+                            catch { }
+                            ExitApp();
+                        }
                     }
                     break;
                 case "cloud-setup":   // 점검 도구 전용: 이 PC 의 시험 서버를 쓴다
@@ -1423,7 +1497,7 @@ public partial class MainWindow : Window
         "mintty", "wezterm-gui", "alacritty", "wt", "devenv", "rider64", "idea64", "claude", "aider", "node",
     };
 
-    /// <summary>세션의 작업 폴더명·세션명·실행 위치(VS Code/터미널)를 바탕으로 해당 실행 창을 찾아 맨 앞으로 활성화한다.</summary>
+    /// <summary>세션의 작업 폴더명·세션명·실행 위치(VS Code/Claude 데스크톱/터미널)를 바탕으로 해당 실행 창을 찾아 맨 앞으로 활성화한다.</summary>
     private void FocusSessionWindow(string? id)
     {
         if (string.IsNullOrEmpty(id) || _watcher.LastSnapshot is not { } snap) return;
@@ -1446,9 +1520,21 @@ public partial class MainWindow : Window
             ? Path.GetFileName(cwd.TrimEnd('\\', '/'))
             : (!string.IsNullOrWhiteSpace(team) ? team.Split('/').LastOrDefault() : null);
 
+        var pref = App.Settings.SessionTarget?.ToLowerInvariant() ?? "auto";
+        bool isVsCodeEntry = entry != null && entry.Contains("vscode", StringComparison.OrdinalIgnoreCase);
+        bool isDesktopEntry = entry != null && (entry.Contains("desktop", StringComparison.OrdinalIgnoreCase)
+                                            || entry.Contains("app", StringComparison.OrdinalIgnoreCase)
+                                            || entry.Equals("claude", StringComparison.OrdinalIgnoreCase));
+        bool isCliEntry = entry != null && entry.Contains("cli", StringComparison.OrdinalIgnoreCase);
+
+        bool preferDesktop = pref == "desktop" || (pref == "auto" && isDesktopEntry);
+        bool preferVsCode = pref == "vscode" || (pref == "auto" && isVsCodeEntry);
+        bool preferTerminal = pref == "terminal" || (pref == "auto" && isCliEntry);
+
         uint selfPid = (uint)Environment.ProcessId;
         IntPtr bestHwnd = IntPtr.Zero;
         int bestScore = 0;
+        string bestProcName = "";
         var sb = new System.Text.StringBuilder(512);
 
         EnumWindows((hWnd, _) =>
@@ -1465,6 +1551,10 @@ public partial class MainWindow : Window
             catch { }
 
             bool isTermOrIde = TerminalOrIdeProcesses.Contains(procName);
+            bool isClaudeProc = procName.Equals("Claude", StringComparison.OrdinalIgnoreCase);
+            bool isVsCodeProc = procName is "Code" or "Cursor" or "Windsurf";
+            bool isTermProc = procName is "WindowsTerminal" or "pwsh" or "powershell" or "cmd" or "mintty" or "wezterm-gui" or "alacritty" or "wt";
+
             int score = 0;
 
             if (!string.IsNullOrWhiteSpace(cwd) && wTitle.Contains(cwd, StringComparison.OrdinalIgnoreCase))
@@ -1479,29 +1569,48 @@ public partial class MainWindow : Window
             if (isTermOrIde)
             {
                 score += 20;
-                if (entry != null && entry.Contains("vscode", StringComparison.OrdinalIgnoreCase)
-                    && procName is "Code" or "Cursor" or "Windsurf")
-                    score += 15;
-                else if (entry != null && entry.Contains("cli", StringComparison.OrdinalIgnoreCase)
-                    && procName is "WindowsTerminal" or "pwsh" or "powershell" or "cmd" or "mintty" or "wezterm-gui")
-                    score += 15;
+
+                if (preferDesktop && isClaudeProc) score += 50;
+                else if (preferVsCode && isVsCodeProc) score += 50;
+                else if (preferTerminal && isTermProc) score += 50;
+                else if (pref == "auto")
+                {
+                    if (isVsCodeProc && isVsCodeEntry) score += 25;
+                    else if (isClaudeProc && (isDesktopEntry || wTitle.Contains("Claude", StringComparison.OrdinalIgnoreCase))) score += 25;
+                    else if (isTermProc && isCliEntry) score += 25;
+                }
+            }
+
+            if (isClaudeProc && (preferDesktop || (pref == "auto" && !preferVsCode)))
+            {
+                if (wTitle.Contains("Claude", StringComparison.OrdinalIgnoreCase))
+                    score += 25;
             }
 
             if (score > bestScore)
             {
                 bestScore = score;
                 bestHwnd = hWnd;
+                bestProcName = procName;
             }
             return true;
         }, IntPtr.Zero);
 
-        bool isVsCode = entry != null && entry.Contains("vscode", StringComparison.OrdinalIgnoreCase);
-        if (isVsCode && Guid.TryParse(id, out _))
+        // 1. VS Code 딥링크 호출 (VS Code가 우선이거나 자동 감지에서 VS Code 세션인 경우)
+        if (preferVsCode && Guid.TryParse(id, out _))
         {
-            // VS Code 확장(claude-vscode)의 공식 URI 프로토콜로 해당 세션 탭을 직접 열고 선택한다
             try
             {
                 Process.Start(new ProcessStartInfo($"vscode://anthropic.claude-code/open?session={id}") { UseShellExecute = true });
+            }
+            catch { }
+        }
+        // 2. Claude 데스크톱 프로토콜 호출 (Claude 데스크톱이 우선이거나 자동 감지에서 데스크톱 세션인 경우)
+        else if (preferDesktop || (pref == "auto" && bestProcName.Equals("Claude", StringComparison.OrdinalIgnoreCase)))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("claude://") { UseShellExecute = true });
             }
             catch { }
         }
@@ -1511,9 +1620,13 @@ public partial class MainWindow : Window
             if (IsIconic(bestHwnd)) ShowWindow(bestHwnd, 9);   // SW_RESTORE
             SetForegroundWindow(bestHwnd);
         }
-        else if (!isVsCode && !string.IsNullOrWhiteSpace(cwd) && Directory.Exists(cwd))
+        else if (preferDesktop)
         {
-            // 일치하는 터미널·VS Code 창이 하나도 없으면 작업 폴더를 열어 준다
+            try { Process.Start(new ProcessStartInfo("claude://") { UseShellExecute = true }); } catch { }
+        }
+        else if (!preferVsCode && !string.IsNullOrWhiteSpace(cwd) && Directory.Exists(cwd))
+        {
+            // 일치하는 터미널·IDE 창이 하나도 없으면 작업 폴더를 열어 준다
             try { Process.Start(new ProcessStartInfo("explorer.exe", $"\"{cwd}\"") { UseShellExecute = true }); }
             catch { }
         }
@@ -1594,11 +1707,18 @@ public partial class MainWindow : Window
         {
             if (connected)
             {
+                App.Settings.HooksDisabledByUser = true;
+                TrySaveSettings();
                 _remote.SetAway(false, "hooks-off");
                 HookSetup.Uninstall();   // 상태 알림·휴대폰 지시 모두
                 _remote.ReleaseListeners();   // 기다리던 지시 대기 훅도 끝나게(안 그러면 이 프로그램을 끌 때까지 붙어 있다)
             }
-            else HookSetup.InstallRemote();   // 상태 알림이 없으면 그것부터 넣고 휴대폰 지시·승인까지
+            else
+            {
+                App.Settings.HooksDisabledByUser = false;
+                TrySaveSettings();
+                HookSetup.InstallRemote();   // 상태 알림이 없으면 그것부터 넣고 휴대폰 지시·승인까지
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {

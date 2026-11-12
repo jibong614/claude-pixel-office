@@ -245,7 +245,8 @@ internal sealed class TrayIcon : IDisposable
 
     private static Icon LoadIcon()
     {
-        var res = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/office.ico"));
+        var iconKey = App.Settings.AppIcon is "b" or "c" ? App.Settings.AppIcon : "a";
+        var res = Application.GetResourceStream(new Uri($"pack://application:,,,/Assets/office_{iconKey}.ico"));
         if (res is null) return (Icon)SystemIcons.Application.Clone();
         using var s = res.Stream;
         return new Icon(s, Forms.SystemInformation.SmallIconSize);   // 화면 배율에 맞는 작은 아이콘

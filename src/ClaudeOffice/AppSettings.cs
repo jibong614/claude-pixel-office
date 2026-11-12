@@ -28,12 +28,17 @@ internal sealed class AppSettings
     public int QuietStart { get; set; } = 22;
     public int QuietEnd { get; set; } = 8;
 
-    /// <summary>GitHub 에서 새 버전이 나왔는지 하루 두 번 확인. UpdateNotified: 알림을 띄운 버전(같은 버전은 한 번만).</summary>
+    /// <summary>GitHub 에서 새 버전이 나왔는지 주기적으로 확인. UpdateNotified: 알림을 띄운 버전(같은 버전은 한 번만).</summary>
     public bool UpdateCheck { get; set; } = true;
+    /// <summary>업데이트 확인 주기(시간 단위: 1 | 5 | 12, 기본값 1시간).</summary>
+    public int UpdateIntervalHours { get; set; } = 1;
     public string? UpdateNotified { get; set; }
 
+    /// <summary>사용자가 직접 ⚙️ 설정에서 Claude Code 연결을 끊었는지(기본값은 false = 자동 연결 활성화).</summary>
+    public bool HooksDisabledByUser { get; set; }
+
     /// <summary>처음 실행할 때 "Claude Code와 연결할까요?"를 물어봤다(한 번만 묻는다).</summary>
-    public bool ConnectAsked { get; set; }
+    public bool ConnectAsked { get; set; } = true;
 
     /// <summary>자리 비움 원격: Windows 화면을 잠그면 자리 비움을 켜고, 잠금을 풀면 끈다(잠금으로 켠 것만).</summary>
     public bool RemoteAwayOnLock { get; set; } = true;
@@ -45,6 +50,12 @@ internal sealed class AppSettings
 
     /// <summary>화면 동작 모드: basic(기본 픽셀 오피스) | office(비즈니스 대시보드).</summary>
     public string AppMode { get; set; } = "basic";
+
+    /// <summary>세션 창 이동 대상: auto(자동 감지 · 기본) | vscode(VS Code) | desktop(Claude 데스크톱 앱) | terminal(터미널).</summary>
+    public string SessionTarget { get; set; } = "auto";
+
+    /// <summary>프로그램 아이콘: a(기본) | b | c.</summary>
+    public string AppIcon { get; set; } = "a";
 
     /// <summary>바탕화면 미니위젯 크기: large(크게 · 기본 360px) | medium(보통 300px) | small(작게 260px).</summary>
     public string WidgetSize { get; set; } = "large";

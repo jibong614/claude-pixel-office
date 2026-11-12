@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.15';
+const PAGE_VERSION = '1.9.16';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -343,11 +343,15 @@ function applyIconStyle() {
     const iconEl = btnNightShift.querySelector('.m-icon');
     if (iconEl) iconEl.innerHTML = isPixel ? '<span class="px-icon px-moon"></span>' : '🌙';
   }
+  const btnShopQuick = $('btnShopQuick');
+  if (btnShopQuick) {
+    const iconEl = btnShopQuick.querySelector('.m-icon');
+    if (iconEl) iconEl.innerHTML = isPixel ? '<span class="px-icon px-coin"></span>' : '🛋️';
+  }
 
   const modeBtns = document.querySelectorAll('.btn-pet-mode');
   for (const b of modeBtns) {
-    const curModeIcon = petMode === 'island' ? '🏝️' : (petMode === 'shimeji' ? '🐾' : '🪟');
-    setPixelContent(b, curModeIcon);
+    setPixelContent(b, '🔄');
   }
 
   // 2. Modal Headers
@@ -542,26 +546,92 @@ function applyAppMode() {
 function initModeSelectModal() {
   const modal = $('modeSelectModal');
   if (!modal) return;
-  const cards = modal.querySelectorAll('.mode-card');
-  const applyChoice = (mode) => {
+
+  const mainCards = modal.querySelectorAll('.main-mode-card');
+  const subCards = modal.querySelectorAll('.sub-mode-card');
+  const applyBtn = $('msApplyBtn');
+  const closeBtn = $('msClose');
+
+  let chosenMain = store.get('appMode', 'basic') || 'basic';
+  let chosenSub = 'widget';
+  if (store.get('petOn', true) === false) {
+    chosenSub = 'none';
+  } else {
+    const pm = store.get('petMode', 'normal');
+    if (pm === 'island') chosenSub = 'minibar';
+    else if (pm === 'shimeji' || pm === 'walk') chosenSub = 'walk';
+    else chosenSub = 'widget';
+  }
+
+  function syncSelection() {
+    mainCards.forEach((c) => {
+      const isSel = c.dataset.mode === chosenMain;
+      c.classList.toggle('selected', isSel);
+      const r = c.querySelector('input[type="radio"]');
+      if (r) r.checked = isSel;
+    });
+
+    subCards.forEach((c) => {
+      const isSel = c.dataset.sub === chosenSub;
+      c.classList.toggle('selected', isSel);
+      const r = c.querySelector('input[type="radio"]');
+      if (r) r.checked = isSel;
+      if (chosenMain === 'office' && c.dataset.sub === 'walk') {
+        c.classList.add('disabled-for-office');
+      } else {
+        c.classList.remove('disabled-for-office');
+      }
+    });
+  }
+
+  mainCards.forEach((card) => {
+    card.addEventListener('click', (e) => {
+      e.preventDefault();
+      chosenMain = card.dataset.mode;
+      if (chosenMain === 'office' && chosenSub === 'walk') {
+        chosenSub = 'widget';
+      }
+      syncSelection();
+    });
+  });
+
+  subCards.forEach((card) => {
+    card.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (chosenMain === 'office' && card.dataset.sub === 'walk') {
+        chosenMain = 'basic';
+      }
+      chosenSub = card.dataset.sub;
+      syncSelection();
+    });
+  });
+
+  const applyChoices = () => {
     store.set('appModeChosen', true);
-    setAppMode(mode);
+    setAppMode(chosenMain);
+
+    if (chosenSub === 'none') {
+      store.set('petOn', false);
+      send({ cmd: 'pet', value: false });
+    } else {
+      store.set('petOn', true);
+      send({ cmd: 'pet', value: true });
+      const targetMode = chosenSub === 'minibar' ? 'island' : (chosenSub === 'walk' ? 'walk' : 'normal');
+      store.set('petMode', targetMode === 'walk' ? 'shimeji' : targetMode);
+      send({ cmd: 'pet-mode', mode: targetMode });
+    }
+
     const chk = $('msAutoStart');
     const autoStartOn = chk ? chk.checked : true;
     setAppSetting('autoStart', autoStartOn);
+
     modal.hidden = true;
   };
-  cards.forEach((card) => {
-    card.addEventListener('click', () => {
-      applyChoice(card.dataset.mode);
-    });
-  });
-  const closeBtn = $('msClose');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      applyChoice(appMode || 'basic');
-    });
-  }
+
+  if (applyBtn) applyBtn.addEventListener('click', applyChoices);
+  if (closeBtn) closeBtn.addEventListener('click', applyChoices);
+
+  syncSelection();
 }
 
 function checkFirstLaunchMode() {
@@ -640,7 +710,8 @@ function setNote(id, patch) {
   if (!n.memo || !n.memo.trim()) delete n.memo;
   if (!Number.isInteger(n.look) || n.look <= 0) delete n.look;
   if (!Number.isInteger(n.deco) || n.deco < 0 || n.deco > 3) delete n.deco;
-  if (n.nick || n.memo || n.look || n.deco !== undefined) notes[id] = n;
+  if (n.gender !== 'm' && n.gender !== 'f') delete n.gender;
+  if (n.nick || n.memo || n.look || n.deco !== undefined || n.gender) notes[id] = n;
   else delete notes[id];
   lookCache.clear();
   const ids = Object.keys(notes);
@@ -662,8 +733,9 @@ function onSavedShare(saved) {
       const memo = typeof n.memo === 'string' ? n.memo.slice(0, 2000) : '';
       const look = Number.isInteger(n.look) && n.look > 0 ? n.look : 0;
       const deco = Number.isInteger(n.deco) && n.deco >= 0 && n.deco <= 3 ? n.deco : undefined;
-      if (nick || memo || look || deco !== undefined) {
-        notes[id] = { ...(nick && { nick }), ...(memo && { memo }), ...(look && { look }), ...(deco !== undefined && { deco }), t: Number(n.t) || Date.now() };
+      const gender = (n.gender === 'm' || n.gender === 'f') ? n.gender : undefined;
+      if (nick || memo || look || deco !== undefined || gender) {
+        notes[id] = { ...(nick && { nick }), ...(memo && { memo }), ...(look && { look }), ...(deco !== undefined && { deco }), ...(gender && { gender }), t: Number(n.t) || Date.now() };
       } else if (notes[id]) delete notes[id];   // 휴대폰에서 둘 다 지운 것(빈 기록 {t})
     }
     lookCache.clear();
@@ -698,9 +770,12 @@ function onSavedShare(saved) {
       updateCoinDisplay();
     }
   }
-  shareToApp();
+  lookCache.clear();
   if (selectedId) { noteFor = null; renderPanel(); }
   refreshSettings();
+  if (WIDGET_WINDOW || petOn()) renderPet();
+  if (appMode === 'office') renderCleanOffice();
+  if (!WIDGET_WINDOW) shareToApp();
 }
 
 /** 설정 초기화(앱이 확인을 받은 뒤): 화면 설정을 지우고 다시 읽는다. 별명·메모·사무실 이름·팀 이름·순서는 남긴다(사람이 쓴 것). */
@@ -895,6 +970,7 @@ function onSnapshot(snap) {
   }
   prevSessionsAct = new Map(snap.sessions.map((s) => [s.id, s.act]));
 
+  ensureSessionsGender(snap.sessions);
   data = snap;
   skew = (snap.now || Date.now()) - Date.now();
   if (SETTINGS_WINDOW) return;
@@ -1003,23 +1079,56 @@ function shade(hex, f) {
   return v;
 }
 
-// 세션 ID(또는 사용자가 바꾼 모습 번호·소품)로 정해지는 생김새
+function getSessionGender(id) {
+  const n = noteOf(id);
+  if (n.gender === 'm' || n.gender === 'f') return n.gender;
+  const globalSetting = store.get('staff_gender', 'random');
+  if (globalSetting === 'male') return 'm';
+  if (globalSetting === 'female') return 'f';
+  return (hash(id + ':gender') % 2 === 0) ? 'm' : 'f';
+}
+
+function ensureSessionsGender(sessions) {
+  if (!sessions || !Array.isArray(sessions) || REMOTE) return;
+  let changed = false;
+  const globalSetting = store.get('staff_gender', 'random');
+  for (const s of sessions) {
+    if (!s || !s.id) continue;
+    const n = noteOf(s.id);
+    if (!n.gender) {
+      let g;
+      if (globalSetting === 'male') g = 'm';
+      else if (globalSetting === 'female') g = 'f';
+      else g = (hash(s.id + ':gender') % 2 === 0) ? 'm' : 'f';
+      notes[s.id] = { ...n, gender: g, t: Date.now() };
+      changed = true;
+    }
+  }
+  if (changed) {
+    store.set('notes', notes);
+    shareToApp();
+  }
+}
+
+// 세션 ID(또는 사용자가 바꾼 모습 번호·소품·성별)로 정해지는 생김새
 const lookCache = new Map();
 function looks(id) {
   const n = noteOf(id);
+  const gender = getSessionGender(id);
   const lookIdx = Number.isInteger(n.look) && n.look > 0 ? n.look : 0;
   const decoOverride = Number.isInteger(n.deco) && n.deco >= 0 && n.deco <= 3 ? n.deco : null;
-  const key = `${id}:${lookIdx}:${decoOverride ?? ''}`;
+  const key = `${id}:${gender}:${lookIdx}:${decoOverride ?? ''}`;
   let L = lookCache.get(key);
   if (L) return L;
   const seed = lookIdx ? `${id}@${lookIdx}` : id;
   const h = hash(seed), h2 = hash(seed + '#');
   L = {
+    gender,
     skin: SKINS[h % SKINS.length],
     hair: HAIRS[(h >>> 4) % HAIRS.length],
     shirt: SHIRTS[(h >>> 9) % SHIRTS.length],
     pants: PANTS[(h >>> 14) % PANTS.length],
-    hairStyle: (h2 >>> 2) % 3,
+    hairStyle: (h2 >>> 2) % 4,
     glasses: (h2 >>> 6) % 4 === 0,
     deco: decoOverride !== null ? decoOverride : (h2 >>> 9) % 4,
     blink: h2 % 3200,
@@ -3325,7 +3434,7 @@ function showYtContainer(show) {
 function playYouTubeVideo() {
   const curYt = getCurYtTrack();
   const iframe = ensureYtContainer();
-  const targetEmbed = https://www.youtube-nocookie.com/embed/?enablejsapi=1&autoplay=1&playsinline=1&controls=0&origin=;
+  const targetEmbed = `https://www.youtube-nocookie.com/embed/${curYt.videoId}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&origin=${encodeURIComponent(location.origin)}`;
 
   try {
     if (!iframe.src || !iframe.src.includes(curYt.videoId)) {
@@ -5929,10 +6038,54 @@ function drawPerson(x, y, L, pose, t, s) {
 
 function drawHead(hx, hy, L, pose, t, isStretching = false, s = null) {
   R(hx, hy, 8, 8, L.skin);
-  R(hx, hy - 1, 8, 3, L.hair);
-  R(hx - 1, hy, 3, 6, L.hair);
-  if (L.hairStyle === 1) R(hx + 5, hy + 2, 3, 1, L.hair);   // 앞머리
-  if (L.hairStyle === 2) R(hx - 1, hy + 6, 2, 3, L.hair);   // 긴 머리
+
+  if (L.gender === 'f') {
+    // 여자 기본 헤어 (단발, 긴생머리, 포니테일, 웨이브/헤어핀)
+    R(hx, hy - 1, 8, 3, L.hair);
+    R(hx - 1, hy, 3, 6, L.hair);
+    const style = (L.hairStyle || 0) % 4;
+    if (style === 0) {
+      // 1. 귀여운 단발
+      R(hx - 1, hy + 3, 3, 5, L.hair);
+      R(hx + 5, hy + 2, 3, 1, L.hair);
+      R(hx + 1, hy + 6, 2, 2, L.hair);
+    } else if (style === 1) {
+      // 2. 찰랑이는 긴 생머리
+      R(hx - 2, hy + 2, 3, 8, L.hair);
+      R(hx + 5, hy + 2, 3, 1, L.hair);
+      R(hx + 1, hy + 6, 2, 4, L.hair);
+    } else if (style === 2) {
+      // 3. 리본 포니테일
+      R(hx + 5, hy + 2, 3, 1, L.hair);
+      R(hx - 3, hy + 1, 3, 3, L.hair);
+      P(hx - 2, hy + 1, '#f43f5e');   // 포인트 리본
+      const ponyBob = (pose === 'run' && tick(t, 220, 2) === 1) ? -1 : 0;
+      R(hx - 4, hy + 3 + ponyBob, 2, 6, L.hair);
+    } else {
+      // 4. 하프업 웨이브 & 헤어핀
+      R(hx - 2, hy + 2, 3, 7, L.hair);
+      R(hx + 5, hy + 2, 2, 1, L.hair);
+      P(hx + 5, hy + 1, '#38bdf8');   // 하늘색 헤어핀
+      R(hx, hy + 7, 2, 2, L.hair);
+    }
+    // 발그레한 볼터치
+    P(hx + 5, hy + 5, '#fda4af');
+  } else {
+    // 남자 기본 헤어 (댄디 숏컷, 가르마, 투블럭/스포티)
+    R(hx, hy - 1, 8, 3, L.hair);
+    R(hx - 1, hy, 3, 5, L.hair);
+    const style = (L.hairStyle || 0) % 3;
+    if (style === 0) {
+      R(hx + 5, hy + 1, 3, 2, L.hair);
+    } else if (style === 1) {
+      R(hx + 1, hy - 2, 5, 1, L.hair);
+      R(hx + 4, hy + 1, 3, 1, L.hair);
+    } else {
+      R(hx + 2, hy - 2, 2, 1, L.hair);
+      R(hx + 5, hy - 2, 2, 1, L.hair);
+      R(hx + 6, hy + 1, 2, 1, L.hair);
+    }
+  }
 
   // 📊 컨텍스트 포화 시각 효과 (땀방울 & 얼음주머니)
   if (s && s.ctx) {
@@ -6788,7 +6941,7 @@ function ensurePetDom() {
   petStopBtn.hidden = true;
 
   const focusBtn = elem('button', 'pet-ibtn', '🖥️');
-  focusBtn.title = T('이 세션이 열려 있는 VS Code·터미널 창으로 이동', "Bring this session's VS Code or terminal window to the front");
+  focusBtn.title = T('이 세션이 열려 있는 작업 창(VS Code · Claude 데스크톱 · 터미널)으로 이동', "Bring this session's working window (VS Code · Claude Desktop · Terminal) to the front");
   focusBtn.addEventListener('click', () => {
     const s = resolvePetSession();
     if (s) jumpToConsole(s.id, s);
@@ -6802,7 +6955,7 @@ function ensurePetDom() {
     else if (s) selectSession(s.id);
   });
 
-  petModeBtn = elem('button', 'pet-ibtn btn-pet-mode', '🪟');
+  petModeBtn = elem('button', 'pet-ibtn btn-pet-mode', '🔄');
   petModeBtn.title = T('화면 모드 변경 (미니위젯 · 미니바 · 산책 모드)', 'Change View Mode (MiniWidget · Mini-bar · Walk Mode)');
   petModeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -7273,7 +7426,7 @@ function renderPetIsland(s) {
   const actions = elem('div', 'island-actions');
   if (s) {
     const jumpBtn = elem('button', 'island-btn btn-jump', '⚡');
-    jumpBtn.title = T('터미널/콘솔로 점프', 'Jump to Console');
+    jumpBtn.title = T('작업 창(VS Code · Claude 데스크톱 · 터미널)으로 점프', 'Jump to working window (VS Code · Claude Desktop · Terminal)');
     jumpBtn.onclick = (e) => { e.stopPropagation(); jumpToConsole(s.id, s); };
 
     const stopBtn = elem('button', 'island-btn btn-stop', '🛑');
@@ -7295,7 +7448,7 @@ function renderPetIsland(s) {
   actions.append(islandPinBtn);
 
   // 모드 변경 버튼 (미니위젯 / 미니바 / 산책 모드)
-  const islandModeBtn = elem('button', 'island-btn btn-pet-mode', '🏝️');
+  const islandModeBtn = elem('button', 'island-btn btn-pet-mode', '🔄');
   islandModeBtn.title = T('화면 모드 변경 (미니위젯 · 미니바 · 산책 모드)', 'Change View Mode (MiniWidget · Mini-bar · Walk Mode)');
   islandModeBtn.onclick = (e) => {
     e.stopPropagation();
@@ -7321,7 +7474,7 @@ function renderPetIsland(s) {
 
 function drawShimejiPerson(x, y, L, vx, t, s, state) {
   const isWalking = state === 'walk';
-  const legBob = isWalking ? tick(t, 220, 2) : 0;
+  const legBob = isWalking ? tick(t, 420, 2) : 0;
 
   // 다리
   const leg1Y = y + 17 + (legBob === 0 ? 0 : -2);
@@ -8081,7 +8234,7 @@ function jumpToConsole(sid, s) {
   if (!sid || REMOTE) return;
   send({ cmd: 'focus-session', id: sid });
   const name = s ? displayName(s) : sid;
-  showToast(T(`⚡ ${name} 콘솔/터미널 창으로 점프!`, `⚡ Jumped to ${name} console/terminal!`));
+  showToast(T(`⚡ ${name} 작업 창으로 점프!`, `⚡ Jumped to ${name} window!`));
   markQuest('console_jump');
 }
 
@@ -8212,7 +8365,7 @@ function renderWhiteboardCards() {
           const foot = elem('div', 'wb-kcard-foot');
           if (!REMOTE) {
             const jumpBtn = elem('button', 'wb-kcard-act jump-act', T('⚡ 콘솔', '⚡ Console'));
-            jumpBtn.title = T('이 직원의 실제 터미널/VS Code 창으로 점프', 'Jump to terminal window');
+            jumpBtn.title = T('이 직원의 실제 작업 창(VS Code · Claude 데스크톱 · 터미널)으로 점프', 'Jump to working window (VS Code · Claude Desktop · Terminal)');
             jumpBtn.addEventListener('click', (e) => {
               e.stopPropagation();
               jumpToConsole(s.id, s);
@@ -10259,8 +10412,7 @@ function renderPet() {
   petFoldBtn.title = compact ? T('지시·답변 칸 펼치기', 'Expand instruction & reply bar') : T('지시·답변 칸 접기(캐릭터만 작게 보기)', 'Collapse instruction & reply bar');
   petFoldBtn.hidden = isShimeji;
   if (petModeBtn) {
-    const curModeIcon = petMode === 'island' ? '🏝️' : (petMode === 'shimeji' ? '🐾' : '🪟');
-    setPixelContent(petModeBtn, curModeIcon);
+    setPixelContent(petModeBtn, '🔄');
   }
 
   if (petMode === 'island') {
@@ -10432,13 +10584,22 @@ function drawPetFrame(ts) {
     return;
   }
 
+  const isShimeji = petMode === 'shimeji';
   const noBg = petNoBgOn();
-  const PW = 94, PH = 64;   // 구석 방과 배경 숨김 모두 64로 두어 마우스 오버 시 상단 툴바가 말풍선을 가리지 않고 여백을 확보
   const dprNow = window.devicePixelRatio || 1;
-  const cssWidth = Math.max(220, petStageEl.clientWidth || 266);
+  const cssWidth = Math.max(160, petStageEl.clientWidth || (petEl ? petEl.clientWidth : 300));
+  const cssHeight = Math.max(48, petStageEl.clientHeight || (petEl ? petEl.clientHeight : 100));
+
+  // 산책 모드(shimeji): 미니미가 너무 거대해 보이지 않도록 위젯 크기 옵션(크게/보통/작게)에 맞춰 자연스럽고 슬림하게 스케일을 조절한다
+  let targetScale = 2.1;
+  const ws = typeof getWidgetSize === 'function' ? getWidgetSize() : 'large';
+  if (ws === 'small') targetScale = 1.45;
+  else if (ws === 'medium') targetScale = 1.75;
+
+  const PW = isShimeji ? Math.max(80, Math.round(cssWidth / targetScale)) : 94;
   const scale = cssWidth / PW;
   const k = Math.max(2, Math.round(scale * dprNow));
-  const cssHeight = Math.round(PH * scale);
+  const PH = isShimeji ? Math.max(38, Math.round(cssHeight / scale)) : 64;
 
   if (petArt.width !== PW || petArt.height !== PH) { petArt.width = PW; petArt.height = PH; }
   if (petCanvasEl.width !== PW * k || petCanvasEl.height !== PH * k) {
@@ -10451,38 +10612,41 @@ function drawPetFrame(ts) {
   if (art.width < PW || art.height < PH) { art.width = Math.max(art.width, PW); art.height = Math.max(art.height, PH); }
   g.clearRect(0, 0, PW, PH);
 
-  if (petMode === 'shimeji') {
+  if (isShimeji) {
     petEl.classList.add('pet-shimeji');
     g.clearRect(0, 0, PW, PH);
 
+    // 🐾 여유롭고 차분한 산책: 좌우 이동 속도를 대폭 완화(0.28px/f)하여 산만함을 없애고,
+    // 정지 대기(idle) 시간을 늘려 편안하게 지켜볼 수 있게 한다.
     if (shimejiState === 'walk') {
-      shimejiX += shimejiVx * 0.7;
+      shimejiX += shimejiVx * 0.28;
       if (shimejiX < 3) { shimejiX = 3; shimejiVx = 1; }
       else if (shimejiX > PW - 14) { shimejiX = PW - 14; shimejiVx = -1; }
       if (ts > shimejiNextSwitch) {
-        shimejiState = Math.random() < 0.4 ? 'jump' : 'idle';
-        shimejiNextSwitch = ts + 2000 + Math.random() * 3000;
-        if (shimejiState === 'jump') shimejiVy = -3.2;
+        // 산책 후 대부분 잠시 쉬거나 주변을 둘러봄 (점프 빈도는 15%로 대폭 축소)
+        shimejiState = Math.random() < 0.15 ? 'jump' : 'idle';
+        shimejiNextSwitch = ts + 4000 + Math.random() * 4000;
+        if (shimejiState === 'jump') shimejiVy = -2.2;
       }
     } else if (shimejiState === 'jump') {
       shimejiY += shimejiVy;
-      shimejiVy += 0.4;
+      shimejiVy += 0.25;
       if (shimejiY >= 0) {
         shimejiY = 0;
         shimejiVy = 0;
-        shimejiState = 'walk';
+        shimejiState = 'idle';
         shimejiNextSwitch = ts + 3000 + Math.random() * 3000;
       }
-    } else {
+    } else { // idle
       if (ts > shimejiNextSwitch) {
         shimejiState = 'walk';
         shimejiVx = Math.random() < 0.5 ? 1 : -1;
-        shimejiNextSwitch = ts + 3000 + Math.random() * 4000;
+        shimejiNextSwitch = ts + 5000 + Math.random() * 5000;
       }
     }
 
     const L = looks(s.id);
-    const sy = Math.max(8, 34 + Math.round(shimejiY));
+    const sy = Math.max(6, (PH - 26) + Math.round(shimejiY));
     drawShimejiPerson(Math.round(shimejiX), sy, L, shimejiVx, ts, s, shimejiState);
 
     petCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -10850,6 +11014,7 @@ if (nsToggleBtn) nsToggleBtn.addEventListener('click', toggleNightShift);
 if (nsCopyBtn) nsCopyBtn.addEventListener('click', copyNightShiftReport);
 
 if (btnCoins) btnCoins.addEventListener('click', openShopModal);
+$('btnShopQuick')?.addEventListener('click', openShopModal);
 $('btnWrapped')?.addEventListener('click', openWrappedModal);
 $('wrappedClose')?.addEventListener('click', closeWrappedModal);
 $('arcadeClose')?.addEventListener('click', closeArcadeModal);
@@ -10998,8 +11163,9 @@ function updateStatus() {
 // 화면에서만 쓰는 값은 store(localStorage)에 두고, 앱(C#)이 알아야 하는 값은 host.postMessage 로 넘긴다.
 
 const SETTINGS = [
+  // 🏢 1. 화면 & 테마 (Display & Theme)
   {
-    tab: 'office',
+    tab: 'display',
     items: [
       { type: 'choice', name: T('화면 동작 모드', 'Operation Mode'), pcOnly: true,
         desc: T('사무실 환경에 맞는 화면 모드를 선택합니다. 오피스 모드는 캐릭터/가구 등 게임 요소를 제외한 깔끔한 비즈니스 대시보드로 동작합니다.', 'Choose operation mode. Office Mode provides a clean business dashboard without game graphics.'),
@@ -11008,38 +11174,42 @@ const SETTINGS = [
         set: (v) => { setAppMode(v); refreshSettings(); } },
       { type: 'text', name: T('사무실 이름', 'Office name'), desc: T('벽 간판과 창 제목(작업표시줄)에 씁니다. 비우면 기본 이름입니다.', 'Shown on the wall sign and the window title (taskbar). Leave empty for the default.'), pcOnly: true,
         placeholder: DEFAULT_OFFICE, max: 30, get: () => officeName, set: setOfficeName },
-      // 언어 이름은 두 언어로 — 읽지 못하는 언어로 켜져 있어도 찾을 수 있게
       { type: 'choice', name: '화면 언어 / Language', pcOnly: true,
         desc: T('화면·말풍선·알림을 이 언어로 보여 줍니다. 휴대폰 화면도 PC를 따라갑니다.', 'Screen, speech bubbles and notifications use this language. The phone follows the PC.'),
         options: [['ko', '한국어'], ['en', 'English']], get: () => LANG, set: setLanguage },
+      { type: 'choice', name: T('프로그램 아이콘', 'App Icon'), pcOnly: true,
+        desc: T('창·작업표시줄·알림 영역(트레이)에 표시할 프로그램 기본 아이콘을 선택합니다. 변경 시 프로그램을 재시작합니다.',
+          'Choose the application icon for the window, taskbar, and tray. The app will restart to apply.'),
+        options: [
+          ['a', T('아이콘 A (기본)', 'Icon A (Default)')],
+          ['b', T('아이콘 B', 'Icon B')],
+          ['c', T('아이콘 C', 'Icon C')],
+        ],
+        get: () => appSettings?.appIcon || 'a',
+        set: (v) => {
+          const cur = appSettings?.appIcon || 'a';
+          if (v === cur) return;
+          const labels = {
+            a: T('아이콘 A', 'Icon A'),
+            b: T('아이콘 B', 'Icon B'),
+            c: T('아이콘 C', 'Icon C'),
+          };
+          const name = labels[v] || v;
+          const ok = confirm(T(
+            `아이콘을 '${name}'(으)로 변경하시겠습니까?\r\n\r\n아이콘을 적용하려면 프로그램을 다시 시작해야 합니다. 지금 재실행하시겠습니까?`,
+            `Change icon to '${name}'?\r\n\r\nThe application needs to restart to apply the new icon. Restart now?`
+          ));
+          if (!ok) {
+            refreshSettings();
+            return;
+          }
+          send({ cmd: 'change-app-icon', icon: v });
+        },
+        enabled: appReady },
     ],
   },
   {
-    tab: 'staff',
-    // 위에서 아래로 거르는 순서: 표시 기간 → 퇴근 숨김 → 고르는 방식 → 보일 인원
-    items: [
-      { type: 'choice', name: T('표시 기간', 'Display period'), pcOnly: true,
-        desc: () => T(`마지막 대화가 ${windowLabel()} 안에 있는 세션만 사무실에 들입니다(파일 수정 시각이 아니라 실제 대화 시각 기준). 3시간 넘게 조용하면 퇴근(🚪)으로 보입니다.`,
-          `Only sessions whose last message is within ${windowLabel()} come to the office (by actual message time, not file edit time). After 3 quiet hours they go home (🚪).`),
-        options: WINDOW_CHOICES, get: () => windowHours, set: setWindowHours },
-      { type: 'toggle', name: T('퇴근한 직원 보이기', 'Show employees who went home'), desc: T('퇴근(🚪)한 직원의 빈 책상도 사무실에 남겨 둡니다. 상단 🚪 버튼과 같습니다.', 'Keeps the empty desks of employees who went home (🚪). Same as the 🚪 button at the top.'),
-        get: () => showAway, set: setShowAway },
-      { type: 'toggle', name: T('✋ 기다리는 직원만 보기', "✋ Only show who's waiting"),
-        desc: T('승인·질문을 기다리는 직원만 책상에 앉힙니다. 직원이 많을 때 휴대폰에서 확인하기 좋습니다.', 'Seats only employees waiting for an approval or an answer. Handy on a phone when there are many.'),
-        get: () => waitOnly, set: (v) => { waitOnly = v; store.set('waitOnly', v); layoutKey = ''; refreshHud(); refreshSettings(); } },
-      { type: 'number', name: T('보일 인원', 'Max employees'), desc: T('책상에 앉힐 최대 인원입니다. 넘쳐서 숨겨진 직원은 상단 요약에 🙈로 개수가 표시됩니다.', 'The most employees seated at desks. Any hidden beyond this are counted as 🙈 in the top bar.'),
-        min: SHOWN_MIN, max: SHOWN_MAX, unit: T('명', ''), get: () => maxShown, set: setMaxShown },
-      { type: 'choice', name: T('고르는 방식', 'How to pick'),
-        desc: () => (pickMode === 'manual'
-          ? T('체크한 직원만 앉힙니다. 새로 출근한 직원은 아래 목록에서 체크해야 보입니다.', 'Seats only checked employees. New arrivals show up once you check them below.')
-          : T(`최근에 일한 순서로 최대 ${maxShown}명을 앉힙니다. 책상 자리는 출근 순서대로 유지됩니다.`, `Seats up to ${maxShown} most recently active. Desk seats stay in arrival order.`)),
-        options: [['recent', T('최근 사용순', 'Most recent')], ['manual', T('직접 고르기', 'Choose manually')]],
-        get: () => pickMode, set: setPickMode },
-      { type: 'picker', shown: () => pickMode === 'manual' },
-    ],
-  },
-  {
-    tab: 'office', title: T('보기', 'View'),
+    tab: 'display', title: T('화면 보기 & 조명', 'Display & Lighting'),
     items: [
       { type: 'choice', name: T('아이콘 표시 방식', 'Icon Display Style'),
         desc: T('상태 아이콘·버튼·말풍선의 아이콘 표시 방식을 선택합니다. (픽셀 도트 아트 / 시스템 이모지)', 'Choose icon display style for status, buttons, and bubbles. (Pixel art or system emojis)'),
@@ -11064,20 +11234,6 @@ const SETTINGS = [
         ],
         get: () => store.get('light_mode', 'auto'),
         set: (v) => { store.set('light_mode', v); refreshSettings(); } },
-      { type: 'toggle', name: T('🐾 고양이 표시', 'Show Cats'),
-        shown: () => getAppMode() !== 'office',
-        desc: T('입양한 고양이들을 사무실에 표시합니다. 끄면 고양이들이 방에서 휴식을 취하며 사무실을 비웁니다.', 'Shows adopted cats in the office. Turn off to let all cats rest and clear the office.'),
-        get: isCatsEnabledGlobal,
-        set: (v) => { store.set('showCats', v); refreshSettings(); } },
-      { type: 'toggle', name: T('🛋️ 인테리어 가구 배치', 'Place Furniture'),
-        shown: () => getAppMode() !== 'office',
-        desc: T('구매한 인테리어 가구와 소품을 사무실에 배치합니다. 끄면 모든 가구를 보관함에 넣어 미니멀한 사무실로 만듭니다.', 'Places purchased furniture in the office. Turn off to store all furniture for a minimal office.'),
-        get: isFurnitureEnabledGlobal,
-        set: (v) => { store.set('showFurniture', v); refreshSettings(); } },
-      { type: 'action', name: T('🛋️ 가구 & 고양이 상점 / 보관함', '🛋️ Furniture & Cat Shop / Storage'),
-        shown: () => getAppMode() !== 'office',
-        desc: T('가구와 고양이의 개별 배치/보관을 설정하거나 코인으로 새 소품을 구매합니다.', 'Manage placement/storage of individual furniture & cats, or buy new items with coins.'),
-        label: () => T('상점 및 보관함 열기', 'Open Shop & Storage'), run: () => openShopModal() },
       { type: 'toggle', name: T('작게 보기(목록)', 'Compact view (list)'),
         desc: () => (REMOTE ? T('사무실 그림 대신 직원·상태를 한 줄씩 보여 줍니다. 상단 📋 버튼과 같습니다.', 'Shows one line per employee instead of the office picture. Same as the 📋 button.')
           : T('창을 작게 줄이고 직원·상태만 한 줄씩 보여 줍니다(맨 위에 떠 있음). 상단 📋 버튼과 같고, 크기·위치는 보통 창과 따로 기억합니다.',
@@ -11085,8 +11241,10 @@ const SETTINGS = [
         get: widgetOn, set: setWidget, enabled: () => LOCAL_WIDGET || appReady() },
     ],
   },
+
+  // 🪟 2. 바탕화면 위젯 (Desktop Widget)
   {
-    tab: 'office', title: T('바탕화면 미니위젯 & 아이스브레이킹', 'Desktop MiniWidget & Icebreaker'),
+    tab: 'widget',
     items: [
       { type: 'petcfg', pcOnly: true, enabled: () => LOCAL_PET || appReady() },
       {
@@ -11141,6 +11299,13 @@ const SETTINGS = [
         get: () => store.get('memeSound', true) !== false,
         set: (v) => { store.set('memeSound', v); refreshSettings(); }
       },
+    ],
+  },
+
+  // 🎵 3. 코딩 BGM (Coding BGM)
+  {
+    tab: 'music',
+    items: [
       {
         type: 'toggle',
         name: T('🎵 코딩 BGM (내장 OST / YouTube)', '🎵 Coding BGM (Built-in / YouTube)'),
@@ -11162,42 +11327,108 @@ const SETTINGS = [
       { type: 'lofi_mixer' }
     ],
   },
+
+  // 👥 4. 직원 & 팀 (Staff & Teams)
   {
-    tab: 'office', title: T('팀', 'Teams'),
+    tab: 'staff',
+    items: [
+      { type: 'choice', name: T('표시 기간', 'Display period'), pcOnly: true,
+        desc: () => T(`마지막 대화가 ${windowLabel()} 안에 있는 세션만 사무실에 들입니다(파일 수정 시각이 아니라 실제 대화 시각 기준). 3시간 넘게 조용하면 퇴근(🚪)으로 보입니다.`,
+          `Only sessions whose last message is within ${windowLabel()} come to the office (by actual message time, not file edit time). After 3 quiet hours they go home (🚪).`),
+        options: WINDOW_CHOICES, get: () => windowHours, set: setWindowHours },
+      { type: 'choice', name: T('직원 성별', 'Employee Gender'),
+        desc: T('새 세션 추가 시 기본 성별 및 전체 직원의 성별을 설정합니다. (선택 시 모든 직원의 성별이 일괄 적용됩니다)',
+          'Default gender for new sessions and all employees. (Changing will apply to all employees)'),
+        options: [
+          ['random', T('🎲 랜덤 (기본)', '🎲 Random (Default)')],
+          ['male', T('👦 남자', '👦 Male')],
+          ['female', T('👧 여자', '👧 Female')],
+        ],
+        get: () => store.get('staff_gender', 'random'),
+        set: (v) => {
+          const prev = store.get('staff_gender', 'random');
+          if (v === prev) return;
+          const targetName = v === 'male' ? T('남자', 'Male') : v === 'female' ? T('여자', 'Female') : T('랜덤', 'Random');
+          const msg = T(
+            `모든 직원의 성별을 '${targetName}'(으)로 일괄 변경하시겠습니까?
+기존에 설정된 모든 세션의 성별과 모습이 재설정됩니다.`,
+            `Change gender of all employees to '${targetName}'?
+All current session employee genders and looks will be reset.`
+          );
+          if (!confirm(msg)) {
+            refreshSettings();
+            return;
+          }
+          store.set('staff_gender', v);
+          const allIds = new Set([
+            ...(data.sessions || []).map((s) => s.id),
+            ...Object.keys(notes)
+          ]);
+          for (const id of allIds) {
+            let g;
+            if (v === 'male') g = 'm';
+            else if (v === 'female') g = 'f';
+            else g = Math.random() < 0.5 ? 'm' : 'f';
+            notes[id] = { ...noteOf(id), gender: g, t: Date.now() };
+          }
+          lookCache.clear();
+          store.set('notes', notes);
+          shareToApp();
+          send({ cmd: 'gender-update', gender: v });
+          refreshSettings();
+          refreshHud();
+          if (selectedId) renderPanel();
+          if (petOn()) renderPet();
+          if (appMode === 'office') renderCleanOffice();
+          showToast(T(`모든 직원의 성별이 '${targetName}'(으)로 변경되었습니다.`, `All employee genders updated to '${targetName}'.`), '👥');
+        } },
+      { type: 'toggle', name: T('퇴근한 직원 보이기', 'Show employees who went home'), desc: T('퇴근(🚪)한 직원의 빈 책상도 사무실에 남겨 둡니다. 상단 🚪 버튼과 같습니다.', 'Keeps the empty desks of employees who went home (🚪). Same as the 🚪 button at the top.'),
+        get: () => showAway, set: setShowAway },
+      { type: 'toggle', name: T('✋ 기다리는 직원만 보기', "✋ Only show who's waiting"),
+        desc: T('승인·질문을 기다리는 직원만 책상에 앉힙니다. 직원이 많을 때 휴대폰에서 확인하기 좋습니다.', 'Seats only employees waiting for an approval or an answer. Handy on a phone when there are many.'),
+        get: () => waitOnly, set: (v) => { waitOnly = v; store.set('waitOnly', v); layoutKey = ''; refreshHud(); refreshSettings(); } },
+      { type: 'number', name: T('보일 인원', 'Max employees'), desc: T('책상에 앉힐 최대 인원입니다. 넘쳐서 숨겨진 직원은 상단 요약에 🙈로 개수가 표시됩니다.', 'The most employees seated at desks. Any hidden beyond this are counted as 🙈 in the top bar.'),
+        min: SHOWN_MIN, max: SHOWN_MAX, unit: T('명', ''), get: () => maxShown, set: setMaxShown },
+      { type: 'choice', name: T('고르는 방식', 'How to pick'),
+        desc: () => (pickMode === 'manual'
+          ? T('체크한 직원만 앉힙니다. 새로 출근한 직원은 아래 목록에서 체크해야 보입니다.', 'Seats only checked employees. New arrivals show up once you check them below.')
+          : T(`최근에 일한 순서로 최대 ${maxShown}명을 앉힙니다. 책상 자리는 출근 순서대로 유지됩니다.`, `Seats up to ${maxShown} most recently active. Desk seats stay in arrival order.`)),
+        options: [['recent', T('최근 사용순', 'Most recent')], ['manual', T('직접 고르기', 'Choose manually')]],
+        get: () => pickMode, set: setPickMode },
+      { type: 'picker', shown: () => pickMode === 'manual' },
+    ],
+  },
+  {
+    tab: 'staff', title: T('팀 관리', 'Teams'),
     items: [
       { type: 'teams', pcOnly: true },
     ],
   },
+
+  // 🛋️ 5. 인테리어 & 펫 (Interior & Pets)
   {
-    tab: 'general', title: T('창', 'Window'),
+    tab: 'interior',
     items: [
-      { type: 'toggle', name: T('항상 위에 표시', 'Always on top'), desc: T('다른 창에 가려지지 않게 늘 맨 위에 띄웁니다. 상단 📌 버튼과 같습니다.', 'Keeps the window above other windows. Same as the 📌 button at the top.'), pcOnly: true,
-        get: () => pinned, set: setPinned },
-      { type: 'toggle', name: T('시작 시 알림 영역에 숨기기', 'Start hidden in the tray'), pcOnly: true,
-        desc: T('다음 실행부터 창을 바로 띄우지 않고 작업표시줄 오른쪽 알림 영역(🧑‍💻)에 숨긴 채 시작합니다. 아이콘을 누르면 창이 열리고, 숨어 있는 동안에도 감시와 휴대폰 연결은 계속 돌아갑니다.',
-          'From the next launch, starts hidden in the notification area (🧑‍💻) without opening the window. Click the icon to open it. Monitoring and the phone connection keep running.'),
-        get: () => !!appSettings?.startMinimized,
-        set: (v) => setAppSetting('startMinimized', v),
-        enabled: () => !DEMO && !!appSettings },
-      { type: 'toggle', name: T('닫기(✕)를 눌러도 숨기기', 'Close (✕) hides instead of quitting'), pcOnly: true,
-        desc: T('창 오른쪽 위 ✕를 눌러도 끄지 않고 알림 영역(🧑‍💻)으로 숨깁니다(휴대폰 연결도 유지). 완전히 끝내려면 🧑‍💻 아이콘을 오른쪽 클릭해 [끝내기]를 누르세요.',
-          '✕ only hides the window and the app keeps running in the notification area (🧑‍💻), phone connection too. To quit, right-click the 🧑‍💻 icon → Exit.'),
-        get: () => !!appSettings?.closeToTray,
-        set: (v) => setAppSetting('closeToTray', v),
-        enabled: () => !DEMO && !!appSettings },
-      { type: 'toggle', name: T('Windows 시작할 때 자동 실행', 'Run at Windows startup'), pcOnly: true,
-        desc: () => T('Windows에 로그인할 때 알림 영역(🧑‍💻)에 숨긴 채로 저절로 켜집니다(이 계정의 시작 프로그램에 등록).',
-          "Starts hidden in the notification area (🧑‍💻) when you sign in to Windows (registered in this user's startup apps).")
-          + (appSettings?.autoStartElsewhere ? T(' ⚠️ 지금은 다른 폴더의 Claude Office가 등록돼 있어요 — 껐다 켜면 이 위치로 바뀝니다.',
-            ' ⚠️ A Claude Office in another folder is registered now — turn this off and on to switch to this one.') : ''),
-        get: () => !!appSettings?.autoStart,
-        set: (v) => setAppSetting('autoStart', v),
-        enabled: () => !DEMO && !!appSettings },
+      { type: 'toggle', name: T('🐾 고양이 표시', 'Show Cats'),
+        shown: () => getAppMode() !== 'office',
+        desc: T('입양한 고양이들을 사무실에 표시합니다. 끄면 고양이들이 방에서 휴식을 취하며 사무실을 비웁니다.', 'Shows adopted cats in the office. Turn off to let all cats rest and clear the office.'),
+        get: isCatsEnabledGlobal,
+        set: (v) => { store.set('showCats', v); refreshSettings(); } },
+      { type: 'toggle', name: T('🛋️ 인테리어 가구 배치', 'Place Furniture'),
+        shown: () => getAppMode() !== 'office',
+        desc: T('구매한 인테리어 가구와 소품을 사무실에 배치합니다. 끄면 모든 가구를 보관함에 넣어 미니멀한 사무실로 만듭니다.', 'Places purchased furniture in the office. Turn off to store all furniture for a minimal office.'),
+        get: isFurnitureEnabledGlobal,
+        set: (v) => { store.set('showFurniture', v); refreshSettings(); } },
+      { type: 'action', name: T('🛋️ 가구 & 고양이 상점 / 보관함', '🛋️ Furniture & Cat Shop / Storage'),
+        shown: () => getAppMode() !== 'office',
+        desc: T('가구와 고양이의 개별 배치/보관을 설정하거나 코인으로 새 소품을 구매합니다.', 'Manage placement/storage of individual furniture & cats, or buy new items with coins.'),
+        label: () => T('상점 및 보관함 열기', 'Open Shop & Storage'), run: () => openShopModal() },
     ],
   },
+
+  // 🔔 6. 알림 & 휴대폰 (Alerts & Mobile)
   {
-    tab: 'notify',
-    // 창을 숨겨 둬도 알아야 하므로 앱(C#)이 판단해 Windows 알림으로 띄운다. 창을 보고 있을 때는 띄우지 않는다
+    tab: 'notify', title: T('PC 알림 & 효과음', 'PC Notifications & Sound'),
     items: [
       { type: 'toggle', name: T('✋ 기다릴 때 알림', '✋ Notify when waiting'), pcOnly: true,
         desc: T('직원이 승인이나 질문을 기다리기 시작하면 Windows 알림을 띄웁니다. 이 창을 보고 있을 때는 띄우지 않고, 알림을 누르면 해당 직원이 바로 열립니다.',
@@ -11227,35 +11458,23 @@ const SETTINGS = [
     ],
   },
   {
-    tab: 'general', title: T('Claude Code 연결', 'Claude Code connection'),
-    items: [
-      { type: 'action', name: T('Claude Code 연결', 'Connect to Claude Code'), pcOnly: true,
-        desc: T('Claude가 승인을 기다리거나 질문하면 직원이 즉시 손을 들고, 세션을 닫으면 바로 퇴근합니다. 휴대폰 지시·승인도 이 연결을 통해 동작합니다. Claude Code 설정(~/.claude/settings.json)에 연결 줄을 추가하므로 확인 창이 먼저 뜹니다(끊으면 추가한 줄만 제거).',
-          'Employees raise a hand the moment Claude waits for an approval or asks a question, and go home as soon as a session closes. Phone instructions and approvals come through this too. It adds a few lines to the Claude Code settings file, so you confirm first (disconnecting removes only those lines).'),
-        label: () => (claudeConnected() ? T('연결 끊기', 'Disconnect') : data.hooks && data.hooks.state !== 'off' ? T('다시 연결', 'Reconnect') : T('연결하기', 'Connect')),
-        enabled: () => !DEMO && !!data.hooks,   // 견본 화면에서는 바꿀 수 없다(앱이 --demo 면 알림을 받지도 않는다)
-        run: toggleHooks, status: hookStatus },
-    ],
-  },
-  {
-    tab: 'phone',
+    tab: 'notify', title: T('휴대폰 원격 연결', 'Mobile Connection'),
     items: [
       { type: 'action', name: T('휴대폰 연결', 'Phone connection'), pcOnly: true,
         desc: T('밖에서도 휴대폰으로 사무실을 보고, 자리를 비웠을 때 승인하거나 다음 지시를 보냅니다. [켜기] 후 QR만 한 번 찍으면 되며 로그인·계정이 필요 없습니다. 🔒 무료 서버(화면: GitHub · 전달: Google Firebase)를 거치지만 내 PC와 내 휴대폰만 아는 열쇠로 암호화해 서버도 다른 사람도 볼 수 없고, 대화 원본은 전송하지 않습니다.',
           "See the office on your phone, and instruct and approve while you're away. Turn it on and scan the QR — no sign-in, no setup. 🔒 It goes through a free server (page: GitHub · delivery: Google Firebase), but it's locked with a key only your PC and your phone have, so neither the server nor anyone else can read it. Conversations are never sent."),
         label: () => (cloud?.enabled ? T('끄기', 'Turn off') : T('켜기', 'Turn on')),
-        enabled: () => !DEMO && !!cloud?.configured,   // 견본 화면에서는 쓸 수 없다
+        enabled: () => !DEMO && !!cloud?.configured,
         run: () => send({ cmd: 'cloud-enable', value: !cloud.enabled }),
         status: cloudStatus },
       { type: 'cloudqr', pcOnly: true, shown: () => !DEMO && !!cloud?.enabled },
     ],
   },
   {
-    // 자리 비움(휴대폰의 지시·승인을 받는 상태)은 손으로 켜고 끄지 않는다 — 입력 없음·화면 잠금·휴대폰에서 켜지고, 돌아와 입력하면 꺼진다
-    tab: 'phone', title: T('자리를 비웠을 때', "While you're away"),
+    tab: 'notify', title: T('자리를 비웠을 때 (원격 지시·승인)', "While you're away"),
     items: [
       { type: 'action', name: T('Claude Code 연결이 필요해요', 'Connect to Claude Code first'), pcOnly: true, shown: () => !DEMO && !!remoteState && !remoteState.installed,
-        desc: T('자리를 비운 동안 휴대폰에서 지시·승인을 하려면 먼저 Claude Code와 연결해야 합니다(⚙️ → 🖥️ 일반의 연결과 같음).', 'To instruct and approve from the phone, connect to Claude Code (same button as ⚙️ → 🖥️ General).'),
+        desc: T('자리를 비운 동안 휴대폰에서 지시·승인을 하려면 먼저 Claude Code와 연결해야 합니다(⚙️ → 🖥️ 시스템의 연결과 같음).', 'To instruct and approve from the phone, connect to Claude Code (same button as ⚙️ → 🖥️ System).'),
         label: () => T('연결하기', 'Connect'), enabled: () => !DEMO && !!data.hooks, run: toggleHooks },
       { type: 'choice', name: T('입력이 없으면 자리 비움', 'Away when idle'), pcOnly: true, shown: () => !!remoteState?.installed,
         desc: T('자리 비움(🏃) 중일 때 승인 요청과 지시를 휴대폰으로 주고받습니다. 마우스·키보드를 이 시간 동안 안 쓰면 저절로 켜지고, 돌아와 움직이면 꺼집니다. 이 시간이 되기 전이라도 PC를 30초 넘게 안 쓰는 동안 휴대폰 화면을 열거나 지시를 보내면 바로 켜집니다.',
@@ -11269,32 +11488,99 @@ const SETTINGS = [
     ],
   },
   {
-    tab: 'phone', title: T('고급', 'Advanced'),
+    tab: 'notify', title: T('휴대폰 고급 설정', 'Mobile Advanced'),
     items: [
       { type: 'toggle', name: T('휴대폰에서 별명·메모 고치기', 'Edit nicknames & memos on the phone'), pcOnly: true, shown: () => !DEMO && !!cloud?.configured,
         desc: T('휴대폰의 직원 상세 화면에서 별명이나 메모를 고치면 몇 초 안에 PC에도 그대로 반영됩니다(같은 열쇠로 암호화).', "Nicknames and memos edited in the phone's employee details reach the PC within seconds (locked with the same key)."),
         get: () => !!cloud?.phoneEdit, set: (v) => send({ cmd: 'cloud-phone-edit', value: v }), enabled: () => !DEMO && !!cloud },
     ],
   },
+
+  // 🖥️ 7. 시스템 & 연동 (System & Integration)
   {
-    tab: 'about',
+    tab: 'system', title: T('Claude Code 연동', 'Claude Code Connection'),
+    items: [
+      { type: 'action', name: T('Claude Code 연결', 'Connect to Claude Code'), pcOnly: true,
+        desc: T('Claude가 승인을 기다리거나 질문하면 직원이 즉시 손을 들고, 세션을 닫으면 바로 퇴근합니다. 휴대폰 지시·승인도 이 연결을 통해 동작합니다. Claude Code 설정(~/.claude/settings.json)에 연결 줄을 추가하므로 확인 창이 먼저 뜹니다(끊으면 추가한 줄만 제거).',
+          'Employees raise a hand the moment Claude waits for an approval or asks a question, and go home as soon as a session closes. Phone instructions and approvals come through this too. It adds a few lines to the Claude Code settings file, so you confirm first (disconnecting removes only those lines).'),
+        label: () => (claudeConnected() ? T('연결 끊기', 'Disconnect') : data.hooks && data.hooks.state !== 'off' ? T('다시 연결', 'Reconnect') : T('연결하기', 'Connect')),
+        enabled: () => !DEMO && !!data.hooks,
+        run: toggleHooks, status: hookStatus },
+    ],
+  },
+  {
+    tab: 'system', title: T('세션 이동 & 실행 환경', 'Session Navigation & Environment'),
+    items: [
+      { type: 'choice', name: T('세션 클릭 시 이동 대상', 'Session click target'), pcOnly: true,
+        desc: T('직원 상세 화면이나 미니위젯에서 [작업 창으로 이동] 클릭 시 열어줄 프로그램을 선택합니다. 자동 감지는 세션 실행 위치(VS Code, Claude 데스크톱 앱, 터미널)를 분석해 해당 창으로 자동 이동합니다.',
+          'Choose which application to open when clicking Jump/Focus. Auto-detect analyzes the session execution environment (VS Code, Claude Desktop, or Terminal) to switch automatically.'),
+        options: [
+          ['auto', T('자동 감지 (권장)', 'Auto-detect (Recommended)')],
+          ['vscode', T('VS Code', 'VS Code')],
+          ['desktop', T('Claude 데스크톱 앱', 'Claude Desktop App')],
+          ['terminal', T('기본 터미널', 'Default Terminal')],
+        ],
+        get: () => appSettings?.sessionTarget || 'auto',
+        set: (v) => setAppSetting('sessionTarget', v),
+        enabled: appReady },
+    ],
+  },
+  {
+    tab: 'system', title: T('창 및 시작 프로그램', 'Window & Startup'),
+    items: [
+      { type: 'toggle', name: T('항상 위에 표시', 'Always on top'), desc: T('다른 창에 가려지지 않게 늘 맨 위에 띄웁니다. 상단 📌 버튼과 같습니다.', 'Keeps the window above other windows. Same as the 📌 button at the top.'), pcOnly: true,
+        get: () => pinned, set: setPinned },
+      { type: 'toggle', name: T('시작 시 알림 영역에 숨기기', 'Start hidden in the tray'), pcOnly: true,
+        desc: T('다음 실행부터 창을 바로 띄우지 않고 작업표시줄 오른쪽 알림 영역(🧑‍💻)에 숨긴 채 시작합니다. 아이콘을 누르면 창이 열리고, 숨어 있는 동안에도 감시와 휴대폰 연결은 계속 돌아갑니다.',
+          'From the next launch, starts hidden in the notification area (🧑‍💻) without opening the window. Click the icon to open it. Monitoring and the phone connection keep running.'),
+        get: () => !!appSettings?.startMinimized,
+        set: (v) => setAppSetting('startMinimized', v),
+        enabled: () => !DEMO && !!appSettings },
+      { type: 'toggle', name: T('닫기(✕)를 눌러도 숨기기', 'Close (✕) hides instead of quitting'), pcOnly: true,
+        desc: T('창 오른쪽 위 ✕를 눌러도 끄지 않고 알림 영역(🧑‍💻)으로 숨깁니다(휴대폰 연결도 유지). 완전히 끝내려면 🧑‍💻 아이콘을 오른쪽 클릭해 [끝내기]를 누르세요.',
+          '✕ only hides the window and the app keeps running in the notification area (🧑‍💻), phone connection too. To quit, right-click the 🧑‍💻 icon → Exit.'),
+        get: () => !!appSettings?.closeToTray,
+        set: (v) => setAppSetting('closeToTray', v),
+        enabled: () => !DEMO && !!appSettings },
+      { type: 'toggle', name: T('Windows 시작할 때 자동 실행', 'Run at Windows startup'), pcOnly: true,
+        desc: () => T('Windows에 로그인할 때 알림 영역(🧑‍💻)에 숨긴 채로 저절로 켜집니다(이 계정의 시작 프로그램에 등록).',
+          "Starts hidden in the notification area (🧑‍💻) when you sign in to Windows (registered in this user's startup apps).")
+          + (appSettings?.autoStartElsewhere ? T(' ⚠️ 지금은 다른 폴더의 Claude Office가 등록돼 있어요 — 껐다 켜면 이 위치로 바뀝니다.',
+            ' ⚠️ A Claude Office in another folder is registered now — turn this off and on to switch to this one.') : ''),
+        get: () => !!appSettings?.autoStart,
+        set: (v) => setAppSetting('autoStart', v),
+        enabled: () => !DEMO && !!appSettings },
+    ],
+  },
+  {
+    tab: 'system', title: T('버전 및 업데이트', 'Version & Update'),
     items: [
       { type: 'action', name: T('버전', 'Version'), pcOnly: true,
         desc: () => T(`현재 버전 v${appSettings?.version || '?'} — 새 버전이 나오면 [업데이트] 버튼으로 앱 안에서 바로 받아 설치합니다(GitHub 릴리스, SHA-256 무결성 확인).`,
           `Current version v${appSettings?.version || '?'} — when a new version is out, [Update] downloads and installs it (GitHub Releases, SHA-256 checked).`),
         label: () => (appSettings?.update?.newer ? (appSettings.update.canInstall ? T('업데이트', 'Update') : T('받으러 가기', 'Download')) : T('지금 확인', 'Check now')),
         run: () => (!appSettings.update?.newer ? send({ cmd: 'update-check' })
-          : appSettings.update.canInstall ? send({ cmd: 'update-install' })   // 앱이 "업데이트할까요?" 확인 창을 띄운다
+          : appSettings.update.canInstall ? send({ cmd: 'update-install' })
           : openUrl(appSettings.update.url)),
         enabled: () => appReady() && !['downloading', 'installing'].includes(appSettings.update?.install?.state), status: updateStatus },
       { type: 'toggle', name: T('새 버전 알림', 'New version alerts'), pcOnly: true,
-        desc: T('하루 두 번(그리고 설정을 열 때) GitHub에 새 릴리스가 있는지 확인하고, 새 버전당 한 번 알려 드립니다(전송 정보: 앱 버전뿐).',
-          'Asks GitHub twice a day (and when you open Settings) whether a new version is out and tells you once (only the app version is sent).'),
+        desc: T('설정한 주기마다(그리고 설정을 열 때) GitHub에 새 릴리스가 있는지 확인하고, 새 버전당 한 번 알려 드립니다(전송 정보: 앱 버전뿐).',
+          'Asks GitHub on the set schedule (and when you open Settings) whether a new version is out and tells you once (only the app version is sent).'),
         get: () => !!appSettings?.updateCheck, set: (v) => setAppSetting('updateCheck', v), enabled: appReady },
+      { type: 'choice', name: T('업데이트 확인 주기', 'Update check interval'), pcOnly: true, shown: () => !!appSettings?.updateCheck,
+        desc: T('새 버전이 나왔는지 백그라운드에서 자동으로 확인할 주기를 선택합니다.', 'Choose how often to check for updates in the background.'),
+        options: [
+          [1, T('1시간 (기본)', '1 hour (Default)')],
+          [5, T('5시간', '5 hours')],
+          [12, T('12시간', '12 hours')],
+        ],
+        get: () => appSettings?.updateIntervalHours ?? 1,
+        set: (v) => setAppSetting('updateIntervalHours', v),
+        enabled: appReady },
     ],
   },
   {
-    tab: 'about', title: T('백업·초기화', 'Backup & reset'),
+    tab: 'system', title: T('데이터 및 초기화', 'Data & Reset'),
     items: [
       { type: 'action', name: T('별명·메모 내보내기', 'Export nicknames & memos'), pcOnly: true,
         desc: T('직원에 붙여 둔 별명·메모와 사무실 이름을 JSON 파일 하나로 백업합니다(다른 PC로 옮길 때도 사용).', 'Saves nicknames, memos and the office name to one file (to move to another PC or back up).'),
@@ -11302,6 +11588,10 @@ const SETTINGS = [
       { type: 'action', name: T('별명·메모 가져오기', 'Import nicknames & memos'), pcOnly: true,
         desc: T('백업해 둔 JSON 파일을 읽어 지금 목록과 합칩니다. 이 PC에 없거나 파일 쪽이 더 최근에 수정된 항목만 반영됩니다.', 'Reads an exported file and merges it. Only entries missing here or edited later in the file are applied.'),
         label: () => T('가져오기', 'Import'), run: () => send({ cmd: 'share-import' }), enabled: appReady },
+      { type: 'action', name: T('데이터 폴더', 'Data folder'), pcOnly: true,
+        desc: T('설정(app.json), 별명·메모 사본(share.json), 휴대폰 연결 열쇠(cloud.json), 동작 기록(*.log)이 저장된 폴더를 탐색기로 엽니다. ⚠️ cloud.json 에는 암호 키가 들어 있으니 외부에 공유하지 마세요.',
+          'Opens the folder with settings (app.json), nicknames & memos (share.json), phone key (cloud.json) and logs (*.log). ⚠️ Never share cloud.json with anyone.'),
+        label: () => T('열기', 'Open'), run: () => send({ cmd: 'open-data-dir' }), enabled: appReady },
       { type: 'action', name: T('설정 초기화', 'Reset settings'), pcOnly: true,
         desc: T('직원 표시·창·알림 설정을 기본값으로 되돌립니다. 직접 적은 별명·메모·사무실 이름·팀 설정과 화면 언어, 휴대폰·Claude Code 연결, 자동 실행은 유지됩니다.',
           'Restores employee display, window and notification settings to defaults. Nicknames, memos, office and team names, language, phone connection, Claude Code connection and startup stay.'),
@@ -11309,16 +11599,12 @@ const SETTINGS = [
     ],
   },
   {
-    tab: 'about', title: T('문제 해결', 'Troubleshooting'),
+    tab: 'system', title: T('문제 해결', 'Troubleshooting'),
     items: [
       { type: 'action', name: T('문제 보고', 'Report a problem'), pcOnly: true,
         desc: T('GitHub 이슈 작성 페이지를 엽니다. 앱 버전·Windows·WebView2 버전만 양식에 채워지며 대화 기록은 일절 포함되지 않습니다.',
           'Opens a new GitHub issue with only version, Windows and WebView2 info filled in (no conversation content).'),
         label: () => T('GitHub에 쓰기', 'Write on GitHub'), run: () => send({ cmd: 'report-issue' }), enabled: () => !DEMO },
-      { type: 'action', name: T('데이터 폴더', 'Data folder'), pcOnly: true,
-        desc: T('설정(app.json), 별명·메모 사본(share.json), 휴대폰 연결 열쇠(cloud.json), 동작 기록(*.log)이 저장된 폴더를 탐색기로 엽니다. ⚠️ cloud.json 에는 암호 키가 들어 있으니 외부에 공유하지 마세요.',
-          'Opens the folder with settings (app.json), nicknames & memos (share.json), phone key (cloud.json) and logs (*.log). ⚠️ Never share cloud.json with anyone.'),
-        label: () => T('열기', 'Open'), run: () => send({ cmd: 'open-data-dir' }), enabled: appReady },
     ],
   },
 ];
@@ -11933,17 +12219,21 @@ const RENDER = {
 
 // 설정 팝업의 탭. dot(): 이 탭에 볼 것이 있으면 점을 찍는다
 const SETTINGS_TABS = [
-  { id: 'office', icon: '🏢', name: T('사무실', 'Office') },
-  { id: 'staff', icon: '👥', name: T('직원', 'Employees') },
-  { id: 'notify', icon: '🔔', name: T('알림', 'Notifications') },
-  { id: 'phone', icon: '📱', name: T('휴대폰', 'Phone'), dot: () => !!cloud?.enabled && cloud.state === 'error' },
-  { id: 'general', icon: '🖥️', name: T('일반', 'General') },
-  { id: 'about', icon: 'ℹ️', name: T('정보', 'About'), dot: () => !!appSettings?.update?.newer },
+  { id: 'display', icon: '🏢', name: T('화면 & 테마', 'Display & Theme') },
+  { id: 'widget', icon: '🪟', name: T('바탕화면 위젯', 'Desktop Widget') },
+  { id: 'music', icon: '🎵', name: T('코딩 BGM', 'Coding BGM') },
+  { id: 'staff', icon: '👥', name: T('직원 & 팀', 'Staff & Teams') },
+  { id: 'interior', icon: '🛋️', name: T('인테리어 & 펫', 'Interior & Pets') },
+  { id: 'notify', icon: '🔔', name: T('알림 & 휴대폰', 'Alerts & Mobile'), dot: () => !!cloud?.enabled && cloud.state === 'error' },
+  { id: 'system', icon: '🖥️', name: T('시스템 & 연동', 'System & Integration'), dot: () => !!appSettings?.update?.newer },
 ];
 
 const settingRows = [];
 const settingTabs = new Map();   // 탭 id → { tab, btn, pane }
-let settingsTab = store.get('settingsTab', 'office');   // 마지막에 본 탭
+let settingsTab = store.get('settingsTab', 'display');   // 마지막에 본 탭
+if (settingsTab === 'office') settingsTab = 'display';
+else if (settingsTab === 'phone') settingsTab = 'notify';
+else if (settingsTab === 'general' || settingsTab === 'about') settingsTab = 'system';
 
 function buildSettings() {
   for (const tab of SETTINGS_TABS) {
@@ -11983,6 +12273,9 @@ function buildSettings() {
 }
 
 function showSettingsTab(id, remember = true) {
+  if (id === 'office') id = 'display';
+  else if (id === 'phone') id = 'notify';
+  else if (id === 'general' || id === 'about') id = 'system';
   if (!settingTabs.has(id)) return;
   settingsTab = id;
   if (remember) store.set('settingsTab', id);
@@ -12544,6 +12837,21 @@ function renderLookBar(s) {
   if (!lookBarEl || REMOTE) return;
   const n = noteOf(s.id);
   const L = looks(s.id);
+  const curGender = getSessionGender(s.id);
+  const isMale = curGender === 'm';
+
+  const genderBtn = elem('button', 'mini' + (isMale ? ' male' : ' female'), isMale ? '👦 남' : '👧 여');
+  genderBtn.title = T(`성별: ${isMale ? '남자' : '여자'} (클릭하여 ${isMale ? '여자' : '남자'}로 전환)`, `Gender: ${isMale ? 'Male' : 'Female'} (Click to switch)`);
+  genderBtn.addEventListener('click', () => {
+    const nextG = isMale ? 'f' : 'm';
+    setNote(s.id, { gender: nextG });
+    renderLookBar(s);
+    lookCache.clear();
+    if (petOn()) renderPet();
+    if (appMode === 'office') renderCleanOffice();
+    send({ cmd: 'gender-update', id: s.id, gender: nextG });
+  });
+
   const roll = elem('button', 'mini', T('🎲 모습 바꾸기', '🎲 Change look'));
   roll.title = T('직원의 헤어·안경·옷 색상을 다른 조합으로 바꿉니다', 'Change hair, glasses, and outfit colors');
   roll.addEventListener('click', () => {
@@ -12563,14 +12871,17 @@ function renderLookBar(s) {
     });
     return b;
   });
-  const children = [roll, ...decos];
-  if (n.look || n.deco !== undefined) {
+  const children = [genderBtn, roll, ...decos];
+  if (n.look || n.deco !== undefined || n.gender) {
     const rst = elem('button', 'mini', '↺');
-    rst.title = T('원래 기본 모습·소품으로 되돌리기', 'Restore default look & item');
+    rst.title = T('원래 기본 모습·소품·성별로 되돌리기', 'Restore default look, item & gender');
     rst.addEventListener('click', () => {
-      setNote(s.id, { look: 0, deco: -1 });
+      setNote(s.id, { look: 0, deco: -1, gender: null });
       renderLookBar(s);
+      lookCache.clear();
       if (petOn()) renderPet();
+      if (appMode === 'office') renderCleanOffice();
+      send({ cmd: 'gender-update', id: s.id });
     });
     children.push(rst);
   }
@@ -13690,6 +14001,13 @@ if (REMOTE) {
     else if (m?.type === 'reset') resetScreenSettings();
     else if (m?.type === 'visible') windowHidden = !m.value;
     else if (m?.type === 'sound') playRetroSound(m.kind);
+    else if (m?.type === 'gender-update') {
+      if (m.gender) store.set('staff_gender', m.gender);
+      lookCache.clear();
+      if (WIDGET_WINDOW || petOn()) renderPet();
+      if (appMode === 'office') renderCleanOffice();
+      if (selectedId) renderPanel();
+    }
     else if (m?.type === 'app-mode') {
       if (m.mode && m.mode !== appMode) {
         setAppMode(m.mode, true);

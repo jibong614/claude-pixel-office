@@ -47,12 +47,12 @@ internal sealed class WidgetWindow : Window
     public const double MaxWidgetHeight = 840;
     public const double MiniBarWidth = 540;
     public const double MiniBarHeight = 44;
-    public const double WalkWidthLarge = 680;
-    public const double WalkWidthMedium = 540;
-    public const double WalkWidthSmall = 420;
-    public const double WalkHeightLarge = 190;
-    public const double WalkHeightMedium = 170;
-    public const double WalkHeightSmall = 150;
+    public const double WalkWidthLarge = 440;
+    public const double WalkWidthMedium = 380;
+    public const double WalkWidthSmall = 320;
+    public const double WalkHeightLarge = 110;
+    public const double WalkHeightMedium = 98;
+    public const double WalkHeightSmall = 88;
     private const double MinPetHeight = 40, MaxPetHeight = 840;
 
     private readonly WebView2 _web = new();
@@ -354,9 +354,9 @@ internal sealed class WidgetWindow : Window
         size ??= App.Settings.WidgetSize;
         return size switch
         {
-            "small" => GraphicSmall + 16,
-            "medium" => GraphicMedium + 16,
-            _ => GraphicLarge + 16
+            "small" => WalkHeightSmall,
+            "medium" => WalkHeightMedium,
+            _ => WalkHeightLarge
         };
     }
 

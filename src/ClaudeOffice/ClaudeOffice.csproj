@@ -12,9 +12,9 @@
     <RootNamespace>ClaudeOffice</RootNamespace>
     <Product>Claude Office</Product>
     <!-- 버전 규칙(요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0)은 CLAUDE.md, 기록은 docs/CHANGELOG.md -->
-    <Version>1.9.15</Version>
+    <Version>1.9.16</Version>
     <!-- 실행 파일 아이콘(탐색기·바로가기). 창 아이콘은 MainWindow.xaml 의 Icon -->
-    <ApplicationIcon>Assets\office.ico</ApplicationIcon>
+    <ApplicationIcon>Assets\office_a.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -44,7 +44,9 @@
   <!-- 아이콘: 사무실 화면의 픽셀아트 직원(Assets\office_pixel.png, 1배 그림)에서 tools\make-icon.ps1 -Pixel 로 만든다.
        휴대폰 앱 아이콘은 tools\make-app-icons.ps1 -Pixel -->
   <ItemGroup>
-    <Resource Include="Assets\office.ico" />
+    <Resource Include="Assets\office_a.ico" />
+    <Resource Include="Assets\office_b.ico" />
+    <Resource Include="Assets\office_c.ico" />
   </ItemGroup>
 
 </Project>

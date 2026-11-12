@@ -42,27 +42,34 @@
       <button id="hudSearchClear" title="지우기" data-en-title="Clear">✕</button>
     </div>
     <!-- 영어 화면이면 office.js 가 data-en(글)·data-en-title·data-en-ph 로 바꾼다 -->
-    <button id="btnSearch" title="직원 빠른 검색 (단축키: /)" data-en-title="Quick search employees (Shortcut: /)"><span class="px-icon px-search"></span></button>
-    <button id="btnPet" title="바탕화면 미니위젯 (단축키: M) — 직원을 바탕화면 구석에 꺼내 두고 실시간 모니터링" data-en-title="Desktop MiniWidget (Shortcut: M) — Pin employee to desktop corner for real-time monitoring"><span class="px-icon px-window"></span></button>
-    <button id="btnCoins" class="hud-coins" title="상점 & 보관함 열기 (단축키: S)" data-en-title="Current Coins — open shop (Shortcut: S)"><span class="px-icon px-coin"></span> <span id="hudCoins">0</span></button>
-    <button id="btnPin" title="항상 위에 표시" data-en-title="Always on top">📌</button>
-    <div class="hud-more-wrap">
-      <button id="btnMore" title="더 많은 메뉴 (근무일지·업적·브로드캐스트 등)" data-en-title="More Options">⋯</button>
-      <div id="hudMoreMenu" class="hud-more-menu" hidden>
-        <button id="btnWidget" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-doc"></span></span> <span class="m-txt" data-en="Compact list view (W)">목록형 작게 보기 (W)</span></button>
-        <button id="btnToday" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-chart"></span></span> <span class="m-txt" data-en="Work log (R)">근무 일지 (R)</span></button>
-        <button id="btnAchieve" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-trophy"></span></span> <span class="m-txt" data-en="Achievements (A)">업적 도감 (A)</span></button>
-        <button id="btnAway" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-moon"></span></span> <span class="m-txt" data-en="Toggle absent staff">퇴근 직원 표시</span></button>
-        <div class="more-divider"></div>
-        <div class="more-sec-lbl" data-en="Advanced Features">고급 기능</div>
-        <button id="btnBroadcast" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-broadcast"></span></span> <span class="m-txt" data-en="Broadcast (B)">전체 브로드캐스트 (B)</span></button>
-        <button id="btnNightShift" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-moon"></span></span> <span class="m-txt" data-en="Night Shift (N)">야간 당직 모드 (N)</span></button>
-        <button id="btnWrapped" class="more-item" type="button"><span class="m-icon">📊</span> <span class="m-txt" data-en="2026 Office Wrapped">연말 결산 Wrapped</span></button>
-        <div class="more-divider"></div>
-        <a id="btnIntroLink" href="intro.html" class="more-item" style="text-decoration:none;"><span class="m-icon">🌐</span> <span class="m-txt" data-en="Website &amp; Install">소개 페이지 &amp; 설치</span></a>
-      </div>
+    <div class="hud-group hud-tools-group">
+      <button id="btnSearch" title="직원 빠른 검색 (단축키: /)" data-en-title="Quick search employees (Shortcut: /)"><span class="px-icon px-search"></span></button>
+      <button id="btnPet" title="바탕화면 미니위젯 (단축키: M) — 직원을 바탕화면 구석에 꺼내 두고 실시간 모니터링" data-en-title="Desktop MiniWidget (Shortcut: M) — Pin employee to desktop corner for real-time monitoring"><span class="px-icon px-window"></span></button>
+      <button id="btnCoins" class="hud-coins" title="상점 & 보관함 열기 (단축키: S)" data-en-title="Current Coins — open shop (Shortcut: S)"><span class="px-icon px-coin"></span> <span id="hudCoins">0</span></button>
     </div>
-    <button id="btnSettings" title="설정" data-en-title="Settings"><span class="px-icon px-gear"></span></button>
+    <div class="hud-group hud-ctrl-group">
+      <button id="btnPin" title="항상 위에 표시" data-en-title="Always on top">📌</button>
+      <div class="hud-more-wrap">
+        <button id="btnMore" title="더 많은 메뉴 (근무일지·업적·브로드캐스트 등)" data-en-title="More Options">⋯</button>
+        <div id="hudMoreMenu" class="hud-more-menu" hidden>
+          <div class="more-sec-lbl" data-en="Work &amp; Views">💼 업무 &amp; 보기</div>
+          <button id="btnWidget" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-doc"></span></span> <span class="m-txt" data-en="Compact list view (W)">목록형 작게 보기 (W)</span></button>
+          <button id="btnToday" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-chart"></span></span> <span class="m-txt" data-en="Work log (R)">근무 일지 (R)</span></button>
+          <button id="btnBroadcast" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-broadcast"></span></span> <span class="m-txt" data-en="Broadcast (B)">전체 브로드캐스트 (B)</span></button>
+          <button id="btnAway" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-moon"></span></span> <span class="m-txt" data-en="Toggle absent staff">퇴근 직원 표시</span></button>
+          <div class="more-divider"></div>
+          <div class="more-sec-lbl" data-en="Office Life">☕ 오피스 라이프</div>
+          <button id="btnAchieve" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-trophy"></span></span> <span class="m-txt" data-en="Achievements (A)">업적 도감 (A)</span></button>
+          <button id="btnNightShift" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-moon"></span></span> <span class="m-txt" data-en="Night Shift (N)">야간 당직 모드 (N)</span></button>
+          <button id="btnShopQuick" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-coin"></span></span> <span class="m-txt" data-en="Furniture &amp; Cat Shop (S)">가구 &amp; 고양이 상점 (S)</span></button>
+          <button id="btnWrapped" class="more-item" type="button"><span class="m-icon">📊</span> <span class="m-txt" data-en="2026 Office Wrapped">연말 결산 Wrapped</span></button>
+          <div class="more-divider"></div>
+          <div class="more-sec-lbl" data-en="Info &amp; Links">🌐 안내 &amp; 바로가기</div>
+          <a id="btnIntroLink" href="intro.html" class="more-item" style="text-decoration:none;"><span class="m-icon">🌐</span> <span class="m-txt" data-en="Website &amp; Install">소개 페이지 &amp; 설치</span></a>
+        </div>
+      </div>
+      <button id="btnSettings" title="설정" data-en-title="Settings"><span class="px-icon px-gear"></span></button>
+    </div>
     <button id="btnHook" hidden>??</button>
     <button id="btnShop" hidden></button>
   </div>
@@ -384,30 +391,126 @@
   <div id="modeSelectModal" class="modal mode-blind-modal" hidden>
     <div class="mbox mode-select-box" role="dialog" aria-modal="true" aria-labelledby="msTitle">
       <div class="mhead mode-select-head">
-        <h2 id="msTitle" data-en="💼 Select Operation Mode">💼 시작 모드 선택</h2>
+        <h2 id="msTitle" data-en="💼 Welcome &amp; Setup: Display Modes">💼 시작 모드 및 서브화면 선택</h2>
         <button id="msClose" class="close" title="닫기" data-en-title="Close">✕</button>
       </div>
       <div class="mode-select-body">
-        <p class="mode-select-desc" data-en="Choose a display mode suitable for your work environment. You can change this anytime in Settings (⚙️).">
-          사무실 환경과 취향에 맞는 화면 모드를 선택해 주세요.<br>
+        <p class="mode-select-desc" data-en="Customize your main office view and desktop companion. You can change these anytime in Settings (⚙️).">
+          사무실 환경에 맞는 메인 화면과 바탕화면 서브화면(위젯)을 선택해 주세요.<br>
           <span class="dim">※ 설정(⚙️)에서 언제든지 다시 변경할 수 있습니다.</span>
         </p>
-        <div class="mode-cards">
-          <button type="button" class="mode-card" data-mode="basic">
-            <div class="mode-icon">🎮</div>
-            <div class="mode-info">
-              <div class="mode-title" data-en="Basic Mode (Pixel Office)">기본 모드 (픽셀 오피스)</div>
-              <div class="mode-sub" data-en="Adorable pixel characters, furniture decor, cats and Desktop MiniWidget.">도트 캐릭터, 가구 인테리어, 고양이와 바탕화면 미니위젯이 포함된 기본 모드</div>
-            </div>
-          </button>
-          <button type="button" class="mode-card" data-mode="office">
-            <div class="mode-icon">💼</div>
-            <div class="mode-info">
-              <div class="mode-title" data-en="Office Mode (No Game Graphics)">오피스 모드 (그래픽 요소 제외)</div>
-              <div class="mode-sub" data-en="Clean developer dashboard without gaming graphics. Perfect for company work.">캐릭터·가구 등 게임 요소를 제외한 깔끔한 비즈니스 대시보드 모드</div>
-            </div>
-          </button>
+
+        <!-- 1. 메인 화면 모드 -->
+        <div class="mode-section">
+          <div class="mode-section-title">
+            <span class="sec-num">1</span>
+            <span class="sec-text" data-en="Main Window Mode">메인 화면 모드</span>
+          </div>
+          <div class="main-mode-grid">
+            <label class="main-mode-card selected" data-mode="basic">
+              <input type="radio" name="mainMode" value="basic" checked class="mode-radio">
+              <div class="mode-card-preview">
+                <img src="shots/basic_office.png" alt="Basic Mode" loading="lazy">
+              </div>
+              <div class="mode-card-content">
+                <div class="mode-title-row">
+                  <span class="mode-badge-radio"></span>
+                  <span class="mode-title" data-en="Basic (Pixel Office)">기본 모드 (픽셀 오피스)</span>
+                </div>
+                <div class="mode-sub" data-en="Pixel art characters, furniture decor, and relaxing cat companions.">도트 캐릭터, 가구 인테리어, 고양이가 있는 따뜻한 픽셀 사무실</div>
+              </div>
+            </label>
+
+            <label class="main-mode-card" data-mode="office">
+              <input type="radio" name="mainMode" value="office" class="mode-radio">
+              <div class="mode-card-preview">
+                <img src="shots/office_mode.png" alt="Office Mode" loading="lazy">
+              </div>
+              <div class="mode-card-content">
+                <div class="mode-title-row">
+                  <span class="mode-badge-radio"></span>
+                  <span class="mode-title" data-en="Office Mode (Clean Dashboard)">오피스 모드 (비즈니스 대시보드)</span>
+                </div>
+                <div class="mode-sub" data-en="Clean developer dashboard without gaming graphics. Perfect for workplace.">캐릭터·가구 등 게임 요소를 제외한 깔끔한 비즈니스 대시보드</div>
+              </div>
+            </label>
+          </div>
         </div>
+
+        <!-- 2. 서브 화면 (바탕화면 위젯) -->
+        <div class="mode-section">
+          <div class="mode-section-title">
+            <span class="sec-num">2</span>
+            <span class="sec-text" data-en="Desktop Sub-Display (Widget)">바탕화면 서브화면 모드</span>
+            <span class="sec-tip" data-en="Real-time approval &amp; chat on desktop even when main window is closed">메인 창을 닫아도 바탕화면에서 실시간 승인·지시</span>
+          </div>
+          <div class="sub-mode-grid">
+            <!-- [ ] 없음 -->
+            <label class="sub-mode-card" data-sub="none">
+              <input type="radio" name="subMode" value="none" class="mode-radio">
+              <div class="sub-card-preview preview-none">
+                <div class="preview-none-box">
+                  <span class="preview-none-icon">🚫</span>
+                  <span class="preview-none-text" data-en="Tray Only">위젯 없음</span>
+                </div>
+              </div>
+              <div class="sub-card-info">
+                <div class="sub-title-row">
+                  <span class="mode-badge-radio"></span>
+                  <span class="sub-title" data-en="None (Tray only)">없음</span>
+                </div>
+                <div class="sub-desc" data-en="Only runs in Windows tray (🧑‍💻) silently without desktop widget.">바탕화면 위젯 없이 트레이에서만 조용히 대기</div>
+              </div>
+            </label>
+
+            <!-- [o] 미니위젯 (기본값) -->
+            <label class="sub-mode-card selected" data-sub="widget">
+              <input type="radio" name="subMode" value="widget" checked class="mode-radio">
+              <div class="sub-card-preview">
+                <img src="shots/widget.png" alt="MiniWidget" loading="lazy">
+              </div>
+              <div class="sub-card-info">
+                <div class="sub-title-row">
+                  <span class="mode-badge-radio"></span>
+                  <span class="sub-title" data-en="MiniWidget (Recommended)">미니위젯 (권장)</span>
+                </div>
+                <div class="sub-desc" data-en="Compact desk window in desktop corner with real-time approval &amp; chat.">바탕화면 구석에 캐릭터와 지시·승인 창 상시 상주</div>
+              </div>
+            </label>
+
+            <!-- [ ] 미니바 -->
+            <label class="sub-mode-card" data-sub="minibar">
+              <input type="radio" name="subMode" value="minibar" class="mode-radio">
+              <div class="sub-card-preview preview-minibar-wrap">
+                <img src="shots/minibar.png" alt="MiniBar" loading="lazy">
+              </div>
+              <div class="sub-card-info">
+                <div class="sub-title-row">
+                  <span class="mode-badge-radio"></span>
+                  <span class="sub-title" data-en="Mini-Bar">미니바</span>
+                </div>
+                <div class="sub-desc" data-en="Ultra-slim status bar docked to taskbar or screen edge.">작업표시줄 상단에 밀착되는 얇은 한 줄 상태바</div>
+              </div>
+            </label>
+
+            <!-- [ ] 산책모드 -->
+            <label class="sub-mode-card" data-sub="walk">
+              <input type="radio" name="subMode" value="walk" class="mode-radio">
+              <div class="sub-card-preview preview-walk-wrap">
+                <img src="shots/walk.png" alt="Walk Mode" loading="lazy">
+              </div>
+              <div class="sub-card-info">
+                <div class="sub-title-row">
+                  <span class="mode-badge-radio"></span>
+                  <span class="sub-title" data-en="Walk Mode (Shimeji)">산책모드</span>
+                </div>
+                <div class="sub-desc" data-en="Pixel character walks freely across desktop showing status bubbles.">화면 위를 자유롭게 걸어다니며 일하는 도트 동반자</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 3. 시작 시 자동 실행 -->
         <div class="mode-autostart-opt">
           <label class="mode-autostart-lbl" for="msAutoStart">
             <input type="checkbox" id="msAutoStart" checked>
@@ -417,8 +520,14 @@
             </div>
           </label>
         </div>
+
+        <!-- 4. 시작 버튼 -->
+        <div class="mode-action-row">
+          <button type="button" id="msApplyBtn" class="mode-apply-btn" data-en="🚀 Start with this setup">🚀 이 설정으로 시작하기</button>
+        </div>
       </div>
     </div>
+  </div>
   </div>
 
   <!-- 🕹️ 8비트 아케이드 미니게임 모달 -->

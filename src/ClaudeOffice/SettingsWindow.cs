@@ -78,7 +78,8 @@ internal sealed class SettingsWindow : Window
 
         try
         {
-            Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/Assets/office.ico"));
+            var iconKey = App.Settings.AppIcon is "b" or "c" ? App.Settings.AppIcon : "a";
+            Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri($"pack://application:,,,/Assets/office_{iconKey}.ico"));
         }
         catch { }
 

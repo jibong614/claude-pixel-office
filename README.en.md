@@ -235,7 +235,7 @@ No. The server only transmits AES-256-GCM encrypted binary blobs. The decryption
 ## 📄 License & Credits
 
 - Licensed under the [MIT License](LICENSE).
-- **Official App Icon**: The pixel-art employee at their desk (`src/ClaudeOffice/Assets/office_pixel.png`, `src/ClaudeOffice/wwwroot/icons/icon-192.png`) — MIT License
+- **Official App Icon**: Dedicated pixel-art icon (`src/ClaudeOffice/Assets/office_a.ico`, `src/ClaudeOffice/wwwroot/icons/icon-192.png`) — MIT License
 - All pixel art and office graphics are rendered dynamically in code on HTML5 Canvas without external image files.
 - QR Code generation: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 1.4.4 (MIT License).
 - "Claude" is a trademark of Anthropic. This project is not affiliated with Anthropic.

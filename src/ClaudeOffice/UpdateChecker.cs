@@ -15,7 +15,7 @@ internal sealed class UpdateChecker : IDisposable
     public const string ReleasesUrl = $"https://github.com/{Repo}/releases/latest";
 
     private static readonly TimeSpan FirstDelay = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan Interval = TimeSpan.FromHours(12);
+    private TimeSpan _interval = TimeSpan.FromHours(1);
 
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
     private readonly CancellationTokenSource _cts = new();
@@ -42,6 +42,11 @@ internal sealed class UpdateChecker : IDisposable
     /// <summary>확인을 마칠 때마다(새 버전이 없어도). 확인 스레드에서 불린다.</summary>
     public event Action? Checked;
 
+    public void SetInterval(TimeSpan interval)
+    {
+        if (interval > TimeSpan.Zero) _interval = interval;
+    }
+
     public void Start() => _ = Task.Run(async () =>
     {
         try
@@ -50,7 +55,7 @@ internal sealed class UpdateChecker : IDisposable
             while (!_cts.IsCancellationRequested)
             {
                 if (App.Settings.UpdateCheck) await CheckAsync();
-                await Task.Delay(Interval, _cts.Token);
+                await Task.Delay(_interval, _cts.Token);
             }
         }
         catch (OperationCanceledException) { }

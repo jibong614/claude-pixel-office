@@ -234,7 +234,7 @@ Claude Code 연결 훅을 등록하지 않으면 파일 수정 지연 시간으�
 ## 📄 라이선스 & 크레딧
 
 - 본 프로젝트는 [MIT License](LICENSE)에 따라 자유롭게 사용, 수정, 배포할 수 있습니다.
-- **공식 앱 아이콘**: 사무실 화면의 픽셀아트 직원 (`src/ClaudeOffice/Assets/office_pixel.png`, `src/ClaudeOffice/wwwroot/icons/icon-192.png`) — MIT License
+- **공식 앱 아이콘**: 오피스 전용 도트 아이콘 (`src/ClaudeOffice/Assets/office_a.ico`, `src/ClaudeOffice/wwwroot/icons/icon-192.png`) — MIT License
 - 픽셀 캐릭터 및 오피스 그래픽 에셋은 외부 이미지 없이 순수 자바스크립트 캔버스 코드로 렌더링됩니다.
 - QR 코드 생성: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 1.4.4 (MIT License).
 - "Claude"는 Anthropic의 상표이며, 본 프로젝트는 Anthropic과 공식적으로 관련이 없습니다.
