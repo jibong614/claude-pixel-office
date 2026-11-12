@@ -5535,3 +5535,129 @@ body.settings-window .scanline-overlay {
   image-rendering: crisp-edges;
   display: block;
 }
+
+/* ─────────────────────────── 🎵 로파이 오디오 믹서 콘솔 (v1.9.9) ─────────────────────────── */
+.lofi-mixer-wrap {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.lofi-sec-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+.lofi-track-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.lofi-track-btn {
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 7px 6px;
+  color: #cbd5e1;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.lofi-track-btn:hover {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  transform: translateY(-1px);
+}
+.lofi-track-btn.active {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.18);
+  color: #e0f2fe;
+}
+.lofi-track-btn.disabled {
+  opacity: 0.35;
+  filter: grayscale(0.8);
+  background: rgba(15, 23, 42, 0.5);
+}
+.lofi-track-btn.playing {
+  border-color: #4ade80 !important;
+  background: rgba(74, 222, 128, 0.2) !important;
+  color: #86efac !important;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.3);
+  font-weight: 700;
+}
+.lofi-tr-num {
+  font-size: 13px;
+  font-weight: 800;
+  font-family: monospace;
+}
+.lofi-tr-name {
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.lofi-now-playing-badge {
+  margin-top: 6px;
+  padding: 5px 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 5px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lofi-stem-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.lofi-stem-btn {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 8px 6px;
+  color: #94a3b8;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.lofi-stem-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.lofi-stem-btn .stem-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #64748b;
+  display: inline-block;
+  transition: background 0.15s ease;
+}
+.lofi-stem-btn.active {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: #38bdf8;
+  color: #f0f9ff;
+  font-weight: 600;
+}
+.lofi-stem-btn.active .stem-dot {
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+}

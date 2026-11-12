@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.7';
+const PAGE_VERSION = '1.9.9';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -2337,31 +2337,145 @@ function drawCoffeeTable(x, y, t) {
 }
 
 
-// ── 🎵 턴테이블 절차적 로파이 코딩 BGM 시스템 (v1.9.4) ──
+// ── 🎵 4트랙 스택 & 순차 재생 로파이 오디오 엔진 (v1.9.9) ──
+const LOFI_TRACKS = [
+  {
+    id: 1,
+    name: 'Midnight Coffee ☕',
+    enName: 'Midnight Coffee ☕',
+    barDuration: 2800,
+    chords: [
+      [146.83, 174.61, 220.00, 261.63, 329.63], // Dm9
+      [98.00, 174.61, 246.94, 329.63],          // G13
+      [130.81, 164.81, 196.00, 246.94, 293.66], // Cmaj9
+      [110.00, 174.61, 261.63, 329.63]          // Am7
+    ],
+    bass: [
+      [73.42, 0.0, 0.7], [110.00, 1.4, 0.4], [98.00, 2.1, 0.4],
+      [49.00, 0.0, 0.7], [98.00, 1.4, 0.4], [87.31, 2.1, 0.4],
+      [65.41, 0.0, 0.7], [98.00, 1.4, 0.4], [130.81, 2.1, 0.4],
+      [55.00, 0.0, 0.7], [110.00, 1.4, 0.4], [130.81, 2.1, 0.4]
+    ],
+    melody: [
+      [[440.0, 0.0, 0.4], [523.25, 0.5, 0.35], [587.33, 1.0, 0.6], [659.25, 1.8, 0.4], [523.25, 2.2, 0.4]],
+      [[493.88, 0.0, 0.5], [587.33, 0.6, 0.4], [659.25, 1.1, 0.5], [783.99, 1.8, 0.5], [587.33, 2.3, 0.35]],
+      [[523.25, 0.0, 0.6], [493.88, 0.7, 0.35], [440.0, 1.1, 0.4], [392.0, 1.6, 0.5], [523.25, 2.2, 0.4]],
+      [[440.0, 0.0, 0.5], [392.0, 0.6, 0.4], [329.63, 1.1, 0.5], [440.0, 1.8, 0.7]]
+    ]
+  },
+  {
+    id: 2,
+    name: 'City Lights 🌃',
+    enName: 'City Lights 🌃',
+    barDuration: 2800,
+    chords: [
+      [174.61, 220.00, 261.63, 329.63], // Fmaj7
+      [164.81, 196.00, 246.94, 293.66], // Em7
+      [146.83, 174.61, 220.00, 261.63], // Dm7
+      [130.81, 164.81, 196.00, 246.94]  // Cmaj7
+    ],
+    bass: [
+      [87.31, 0.0, 0.7], [130.81, 1.4, 0.4], [116.54, 2.1, 0.4],
+      [82.41, 0.0, 0.7], [123.47, 1.4, 0.4], [98.00, 2.1, 0.4],
+      [73.42, 0.0, 0.7], [110.00, 1.4, 0.4], [87.31, 2.1, 0.4],
+      [65.41, 0.0, 0.7], [98.00, 1.4, 0.4], [130.81, 2.1, 0.4]
+    ],
+    melody: [
+      [[523.25, 0.0, 0.5], [659.25, 0.6, 0.5], [698.46, 1.2, 0.4], [659.25, 1.7, 0.5], [523.25, 2.3, 0.4]],
+      [[493.88, 0.0, 0.5], [587.33, 0.6, 0.5], [659.25, 1.2, 0.5], [587.33, 1.8, 0.4], [493.88, 2.3, 0.4]],
+      [[440.0, 0.0, 0.5], [523.25, 0.6, 0.5], [587.33, 1.2, 0.5], [523.25, 1.8, 0.4], [440.0, 2.3, 0.4]],
+      [[392.0, 0.0, 0.6], [493.88, 0.7, 0.5], [523.25, 1.3, 0.8]]
+    ]
+  },
+  {
+    id: 3,
+    name: 'Sunny Morning ☀️',
+    enName: 'Sunny Morning ☀️',
+    barDuration: 2600,
+    chords: [
+      [196.00, 246.94, 293.66, 392.00], // G
+      [185.00, 220.00, 293.66, 370.00], // D/F#
+      [164.81, 196.00, 246.94, 329.63], // Em7
+      [130.81, 164.81, 196.00, 293.66]  // Cadd9
+    ],
+    bass: [
+      [98.00, 0.0, 0.6], [146.83, 1.3, 0.4], [130.81, 2.0, 0.4],
+      [92.50, 0.0, 0.6], [146.83, 1.3, 0.4], [110.00, 2.0, 0.4],
+      [82.41, 0.0, 0.6], [123.47, 1.3, 0.4], [98.00, 2.0, 0.4],
+      [65.41, 0.0, 0.6], [98.00, 1.3, 0.4], [130.81, 2.0, 0.4]
+    ],
+    melody: [
+      [[587.33, 0.0, 0.4], [659.25, 0.45, 0.35], [783.99, 0.9, 0.6], [659.25, 1.6, 0.4], [587.33, 2.1, 0.4]],
+      [[739.99, 0.0, 0.5], [587.33, 0.55, 0.4], [493.88, 1.1, 0.5], [587.33, 1.7, 0.5]],
+      [[659.25, 0.0, 0.5], [587.33, 0.55, 0.35], [493.88, 1.0, 0.4], [392.0, 1.5, 0.5], [493.88, 2.1, 0.4]],
+      [[523.25, 0.0, 0.5], [587.33, 0.6, 0.4], [659.25, 1.1, 0.5], [587.33, 1.8, 0.6]]
+    ]
+  },
+  {
+    id: 4,
+    name: 'Deep Flow 🌙',
+    enName: 'Deep Flow 🌙',
+    barDuration: 3000,
+    chords: [
+      [164.81, 196.00, 246.94, 293.66, 370.00], // Em9
+      [123.47, 146.83, 185.00, 220.00],          // Bm7
+      [130.81, 164.81, 196.00, 246.94],          // Cmaj7
+      [146.83, 185.00, 220.00, 246.94]           // D6
+    ],
+    bass: [
+      [82.41, 0.0, 0.8], [123.47, 1.5, 0.4], [98.00, 2.2, 0.4],
+      [61.74, 0.0, 0.8], [92.50, 1.5, 0.4], [73.42, 2.2, 0.4],
+      [65.41, 0.0, 0.8], [98.00, 1.5, 0.4], [130.81, 2.2, 0.4],
+      [73.42, 0.0, 0.8], [110.00, 1.5, 0.4], [146.83, 2.2, 0.4]
+    ],
+    melody: [
+      [[370.0, 0.0, 0.7], [392.0, 0.8, 0.4], [493.88, 1.3, 0.8], [440.0, 2.2, 0.4]],
+      [[370.0, 0.0, 0.6], [329.63, 0.7, 0.4], [293.66, 1.2, 0.8], [370.0, 2.1, 0.4]],
+      [[392.0, 0.0, 0.7], [493.88, 0.8, 0.5], [587.33, 1.4, 0.8]],
+      [[493.88, 0.0, 0.6], [440.0, 0.7, 0.4], [370.0, 1.2, 0.6], [329.63, 1.9, 0.8]]
+    ]
+  }
+];
+
 let lofiBgmState = {
   playing: false,
+  curTrackId: store.get('lofiCurTrack', 1),
+  barIndex: 0,
+  loopCount: 0,
+  activeTracks: store.get('lofiActiveTracks', [1, 2, 3, 4]),
+  layers: store.get('lofiLayers', { chords: true, melody: true, bass: true, drums: true }),
   timer: null,
-  step: 0,
-  crackleNode: null
+  crackleNode: null,
+  furniturePos: null
 };
 
+function getCurLofiTrack() {
+  return LOFI_TRACKS.find((t) => t.id === lofiBgmState.curTrackId) || LOFI_TRACKS[0];
+}
+
 function toggleTurntableLofi(b) {
+  if (b) lofiBgmState.furniturePos = { x: b.x, y: b.y };
   if (lofiBgmState.playing) {
     stopTurntableLofi();
     showToast(T('🔇 턴테이블 음악을 껐습니다.', '🔇 Turntable music paused.'), '🔇');
   } else {
     startTurntableLofi(b);
-    showToast(T('🎵 턴테이블에서 감미로운 로파이 코딩 비트가 흐릅니다! 🎶', '🎵 Playing chill lofi coding beats on turntable! 🎶'), '🎵');
+    const tr = getCurLofiTrack();
+    showToast(T(`🎵 ${tr.name} 로파이 코딩 비트 재생 중! 🎶`, `🎵 Playing ${tr.enName}! 🎶`), '🎵');
   }
 }
 
 function startTurntableLofi(b) {
+  if (b) lofiBgmState.furniturePos = { x: b.x, y: b.y };
   if (lofiBgmState.playing) stopTurntableLofi();
+
   const ctx = getRetroAudioCtx();
   if (!ctx) return;
   lofiBgmState.playing = true;
-  lofiBgmState.step = 0;
+  lofiBgmState.barIndex = 0;
+  lofiBgmState.loopCount = 0;
 
+  // 아날로그 LP 바이닐 크랙클 노이즈 버퍼
   try {
     const bufferSize = ctx.sampleRate * 2;
     const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
@@ -2376,7 +2490,7 @@ function startTurntableLofi(b) {
     filter.type = 'lowpass';
     filter.frequency.value = 850;
     const crackleGain = ctx.createGain();
-    crackleGain.gain.value = 0.15;
+    crackleGain.gain.value = 0.12;
     whiteNoise.connect(filter);
     filter.connect(crackleGain);
     crackleGain.connect(ctx.destination);
@@ -2384,56 +2498,295 @@ function startTurntableLofi(b) {
     lofiBgmState.crackleNode = whiteNoise;
   } catch {}
 
-  const chords = [
-    [146.83, 174.61, 220.00, 261.63, 329.63], // Dm9
-    [98.00, 174.61, 246.94, 329.63],          // G13
-    [130.81, 164.81, 196.00, 246.94, 293.66], // Cmaj9
-    [110.00, 174.61, 261.63, 329.63]          // Am7
-  ];
-
-  function playNextChord() {
+  // 마디 단위 스케줄러 루프
+  function scheduleNextBar() {
     if (!lofiBgmState.playing) return;
-    const chord = chords[lofiBgmState.step % chords.length];
-    lofiBgmState.step++;
+    const track = getCurLofiTrack();
+    const bar = lofiBgmState.barIndex % 4;
     const t0 = ctx.currentTime;
-    const chordDuration = 2.4;
+    const barSec = track.barDuration / 1000;
 
-    chord.forEach((freq, idx) => {
-      try {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        const filt = ctx.createBiquadFilter();
+    // 1. 🎹 코드 레이어 (Chords)
+    if (lofiBgmState.layers.chords) {
+      const chord = track.chords[bar];
+      const chordDuration = barSec * 0.9;
+      chord.forEach((freq, idx) => {
+        try {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const filt = ctx.createBiquadFilter();
 
-        osc.type = idx === 0 ? 'sine' : 'triangle';
-        osc.frequency.setValueAtTime(freq, t0 + idx * 0.03);
+          osc.type = idx === 0 ? 'sine' : 'triangle';
+          osc.frequency.setValueAtTime(freq, t0 + idx * 0.025);
 
-        filt.type = 'lowpass';
-        filt.frequency.setValueAtTime(700, t0);
-        filt.frequency.exponentialRampToValueAtTime(350, t0 + chordDuration);
+          filt.type = 'lowpass';
+          filt.frequency.setValueAtTime(680, t0);
+          filt.frequency.exponentialRampToValueAtTime(320, t0 + chordDuration);
 
-        gain.gain.setValueAtTime(0.001, t0);
-        gain.gain.linearRampToValueAtTime(0.045 / (chord.length * 0.5), t0 + 0.12 + idx * 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + chordDuration);
+          gain.gain.setValueAtTime(0.001, t0);
+          gain.gain.linearRampToValueAtTime(0.042 / (chord.length * 0.45), t0 + 0.12 + idx * 0.025);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t0 + chordDuration);
 
-        osc.connect(filt);
-        filt.connect(gain);
-        gain.connect(ctx.destination);
+          osc.connect(filt);
+          filt.connect(gain);
+          gain.connect(ctx.destination);
 
-        osc.start(t0 + idx * 0.03);
-        osc.stop(t0 + chordDuration);
-      } catch {}
-    });
+          osc.start(t0 + idx * 0.025);
+          osc.stop(t0 + chordDuration);
+        } catch {}
+      });
+    }
 
+    // 2. ✨ 멜로디 레이어 (Melody / Lead)
+    if (lofiBgmState.layers.melody && track.melody[bar]) {
+      const notes = track.melody[bar];
+      notes.forEach(([freq, beatOffset, dur]) => {
+        try {
+          const noteTime = t0 + beatOffset;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const filt = ctx.createBiquadFilter();
+
+          // 부드러운 5.5Hz 비브라토
+          const lfo = ctx.createOscillator();
+          const lfoGain = ctx.createGain();
+          lfo.frequency.setValueAtTime(5.5, noteTime);
+          lfoGain.gain.setValueAtTime(3.5, noteTime);
+          lfo.connect(lfoGain);
+          lfoGain.connect(osc.frequency);
+
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, noteTime);
+
+          filt.type = 'lowpass';
+          filt.frequency.setValueAtTime(1100, noteTime);
+
+          gain.gain.setValueAtTime(0.0001, noteTime);
+          gain.gain.linearRampToValueAtTime(0.032, noteTime + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, noteTime + dur);
+
+          osc.connect(filt);
+          filt.connect(gain);
+          gain.connect(ctx.destination);
+
+          lfo.start(noteTime);
+          osc.start(noteTime);
+          lfo.stop(noteTime + dur);
+          osc.stop(noteTime + dur);
+        } catch {}
+      });
+    }
+
+    // 3. 🎸 베이스 레이어 (Deep Synth Bass)
+    if (lofiBgmState.layers.bass && track.bass) {
+      const bIdx = bar * 3;
+      const bassNotes = track.bass.slice(bIdx, bIdx + 3);
+      bassNotes.forEach(([freq, beatOffset, dur]) => {
+        try {
+          const bTime = t0 + beatOffset;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const filt = ctx.createBiquadFilter();
+
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, bTime);
+
+          filt.type = 'lowpass';
+          filt.frequency.setValueAtTime(220, bTime);
+
+          gain.gain.setValueAtTime(0.001, bTime);
+          gain.gain.linearRampToValueAtTime(0.065, bTime + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, bTime + dur);
+
+          osc.connect(filt);
+          filt.connect(gain);
+          gain.connect(ctx.destination);
+
+          osc.start(bTime);
+          osc.stop(bTime + dur);
+        } catch {}
+      });
+    }
+
+    // 4. 🥁 심벌 & 드럼 비트 (츳츳츳 츠츠 츠츳츳 츠츠)
+    if (lofiBgmState.layers.drums) {
+      // (1) 스윙 하이햇 ('츳츳 츠츠' 패턴: 8분/16분 음표 스윙)
+      const hatOffsets = [0.0, 0.35, 0.7, 1.05, 1.25, 1.4, 1.75, 2.1, 2.45, 2.65];
+      hatOffsets.forEach((off, hIdx) => {
+        if (off >= barSec) return;
+        try {
+          const hTime = t0 + off;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const filt = ctx.createBiquadFilter();
+
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(8000 + (hIdx % 2) * 500, hTime);
+
+          filt.type = 'highpass';
+          filt.frequency.setValueAtTime(6500, hTime);
+
+          const hVol = (hIdx % 2 === 1) ? 0.016 : 0.009; // 강약 스윙
+          gain.gain.setValueAtTime(hVol, hTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, hTime + 0.045);
+
+          osc.connect(filt);
+          filt.connect(gain);
+          gain.connect(ctx.destination);
+
+          osc.start(hTime);
+          osc.stop(hTime + 0.05);
+        } catch {}
+      });
+
+      // (2) 부드러운 칠합 킥 (Beat 0, Beat 1.75)
+      [0.0, 1.75].forEach((kOff) => {
+        if (kOff >= barSec) return;
+        try {
+          const kTime = t0 + kOff;
+          const kOsc = ctx.createOscillator();
+          const kGain = ctx.createGain();
+          kOsc.type = 'sine';
+          kOsc.frequency.setValueAtTime(115, kTime);
+          kOsc.frequency.exponentialRampToValueAtTime(42, kTime + 0.09);
+
+          kGain.gain.setValueAtTime(0.12, kTime);
+          kGain.gain.exponentialRampToValueAtTime(0.001, kTime + 0.12);
+
+          kOsc.connect(kGain);
+          kGain.connect(ctx.destination);
+
+          kOsc.start(kTime);
+          kOsc.stop(kTime + 0.13);
+        } catch {}
+      });
+
+      // (3) 로파이 스네어 / 림샷 (Beat 1.4, Beat 2.45)
+      [1.4, 2.45].forEach((sOff) => {
+        if (sOff >= barSec) return;
+        try {
+          const sTime = t0 + sOff;
+          const sOsc = ctx.createOscillator();
+          const sGain = ctx.createGain();
+          const sFilt = ctx.createBiquadFilter();
+
+          sOsc.type = 'triangle';
+          sOsc.frequency.setValueAtTime(175, sTime);
+
+          sFilt.type = 'bandpass';
+          sFilt.frequency.setValueAtTime(1200, sTime);
+
+          sGain.gain.setValueAtTime(0.045, sTime);
+          sGain.gain.exponentialRampToValueAtTime(0.0001, sTime + 0.08);
+
+          sOsc.connect(sFilt);
+          sFilt.connect(sGain);
+          sGain.connect(ctx.destination);
+
+          sOsc.start(sTime);
+          sOsc.stop(sTime + 0.09);
+        } catch {}
+      });
+    }
+
+    // 턴테이블 위 부유 음표 파티클
     if (isFurniturePlaced('turntable')) {
-      const bx = b ? b.x : 32;
-      const by = b ? b.y : (WALL_H + 54);
+      const bx = lofiBgmState.furniturePos ? lofiBgmState.furniturePos.x : 32;
+      const by = lofiBgmState.furniturePos ? lofiBgmState.furniturePos.y : (WALL_H + 54);
       spawnHearts(bx + 7, by + 4, 'note');
     }
 
-    lofiBgmState.timer = setTimeout(playNextChord, 2800);
+    // 다음 마디 및 곡 진행 로직
+    lofiBgmState.barIndex++;
+    if (lofiBgmState.barIndex >= 4) {
+      lofiBgmState.barIndex = 0;
+      lofiBgmState.loopCount++;
+      // 한 곡당 4마디 루프 2회(약 22~24초) 연주 후 다음 활성화 트랙으로 순차 전환
+      if (lofiBgmState.loopCount >= 2) {
+        lofiBgmState.loopCount = 0;
+        advanceToNextLofiTrack();
+      }
+    }
+
+    // UI 갱신 (설정창 열려 있을 때 실시간 진행 표시)
+    if (settingsOpen) updateLofiUiDisplay();
+
+    lofiBgmState.timer = setTimeout(scheduleNextBar, track.barDuration);
   }
 
-  playNextChord();
+  scheduleNextBar();
+}
+
+function advanceToNextLofiTrack() {
+  const active = lofiBgmState.activeTracks && lofiBgmState.activeTracks.length > 0
+    ? lofiBgmState.activeTracks
+    : [1, 2, 3, 4];
+  const curIdx = active.indexOf(lofiBgmState.curTrackId);
+  const nextIdx = (curIdx + 1) % active.length;
+  lofiBgmState.curTrackId = active[nextIdx];
+  store.set('lofiCurTrack', lofiBgmState.curTrackId);
+}
+
+function selectLofiTrack(trackId, immediatePlay = true) {
+  lofiBgmState.curTrackId = trackId;
+  lofiBgmState.barIndex = 0;
+  lofiBgmState.loopCount = 0;
+  store.set('lofiCurTrack', trackId);
+
+  // 선택한 트랙이 비활성화 상태였다면 자동 활성화에 포함
+  if (!lofiBgmState.activeTracks.includes(trackId)) {
+    lofiBgmState.activeTracks.push(trackId);
+    lofiBgmState.activeTracks.sort((a, b) => a - b);
+    store.set('lofiActiveTracks', lofiBgmState.activeTracks);
+  }
+
+  if (immediatePlay) {
+    if (!lofiBgmState.playing) startTurntableLofi();
+    else {
+      if (lofiBgmState.timer) clearTimeout(lofiBgmState.timer);
+      startTurntableLofi();
+    }
+    const tr = getCurLofiTrack();
+    showToast(T(`▶ ${tr.name} 로 즉시 전환했습니다! 🎶`, `▶ Switched to ${tr.enName}! 🎶`), '🎵');
+  }
+  updateLofiUiDisplay();
+}
+
+function toggleLofiActiveTrack(trackId) {
+  let active = [...lofiBgmState.activeTracks];
+  if (active.includes(trackId)) {
+    if (active.length <= 1) {
+      showToast(T('⚠️ 최소 하나의 트랙은 켜져 있어야 합니다.', '⚠️ At least one track must be active.'), '⚠️');
+      return;
+    }
+    active = active.filter((id) => id !== trackId);
+  } else {
+    active.push(trackId);
+    active.sort((a, b) => a - b);
+  }
+  lofiBgmState.activeTracks = active;
+  store.set('lofiActiveTracks', active);
+
+  // 현재 재생 중이던 트랙이 꺼졌다면 남은 첫 번째 활성 트랙으로 이동
+  if (!active.includes(lofiBgmState.curTrackId)) {
+    lofiBgmState.curTrackId = active[0];
+    store.set('lofiCurTrack', active[0]);
+  }
+  updateLofiUiDisplay();
+}
+
+function toggleLofiLayer(layerKey) {
+  lofiBgmState.layers[layerKey] = !lofiBgmState.layers[layerKey];
+  store.set('lofiLayers', lofiBgmState.layers);
+  const labels = {
+    chords: T('🎹 코드', '🎹 Chords'),
+    melody: T('✨ 멜로디', '✨ Melody'),
+    bass: T('🎸 베이스', '🎸 Bass'),
+    drums: T('🥁 심벌/드럼', '🥁 Drums')
+  };
+  const on = lofiBgmState.layers[layerKey];
+  showToast(`${labels[layerKey] || layerKey} ${on ? T('켜짐', 'ON') : T('꺼짐', 'OFF')}`, on ? '🎶' : '🔇');
+  updateLofiUiDisplay();
 }
 
 function stopTurntableLofi() {
@@ -2443,6 +2796,14 @@ function stopTurntableLofi() {
     try { lofiBgmState.crackleNode.stop(0); } catch {}
     lofiBgmState.crackleNode = null;
   }
+  updateLofiUiDisplay();
+}
+
+let lofiUiUpdateCallbacks = [];
+function updateLofiUiDisplay() {
+  lofiUiUpdateCallbacks.forEach((cb) => {
+    try { cb(); } catch {}
+  });
 }
 
 function drawTurntable(x, y, t) {
@@ -4108,6 +4469,7 @@ function drawMonitor(mx, my, screen, t, seed) {
   R(mx + 8, my + 13, 2, 3, PAL.monitor);
   R(mx + 5, my + 16, 8, 1, PAL.monitor);
   const sx = mx + 2, sy = my + 2, sw = 14, sh = 9;
+  const safeSeed = Math.abs(seed | 0);
 
   switch (screen) {
     case 'off':
@@ -4115,7 +4477,9 @@ function drawMonitor(mx, my, screen, t, seed) {
       break;
     case 'saver': {   // 화면 보호기: 떠다니는 별
       R(sx, sy, sw, sh, '#1c2440');
-      P(sx + (((t / 260 + seed) % sw) | 0), sy + (((t / 410 + seed * 3) % sh) | 0), '#8fb0ff');
+      const starX = Math.abs((Math.floor(t / 260) + safeSeed) % (sw - 2)) + 1;
+      const starY = Math.abs((Math.floor(t / 410) + safeSeed * 3) % (sh - 2)) + 1;
+      P(sx + starX, sy + starY, '#8fb0ff');
       break;
     }
     case 'cursor':
@@ -4126,26 +4490,40 @@ function drawMonitor(mx, my, screen, t, seed) {
     case 'doc': {
       R(sx, sy, sw, sh, '#eef1f6');
       const off = tick(t, 600, 4);
-      for (let i = 0; i < 4; i++) R(sx + 1, sy + 1 + i * 2, 6 + ((seed >> (i + off)) % 7), 1, '#9aa6b8');
+      for (let i = 0; i < 4; i++) {
+        const w = clamp(4 + (Math.abs(safeSeed >> (i + off)) % 6), 2, sw - 3);
+        R(sx + 1, sy + 1 + i * 2, w, 1, '#9aa6b8');
+      }
       break;
     }
     case 'code': {
       R(sx, sy, sw, sh, '#1e2230');
       const n = tick(t, 260, 5) + 1;
       const colors = ['#ff8fb0', '#ffd27a', '#8fd0ff', '#a8e6a1'];
-      for (let i = 0; i < Math.min(4, n); i++) R(sx + 1 + (i % 2) * 2, sy + 1 + i * 2, 4 + ((seed >> i) % 7), 1, colors[i % 4]);
+      for (let i = 0; i < Math.min(4, n); i++) {
+        const indent = (i % 2) * 2;
+        const w = clamp(3 + (Math.abs(safeSeed >> i) % 6), 2, sw - 2 - indent);
+        R(sx + 1 + indent, sy + 1 + i * 2, w, 1, colors[i % 4]);
+      }
       break;
     }
     case 'term': {
       R(sx, sy, sw, sh, '#0b0f0b');
       const off = tick(t, 160, 4);
-      for (let i = 0; i < 4; i++) R(sx + 1, sy + 1 + ((i * 2 + off) % 8), 3 + ((seed >> (i + off)) % 9), 1, '#3cff7a');
+      for (let i = 0; i < 4; i++) {
+        const w = clamp(3 + (Math.abs(safeSeed >> (i + off)) % 8), 2, sw - 3);
+        const yOff = (i * 2 + off) % (sh - 2);
+        R(sx + 1, sy + 1 + yOff, w, 1, '#3cff7a');
+      }
       break;
     }
     case 'search': {
       R(sx, sy, sw, sh, '#eef1f6');
       R(sx, sy + 1 + tick(t, 350, 4) * 2, sw, 2, '#ffe28a');
-      for (let i = 0; i < 4; i++) R(sx + 1, sy + 1 + i * 2, 5 + ((seed >> i) % 6), 1, '#9aa6b8');
+      for (let i = 0; i < 4; i++) {
+        const w = clamp(4 + (Math.abs(safeSeed >> i) % 6), 2, sw - 3);
+        R(sx + 1, sy + 1 + i * 2, w, 1, '#9aa6b8');
+      }
       break;
     }
     case 'web':
@@ -9441,7 +9819,8 @@ const SETTINGS = [
           store.set('bgmAutoPlay', v);
           refreshSettings();
         }
-      }
+      },
+      { type: 'lofi_mixer', pcOnly: true }
     ],
   },
   {
@@ -9509,7 +9888,8 @@ const SETTINGS = [
           }
           store.set('bgmAutoPlay', v);
           refreshSettings();
-        } }, 
+        } },
+      { type: 'lofi_mixer', pcOnly: true },
       { type: 'toggle', name: T('방해 금지 시간대', 'Quiet hours'), pcOnly: true,
         desc: () => (appSettings?.quietEnabled
           ? T(`${appSettings.quietStart}시부터 ${appSettings.quietEnd}시까지는 PC 알림을 띄우지 않습니다.`, `No notifications from ${appSettings.quietStart}:00 to ${appSettings.quietEnd}:00.`)
@@ -9682,6 +10062,95 @@ const RENDER = {
       minus.disabled = v <= it.min;
       plus.disabled = v >= it.max;
     };
+  },
+
+  lofi_mixer(it, row) {
+    const wrap = elem('div', 'lofi-mixer-wrap');
+
+    // 1. 트랙 선택 및 순차 재생 바 [ 1 ] [ 2 ] [ 3 ] [ 4 ]
+    const trackSec = elem('div', 'lofi-track-sec');
+    const trackHead = elem('div', 'lofi-sec-title', T('🎶 플레이리스트 순차 재생 (번호 클릭: 켜기/끄기 또는 바로 듣기)', '🎶 Playlist Tracks (Click number to toggle / listen)'));
+    const trackBar = elem('div', 'lofi-track-bar');
+
+    const trackBtns = [];
+    LOFI_TRACKS.forEach((tr) => {
+      const btn = elem('button', 'lofi-track-btn');
+      btn.type = 'button';
+      btn.innerHTML = `<span class="lofi-tr-num">${tr.id}</span> <span class="lofi-tr-name">${T(tr.name, tr.enName)}</span>`;
+      btn.title = T(`클릭: [${tr.id}] 트랙 순차재생 포함/제외 (더블클릭/재생: 바로 점프)`, `Click to toggle track [${tr.id}]`);
+      btn.addEventListener('click', (e) => {
+        // 이미 켜진 상태에서 클릭 시 바로 그 곡 점프, 아니면 토글
+        if (lofiBgmState.activeTracks.includes(tr.id) && lofiBgmState.curTrackId !== tr.id) {
+          selectLofiTrack(tr.id, true);
+        } else {
+          toggleLofiActiveTrack(tr.id);
+        }
+      });
+      trackBar.append(btn);
+      trackBtns.push({ btn, trackId: tr.id });
+    });
+
+    const nowPlayingBadge = elem('div', 'lofi-now-playing-badge');
+
+    trackSec.append(trackHead, trackBar, nowPlayingBadge);
+
+    // 2. 4대 악기 스택 스위치 [코드] [멜로디] [베이스] [심벌/드럼]
+    const stemSec = elem('div', 'lofi-stem-sec');
+    const stemHead = elem('div', 'lofi-sec-title', T('🎛️ 악기 레이어 스택 (실시간 악기 온/오프)', '🎛️ Instrument Stems (Live Layer Toggle)'));
+    const stemGrid = elem('div', 'lofi-stem-grid');
+
+    const stemDefs = [
+      { key: 'chords', icon: '🎹', name: T('코드 (화음)', 'Chords') },
+      { key: 'melody', icon: '✨', name: T('멜로디 (리드)', 'Melody') },
+      { key: 'bass', icon: '🎸', name: T('베이스 (저음)', 'Bass') },
+      { key: 'drums', icon: '🥁', name: T('심벌 & 드럼', 'Cymbal/Drums') }
+    ];
+
+    const stemBtns = [];
+    stemDefs.forEach((stem) => {
+      const sBtn = elem('button', 'lofi-stem-btn');
+      sBtn.type = 'button';
+      sBtn.innerHTML = `<span class="stem-dot"></span> <span class="stem-ic">${stem.icon}</span> <span class="stem-nm">${stem.name}</span>`;
+      sBtn.addEventListener('click', () => toggleLofiLayer(stem.key));
+      stemGrid.append(sBtn);
+      stemBtns.push({ sBtn, key: stem.key });
+    });
+
+    stemSec.append(stemHead, stemGrid);
+
+    wrap.append(trackSec, stemSec);
+    row.append(wrap);
+
+    const updateUi = () => {
+      // 1. 트랙 버튼 상태 갱신
+      const active = lofiBgmState.activeTracks || [1, 2, 3, 4];
+      trackBtns.forEach(({ btn, trackId }) => {
+        const isAct = active.includes(trackId);
+        const isPlaying = lofiBgmState.playing && lofiBgmState.curTrackId === trackId;
+        btn.classList.toggle('active', isAct);
+        btn.classList.toggle('playing', isPlaying);
+        btn.classList.toggle('disabled', !isAct);
+      });
+
+      // 2. 현재 재생 중인 배지 텍스트
+      const curTr = getCurLofiTrack();
+      const statusIcon = lofiBgmState.playing ? '▶' : '⏸️';
+      const loopInfo = `(루프 ${lofiBgmState.barIndex + 1}/4)`;
+      nowPlayingBadge.textContent = lofiBgmState.playing
+        ? `${statusIcon} ${T('재생 중', 'Playing')}: [${curTr.id}] ${T(curTr.name, curTr.enName)} ${loopInfo} · ${active.length}${T('곡 순차 반복', ' tracks loop')}`
+        : `${statusIcon} ${T('정지됨 (턴테이블 꺼짐)', 'Stopped')} · [${curTr.id}] ${T(curTr.name, curTr.enName)} ${T('대기 중', 'ready')}`;
+
+      // 3. 스템 버튼 상태 갱신
+      stemBtns.forEach(({ sBtn, key }) => {
+        const on = !!lofiBgmState.layers[key];
+        sBtn.classList.toggle('active', on);
+      });
+    };
+
+    lofiUiUpdateCallbacks.push(updateUi);
+    updateUi();
+
+    return () => updateUi();
   },
 
   choice(it, row) {
