@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.9';
+const PAGE_VERSION = '1.9.10';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -2709,9 +2709,17 @@ function startTurntableLofi(b) {
     }
 
     // UI 갱신 (설정창 열려 있을 때 실시간 진행 표시)
-    if (settingsOpen) updateLofiUiDisplay();
+    try {
+      if (typeof settingsEl !== 'undefined' && settingsEl && !settingsEl.hidden) {
+        updateLofiUiDisplay();
+      }
+    } catch (e) {
+      console.warn('Lofi UI update error:', e);
+    }
 
-    lofiBgmState.timer = setTimeout(scheduleNextBar, track.barDuration);
+    if (lofiBgmState.playing) {
+      lofiBgmState.timer = setTimeout(scheduleNextBar, track.barDuration);
+    }
   }
 
   scheduleNextBar();
@@ -2786,7 +2794,12 @@ function toggleLofiLayer(layerKey) {
   };
   const on = lofiBgmState.layers[layerKey];
   showToast(`${labels[layerKey] || layerKey} ${on ? T('켜짐', 'ON') : T('꺼짐', 'OFF')}`, on ? '🎶' : '🔇');
+  if (on && !lofiBgmState.playing) {
+    startTurntableLofi();
+    store.set('bgmAutoPlay', true);
+  }
   updateLofiUiDisplay();
+  if (typeof refreshSettings === 'function') refreshSettings();
 }
 
 function stopTurntableLofi() {
@@ -9805,7 +9818,6 @@ const SETTINGS = [
       {
         type: 'toggle',
         name: T('🎵 로파이 코딩 BGM (OST)', '🎵 Lofi Coding BGM (OST)'),
-        pcOnly: true,
         desc: T('LP 턴테이블의 절차적 로파이 코딩 배경음악을 켜거나 끕니다.', 'Play or mute procedural chill lofi coding background music from the turntable.'),
         get: () => lofiBgmState.playing,
         set: (v) => {
@@ -9820,7 +9832,7 @@ const SETTINGS = [
           refreshSettings();
         }
       },
-      { type: 'lofi_mixer', pcOnly: true }
+      { type: 'lofi_mixer' }
     ],
   },
   {
@@ -9889,7 +9901,7 @@ const SETTINGS = [
           store.set('bgmAutoPlay', v);
           refreshSettings();
         } },
-      { type: 'lofi_mixer', pcOnly: true },
+      { type: 'lofi_mixer' },
       { type: 'toggle', name: T('방해 금지 시간대', 'Quiet hours'), pcOnly: true,
         desc: () => (appSettings?.quietEnabled
           ? T(`${appSettings.quietStart}시부터 ${appSettings.quietEnd}시까지는 PC 알림을 띄우지 않습니다.`, `No notifications from ${appSettings.quietStart}:00 to ${appSettings.quietEnd}:00.`)
@@ -10029,7 +10041,17 @@ const RENDER = {
     const sw = elem('button', 'switch');
     sw.setAttribute('role', 'switch');
     sw.setAttribute('aria-label', it.name);
-    sw.addEventListener('click', () => it.set(!it.get()));
+    sw.setAttribute('aria-checked', String(!!it.get()));
+    sw.addEventListener('click', () => {
+      const next = !it.get();
+      sw.setAttribute('aria-checked', String(next));
+      try {
+        it.set(next);
+      } catch (err) {
+        console.warn('Toggle set error:', err);
+      }
+      if (typeof refreshSettings === 'function') refreshSettings();
+    });
     row.append(sw);
     return (locked) => {
       sw.disabled = locked;
