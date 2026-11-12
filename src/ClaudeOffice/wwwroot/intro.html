@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="ko" class="lang-ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Pixel Office — 레트로 픽셀 사무실로 보는 Claude Code</title>
+  <meta name="description" content="Claude Code가 지금 무엇을 하는지, 내 승인을 기다리는지 레트로 픽셀 사무실로 한눈에 모니터링하는 Windows 데스크탑 동반자. BGM 플레이어, 고양이 키우기, 바탕화면 미니위젯, 모바일 원격 제어.">
+  <meta property="og:title" content="Claude Pixel Office — Retro Pixel Monitor for Claude Code">
+  <meta property="og:description" content="레트로 픽셀 사무실로 한눈에 모니터링하는 Claude Code. Lo-Fi BGM, 고양이 키우기, 바탕화면 미니위젯, 모바일 원격 제어.">
+  <meta property="og:image" content="shots/basic_office.png">
+  <meta property="og:url" content="https://jibong614.github.io/claude-pixel-office/">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="site.css">
+  <script>
+    (function () {
+      var l = (location.search.match(/[?&]lang=(ko|en)/) || [])[1];
+      if (!l) { try { l = localStorage.getItem('co-lang'); } catch (e) {} }
+      if (l !== 'ko' && l !== 'en') l = (navigator.language || 'en').toLowerCase().indexOf('ko') === 0 ? 'ko' : 'en';
+      document.documentElement.className = 'lang-' + l;
+      document.documentElement.lang = l;
+    })();
+  </script>
+</head>
+<body>
+
+<!-- 상단 네비게이션 -->
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <img class="brand-icon" src="icons/icon-192.png" alt="Claude Pixel Office">
+      <span>Claude Pixel Office</span>
+    </a>
+    <nav class="links">
+      <a href="#features"><span class="ko">주요 기능</span><span class="en">Features</span></a>
+      <a href="#bgm"><span class="ko">코딩 BGM</span><span class="en">BGM Player</span></a>
+      <a href="#office-life"><span class="ko">오피스 라이프</span><span class="en">Office Life</span></a>
+      <a href="#widget"><span class="ko">미니위젯</span><span class="en">MiniWidget</span></a>
+      <a href="#mobile"><span class="ko">모바일 제어</span><span class="en">Mobile</span></a>
+      <a href="#install"><span class="ko">설치하기</span><span class="en">Install</span></a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="right">
+      <a class="btn-github" href="https://github.com/jibong614/claude-pixel-office" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <span>GitHub</span>
+      </a>
+      <div class="lang-switch" role="group" aria-label="Language">
+        <button type="button" data-lang="ko">한국어</button>
+        <button type="button" data-lang="en">English</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- 히어로 섹션 -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-content">
+      <div class="pill-badge">
+        <span class="dot"></span>
+        <span class="ko">무료 오픈소스 · 최신 릴리스 <strong class="app-ver">v1.9.14</strong></span>
+        <span class="en">Free &amp; Open Source · Latest <strong class="app-ver">v1.9.14</strong></span>
+      </div>
+      <h1>
+        <span class="ko">Claude Code가 지금 뭘 하는지<br><em>한눈에</em> 보는 레트로 픽셀 사무실</span>
+        <span class="en">See What Claude Code Is Doing<br><em>At A Glance</em> in a Retro Pixel Office</span>
+      </h1>
+      <p class="lead">
+        <span class="ko">터미널을 오갈 필요 없이, 레트로 감성의 픽셀 직원들로 세션 상태, 도구 호출, 승인 대기, Git Diff를 실시간 모니터링하세요. 5곡의 감성 Lo-Fi BGM, 고양이 키우기, 바탕화면 미니위젯, 모바일 원격 제어까지 지원합니다.</span>
+        <span class="en">Monitor Claude Code sessions, tool calls, approvals, and Git diffs in a cozy retro pixel-art office. Features 5-track procedural Lo-Fi BGM, cat adoption, desktop MiniWidget, and mobile remote control.</span>
+      </p>
+      <div class="cta-group">
+        <button type="button" class="btn btn-primary" onclick="openInstallModal()">
+          <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5z"/></svg>
+          <span class="ko">내 PC에 설치하기 (원클릭)</span>
+          <span class="en">Install on PC (One-Click)</span>
+        </button>
+        <a class="btn btn-ghost" href="./?demo" target="_blank">
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          <span class="ko">🎮 웹에서 바로 체험하기 (Demo)</span>
+          <span class="en">🎮 Try Live Demo in Browser</span>
+        </a>
+      </div>
+      <div class="meta">
+        <span class="ko">Windows 10 / 11 지원 · .NET 8 · 무설치 포터블 &amp; 자동 설치 지원</span>
+        <span class="en">Windows 10/11 · .NET 8 · Portable ZIP &amp; 1-Click Installer</span>
+      </div>
+    </div>
+
+    <!-- 히어로 스크린샷 목업 -->
+    <div class="hero-shot">
+      <div class="hero-shot-inner">
+        <img src="shots/basic_office.png" alt="Claude Pixel Office 화면">
+      </div>
+      <div class="hero-shot-caption">
+        <span class="ko">▲ 실제 Claude Code 세션과 연동되어 실시간으로 움직이는 픽셀 사무실</span>
+        <span class="en">▲ Real-time animated pixel office synced directly with your Claude Code sessions</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 통계 배너 -->
+<div class="stats-banner">
+  <div class="wrap">
+    <div class="stats-grid">
+      <div class="stat-item">
+        <div class="num accent">45+</div>
+        <div class="lbl"><span class="ko">통과된 단위 테스트</span><span class="en">Automated Unit Tests</span></div>
+      </div>
+      <div class="stat-item">
+        <div class="num">5 + 3</div>
+        <div class="lbl"><span class="ko">Lo-Fi 명곡 &amp; YouTube 코딩음악</span><span class="en">Lo-Fi Tracks &amp; YouTube Mixes</span></div>
+      </div>
+      <div class="stat-item">
+        <div class="num accent">0.01s</div>
+        <div class="lbl"><span class="ko">실시간 승인 감지 속도</span><span class="en">Real-Time Approval Speed</span></div>
+      </div>
+      <div class="stat-item">
+        <div class="num">0%</div>
+        <div class="lbl"><span class="ko">유휴 시 CPU 점유율</span><span class="en">Idle CPU Usage</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 1. 메인 화면 & 비즈니스 모드 -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-tag">Workspace Visualization</span>
+      <h2>
+        <span class="ko">내 작업 환경에 맞는 <em>2가지 화면 모드</em></span>
+        <span class="en"><em>Two Distinct Modes</em> for Every Workflow</span>
+      </h2>
+      <p>
+        <span class="ko">아기자기한 레트로 픽셀 모드와 차분한 업무용 다크톤 대시보드를 자유롭게 오갈 수 있습니다.</span>
+        <span class="en">Switch seamlessly between a cozy retro pixel-art office and a clean dark business dashboard.</span>
+      </p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-card-media">
+          <img src="shots/basic_office.png" alt="픽셀 오피스 모드">
+        </div>
+        <div class="feature-card-body">
+          <h3><span class="ko">🧑‍💻 픽셀 오피스 모드</span><span class="en">🧑‍💻 Pixel Office Mode</span></h3>
+          <p>
+            <span class="ko">세션은 직원, 폴더는 팀 구역(카펫), 서브에이전트는 인턴 캐릭터로 시각화됩니다. 파일 읽기, 검색, 코드 작성 등 실제 수행 중인 도구가 귀여운 말풍선으로 뜹니다.</span>
+            <span class="en">Sessions appear as employees, folders as team rugs, and subagents as interns. Active tools show up in friendly pixel speech bubbles.</span>
+          </p>
+          <div class="feature-tags">
+            <span class="tag-badge">자율 행동 AI</span>
+            <span class="tag-badge">서브에이전트 인턴</span>
+            <span class="tag-badge">24시간 낮/밤 조명</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-card-media">
+          <img src="shots/office_mode.png" alt="비즈니스 대시보드 모드">
+        </div>
+        <div class="feature-card-body">
+          <h3><span class="ko">💼 비즈니스 대시보드 모드 (단축키 O)</span><span class="en">💼 Business Dashboard Mode (O)</span></h3>
+          <p>
+            <span class="ko">도트 그래픽 없이 깔끔한 다크톤(#0d0f17) 카드 그리드로 대화 상태와 최근 작업 내역을 전문적으로 확인하고, 더블클릭으로 콘솔 창으로 즉시 점프합니다.</span>
+            <span class="en">A dot-free, dark-toned card grid view for professional offices. Double-click any card to jump right into its IDE or terminal.</span>
+          </p>
+          <div class="feature-tags">
+            <span class="tag-badge">단일 다크톤</span>
+            <span class="tag-badge">원클릭 콘솔 점프</span>
+            <span class="tag-badge">토큰 &amp; 비용 통계</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2. 코딩 BGM 플레이어 -->
+<section id="bgm" style="background: rgba(255, 255, 255, 0.015);">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-tag">Coding BGM Player</span>
+      <h2>
+        <span class="ko">몰입을 돕는 <em>힐링 코딩 음악</em> 플레이어</span>
+        <span class="en">Focus-Enhancing <em>Coding BGM</em> Player</span>
+      </h2>
+      <p>
+        <span class="ko">Web Audio 합성 기반의 내장 Lo-Fi 5곡과 검증된 YouTube 인기 코딩음악 3선을 원하는 대로 골라 들으세요.</span>
+        <span class="en">Enjoy 5 procedurally generated Web Audio Lo-Fi tracks or switch to curated YouTube coding music streams.</span>
+      </p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-card-media">
+          <img src="shots/bgm_internal.png" alt="내장 Lo-Fi 플레이어 & 믹서">
+        </div>
+        <div class="feature-card-body">
+          <h3><span class="ko">🎹 내장 Lo-Fi 5곡 &amp; 4대 악기 실시간 믹서</span><span class="en">🎹 Built-in 5 Tracks &amp; 4-Stem Live Mixer</span></h3>
+          <p>
+            <span class="ko">칠합, 신스웨이브, 보사노바, 앰비언트, 16비트 레트로 아케이드까지 4분 서사의 5개 곡을 제공합니다. 코드, 멜로디, 베이스, 드럼 악기를 실시간으로 켜고 끌 수 있습니다.</span>
+            <span class="en">5 distinct 4-minute tracks (Lo-Fi, Synthwave, Bossa Nova, Ambient, 16-Bit Arcade) with live on/off controls for chords, melody, bass, and drums.</span>
+          </p>
+          <div class="feature-tags">
+            <span class="tag-badge">Web Audio 합성</span>
+            <span class="tag-badge">무손실 절차적 생성</span>
+            <span class="tag-badge">4대 악기 믹서</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-card-media">
+          <img src="shots/bgm_youtube.png" alt="YouTube 인기 코딩음악 연동">
+        </div>
+        <div class="feature-card-body">
+          <h3><span class="ko">📺 YouTube 인기 코딩음악 3선 &amp; 체크리스트</span><span class="en">📺 Curated YouTube Mixes &amp; Checklist</span></h3>
+          <p>
+            <span class="ko">수백만 명이 듣는 인기 코딩 음악 3선을 원클릭으로 연동합니다. 수직 체크리스트의 ✓ 체크 버튼으로 원하는 곡만 골라 순차 재생하거나 바로 점프할 수 있습니다.</span>
+            <span class="en">Stream top YouTube coding playlists with a one-click source toggle. Check or uncheck tracks with ✓ to control auto-playback loop.</span>
+          </p>
+          <div class="feature-tags">
+            <span class="tag-badge">유튜브 3~4시간 믹스</span>
+            <span class="tag-badge">수직 플레이리스트</span>
+            <span class="tag-badge">플로팅 미니 플레이어</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5곡 트랙 소개 바 -->
+    <div class="bgm-tracks">
+      <div class="bgm-track-card">
+        <div class="t-icon">☕</div>
+        <div class="t-name">Midnight Coffee</div>
+        <div class="t-genre">재즈 칠합 · 72 BPM</div>
+        <div class="t-spec">로즈 건반 + 더블베이스 + 바이닐 드럼</div>
+      </div>
+      <div class="bgm-track-card">
+        <div class="t-icon">🌆</div>
+        <div class="t-name">City Neon Drive</div>
+        <div class="t-genre">80s 신스웨이브 · 116 BPM</div>
+        <div class="t-spec">브라스 + 16분 롤링베이스 + 게이티드 스네어</div>
+      </div>
+      <div class="bgm-track-card">
+        <div class="t-icon">🌿</div>
+        <div class="t-name">Sunny Bossa</div>
+        <div class="t-genre">어쿠스틱 보사노바 · 122 BPM</div>
+        <div class="t-spec">나일론 기타 + 마림바 + 우든 림샷</div>
+      </div>
+      <div class="bgm-track-card">
+        <div class="t-icon">🌌</div>
+        <div class="t-name">Deep Orbit</div>
+        <div class="t-genre">스페이스 앰비언트 · 50 BPM</div>
+        <div class="t-spec">웜 드론 + 성간 차임 + 40Hz 서브 펄스</div>
+      </div>
+      <div class="bgm-track-card">
+        <div class="t-icon">🕹️</div>
+        <div class="t-name">Pixel Arcade</div>
+        <div class="t-genre">16비트 오락기 · 138 BPM</div>
+        <div class="t-spec">칩튠 아르페지오 + 영웅 리드 + 슬랩베이스</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. 오피스 라이프, 고양이 & 칸반 -->
+<section id="office-life">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-tag">Productivity &amp; Fun</span>
+      <h2>
+        <span class="ko">고양이 키우기 &amp; <em>실시간 칸반</em> 화이트보드</span>
+        <span class="en">Cat Adoption &amp; <em>Real-Time Kanban</em> Board</span>
+      </h2>
+      <p>
+        <span class="ko">작업을 완료해 코인을 모으고, 고양이를 입양해 키우며, 세션 대화에서 자동으로 정리되는 화이트보드 칸반을 확인하세요.</span>
+        <span class="en">Earn coins by finishing tasks, adopt a growing desk cat, and view live Kanban cards extracted automatically from sessions.</span>
+      </p>
+    </div>
+
+    <div class="tri-grid">
+      <div class="tri-card">
+        <div class="tri-icon">🐱</div>
+        <h3><span class="ko">고양이 3단계 입양 &amp; 모니터 착석</span><span class="en">3-Stage Cat Evolution</span></h3>
+        <p>
+          <span class="ko">아깽이 ➔ 캣초딩 ➔ 성묘로 자라며 책상과 모니터 위를 자유롭게 오갑니다. 클릭해 쓰다듬으면 행복한 골골송과 함께 애정 어린 생각 말풍선을 띄웁니다.</span>
+          <span class="en">Watch your kitten grow into a teen and adult cat that lounges on desks and monitor tops, purring happily when clicked.</span>
+        </p>
+      </div>
+
+      <div class="tri-card">
+        <div class="tri-icon">📋</div>
+        <h3><span class="ko">대화 자동 분석 3열 칸반 보드</span><span class="en">Live 3-Column Kanban Board</span></h3>
+        <p>
+          <span class="ko">화이트보드를 클릭하면 Claude Code 대화에서 추출된 할 일들이 To Do / In Progress / Done 카드로 실시간 분류되어 한눈에 파악됩니다.</span>
+          <span class="en">Click the whiteboard to see tasks automatically extracted from conversation transcripts into live To Do, In Progress, and Done columns.</span>
+        </p>
+      </div>
+
+      <div class="tri-card">
+        <div class="tri-icon">🏆</div>
+        <h3><span class="ko">30종 개발자 도전 과제 도감</span><span class="en">30 Challenge Badges &amp; Titles</span></h3>
+        <p>
+          <span class="ko">야간 코딩, 토큰 절약, 브로드캐스트 등 다채로운 미션을 달성하여 코인 보상을 받고 개발자 레벨업 칭호를 획득할 수 있습니다.</span>
+          <span class="en">Unlock achievements like Night Owl or Token Saver to claim coin rewards and earn prestigious developer titles.</span>
+        </p>
+      </div>
+    </div>
+
+    <div class="feature-grid" style="margin-top: 32px;">
+      <div class="feature-card">
+        <div class="feature-card-media"><img src="shots/shop_storage.png" alt="가구 및 고양이 상점"></div>
+        <div class="feature-card-body">
+          <h3><span class="ko">🛋️ 7종 인테리어 가구 &amp; 보관함</span><span class="en">🛋️ 7 Interactive Furniture Props</span></h3>
+          <p><span class="ko">LP 턴테이블, 마약 빈백, 아케이드 캐비닛 등 다양한 소품을 원하는 위치에 자유롭게 배치하세요.</span><span class="en">Customize your office space with vinyl turntables, beanbags, arcade machines, and rugs.</span></p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-media"><img src="shots/kanban_board.png" alt="실시간 화이트보드 칸반"></div>
+        <div class="feature-card-body">
+          <h3><span class="ko">📋 실시간 화이트보드 칸반</span><span class="en">📋 Whiteboard Kanban View</span></h3>
+          <p><span class="ko">터미널 로그를 일일이 읽지 않아도 진행 상황과 완료된 태스크를 보드로 명확하게 추적합니다.</span><span class="en">Track deliverables and active subtasks cleanly without scrolling through raw terminal logs.</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. 미니위젯 & 모바일 원격 제어 -->
+<section id="widget" style="background: rgba(255, 255, 255, 0.015);">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-tag">Desktop &amp; Remote Companion</span>
+      <h2>
+        <span class="ko">바탕화면 미니위젯 &amp; <em>휴대폰 원격 제어</em></span>
+        <span class="en">Desktop MiniWidget &amp; <em>Mobile Remote</em></span>
+      </h2>
+      <p>
+        <span class="ko">코딩 중에는 화면 구석의 초경량 위젯으로, 외출 중에는 휴대폰으로 안심하고 작업을 관리하세요.</span>
+        <span class="en">Keep an eye on tasks with a corner widget while coding, or manage everything from your phone when stepped away.</span>
+      </p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-card-media"><img src="shots/widget.png" alt="바탕화면 미니위젯"></div>
+        <div class="feature-card-body">
+          <h3><span class="ko">🪟 항상 위 바탕화면 미니위젯 &amp; 다이내믹 아일랜드</span><span class="en">🪟 Always-on-Top MiniWidget &amp; Island</span></h3>
+          <p>
+            <span class="ko">IDE 전체화면 뒤에 가려지지 않게 대표 직원을 화면 구석에 띄워 둡니다. 3단계 반응형 크기 조절과 상단 44px 초슬림 다이내믹 아일랜드 알약 모드를 지원합니다.</span>
+            <span class="en">Float your primary agent in the corner or collapse to an ultra-slim 44px top Dynamic Island pill with responsive font scaling.</span>
+          </p>
+          <div class="feature-tags">
+            <span class="tag-badge">3단계 반응형</span>
+            <span class="tag-badge">44px 다이내믹 아일랜드</span>
+            <span class="tag-badge">시메지 바닥 산책</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="feature-card" id="mobile">
+        <div class="feature-card-media"><img src="shots/mobile-approve.png" alt="모바일 원격 승인 및 Git Diff"></div>
+        <div class="feature-card-body">
+          <h3><span class="ko">📱 휴대폰 원격 제어 &amp; Git Diff 사전 검토</span><span class="en">📱 Mobile Remote &amp; Git Diff Review</span></h3>
+          <p>
+            <span class="ko">QR 코드 한 번만 스캔하면 앱 설치 없이 LTE/5G 어디서나 승인 대기를 확인하고, 수정될 코드 Git Diff를 직접 검토한 후 승인/거절할 수 있습니다. 🎙️ 음성 지시도 지원합니다.</span>
+            <span class="en">Scan a single QR code to review pre-approval Git diffs, approve tool runs, speak voice prompts, and trigger emergency stops from your phone.</span>
+          </p>
+          <div class="feature-tags">
+            <span class="tag-badge">E2E 종단간 암호화</span>
+            <span class="tag-badge">Git Diff 아코디언</span>
+            <span class="tag-badge">음성 지시 (Voice)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. 설치하기 섹션 -->
+<section id="install" class="install-sec">
+  <div class="wrap narrow">
+    <div class="sec-head">
+      <span class="sec-tag">Easy Installation</span>
+      <h2>
+        <span class="ko">내 PC에 <em>간편하게 설치</em>하기</span>
+        <span class="en"><em>Install Easily</em> on Windows</span>
+      </h2>
+      <p>
+        <span class="ko">원클릭 설치기 또는 터미널 1줄 명령어로 빠르게 설치하고 바탕화면 바로가기를 생성하세요.</span>
+        <span class="en">Get up and running in seconds with a 1-click batch installer or a single PowerShell command.</span>
+      </p>
+    </div>
+
+    <div class="install-box">
+      <div class="install-methods">
+        <!-- 방법 1: 원클릭 설치기 -->
+        <div class="install-card highlight">
+          <span class="badge-rec"><span class="ko">추천 · 원클릭</span><span class="en">Recommended</span></span>
+          <h3><span class="ko">🚀 원클릭 간편 설치기</span><span class="en">🚀 One-Click Installer</span></h3>
+          <p>
+            <span class="ko">다운로드된 설치기를 실행하면 PC에 안전하게 설치하고, 바탕화면에 바로가기 아이콘을 자동으로 생성해 드립니다.</span>
+            <span class="en">Downloads and installs the latest version to LocalAppData and automatically adds a Desktop shortcut icon.</span>
+          </p>
+          <ul class="install-steps">
+            <li><span class="ko">설치 위치: <code>%LOCALAPPDATA%\ClaudePixelOffice</code></span><span class="en">Location: <code>%LOCALAPPDATA%\ClaudePixelOffice</code></span></li>
+            <li><span class="ko">바탕화면 및 시작 메뉴 바로가기 아이콘 생성</span><span class="en">Creates Desktop &amp; Start Menu shortcuts</span></li>
+            <li><span class="ko">관리자 권한 없이 안전하게 독립 설치</span><span class="en">No admin password or UAC elevation required</span></li>
+          </ul>
+          <a class="btn btn-primary" href="ClaudePixelOffice-Setup.bat" download>
+            <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5z"/></svg>
+            <span class="ko">설치기 받기 (Setup.bat)</span>
+            <span class="en">Download Setup.bat</span>
+          </a>
+        </div>
+
+        <!-- 방법 2: 파워셸 1줄 & ZIP -->
+        <div class="install-card">
+          <h3><span class="ko">⚡ 터미널 1줄 설치</span><span class="en">⚡ 1-Line PowerShell</span></h3>
+          <p>
+            <span class="ko">PowerShell 콘솔에 아래 명령어를 복사해 붙여넣으면 즉시 설치 및 실행됩니다.</span>
+            <span class="en">Paste this single command into PowerShell to install and launch immediately.</span>
+          </p>
+          <div class="cmd-box">
+            <code>irm https://jibong614.github.io/claude-pixel-office/install.ps1 | iex</code>
+            <button type="button" class="cmd-copy-btn" onclick="copyInstallCmd(this)"><span class="ko">복사</span><span class="en">Copy</span></button>
+          </div>
+
+          <div style="margin-top: 24px; border-top: 1px solid var(--line); padding-top: 20px;">
+            <h4 style="margin: 0 0 8px; font-size: 15px;"><span class="ko">📦 무설치 포터블 ZIP</span><span class="en">📦 Portable ZIP</span></h4>
+            <p style="font-size: 13px; color: var(--muted); margin: 0 0 12px;">
+              <span class="ko">압축만 풀어서 바로 실행하는 순수 독립 실행 파일</span>
+              <span class="en">Extract and run immediately without any setup</span>
+            </p>
+            <a class="btn btn-ghost btn-sm" href="https://github.com/jibong614/claude-pixel-office/releases/latest" target="_blank" rel="noopener">
+              <span class="ko">최신 ZIP 다운로드 (GitHub Releases)</span>
+              <span class="en">Download ZIP from Releases</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-tag">FAQ</span>
+      <h2><span class="ko">자주 묻는 질문</span><span class="en">Frequently Asked Questions</span></h2>
+    </div>
+
+    <div class="faq-list">
+      <details class="faq-item">
+        <summary class="faq-q">
+          <span class="ko">Q. Claude Code와 어떻게 연동되나요? 안전한가요?</span>
+          <span class="en">Q. How does it connect to Claude Code? Is it safe?</span>
+        </summary>
+        <div class="faq-a">
+          <span class="ko">Claude Code가 로컬 PC에 남기는 대화 기록(세션 트랜스크립트)을 읽기 전용으로 차분 감시(Delta Parsing)합니다. 외부 서버로 코드를 전송하지 않으며, 훅 연동 시에도 127.0.0.1 로컬 루프백에서만 동작하여 안전합니다.</span>
+          <span class="en">It safely parses local conversation transcripts generated by Claude Code in read-only mode. No code is transmitted to external servers, and all hooks run strictly over local loopback (127.0.0.1).</span>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary class="faq-q">
+          <span class="ko">Q. 시스템 요구사항이 어떻게 되나요?</span>
+          <span class="en">Q. What are the system requirements?</span>
+        </summary>
+        <div class="faq-a">
+          <span class="ko">Windows 10 또는 Windows 11이 필요하며, Windows 11에는 기본 내장된 WebView2 런타임 환경에서 동작합니다. 자체 포함 단일 실행 바이너리로 배포되므로 별도의 .NET 런타임 설치가 필요 없습니다.</span>
+          <span class="en">Windows 10 or 11 with WebView2 Runtime (pre-installed on Windows 11). Distributed as a self-contained single executable, so no separate .NET install is required.</span>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary class="faq-q">
+          <span class="ko">Q. 휴대폰 원격 연결 시 보안은 안전한가요?</span>
+          <span class="en">Q. Is mobile remote control secure?</span>
+        </summary>
+        <div class="faq-a">
+          <span class="ko">모바일 연결은 군사 등급 AES-256-GCM 종단간 암호화(E2EE)로 보호됩니다. 해독 키는 PC가 보여주는 QR 코드 주소의 <code>#hash</code> 뒤에만 존재하여 네트워크 패킷이나 중계 서버에 전혀 전송되지 않습니다.</span>
+          <span class="en">Mobile communication is locked with AES-256-GCM end-to-end encryption. The decryption key exists solely in the URL hash (#) on your phone and is never sent to the relay server.</span>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- 푸터 -->
+<footer>
+  <div class="wrap">
+    <div class="footer-links">
+      <a href="https://github.com/jibong614/claude-pixel-office" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/jibong614/claude-pixel-office/releases" target="_blank" rel="noopener"><span class="ko">릴리스 목록</span><span class="en">Releases</span></a>
+      <a href="./?demo" target="_blank"><span class="ko">웹 데모 체험</span><span class="en">Web Demo</span></a>
+      <a href="https://github.com/jibong614/claude-pixel-office/issues" target="_blank" rel="noopener"><span class="ko">버그 제보 / 이슈</span><span class="en">Issues</span></a>
+    </div>
+    <p>
+      <span class="ko">본 프로젝트는 MIT 라이선스에 따라 자유롭게 사용할 수 있는 오픈소스 프로젝트입니다. "Claude"는 Anthropic의 등록 상표이며, 본 프로그램은 Anthropic과 공식 제휴 관계가 없습니다.</span>
+      <span class="en">Open source under the MIT License. "Claude" is a trademark of Anthropic; this project is an independent community tool not affiliated with Anthropic.</span>
+    </p>
+    <p>© 2026 Claude Pixel Office · <span class="ko">제작: jibong614</span><span class="en">Made by jibong614</span></p>
+  </div>
+</footer>
+
+<!-- 설치 모달 팝업 -->
+<div id="installModal" class="modal-overlay" onclick="closeInstallModal(event)">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <button type="button" class="modal-close" onclick="closeInstallModal()">✕</button>
+    <h3 style="margin: 0 0 8px; font-size: 22px;">
+      <span class="ko">🧑‍💻 내 PC에 설치하기</span>
+      <span class="en">🧑‍💻 Install on Your PC</span>
+    </h3>
+    <p style="font-size: 14px; color: var(--muted); margin: 0 0 24px;">
+      <span class="ko">선호하는 방법으로 간편하게 설치해 보세요.</span>
+      <span class="en">Choose your preferred installation method.</span>
+    </p>
+
+    <!-- 옵션 1 -->
+    <div style="background: rgba(124, 58, 237, 0.12); border: 1px solid rgba(124, 58, 237, 0.4); border-radius: 16px; padding: 20px; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <strong style="font-size: 16px; color: #fff;">1. <span class="ko">원클릭 설치기 다운로드 (가장 추천)</span><span class="en">One-Click Setup Download</span></strong>
+        <span style="font-size: 11px; font-weight: 800; background: var(--purple); color: #fff; padding: 2px 8px; border-radius: 99px;">RECOMMENDED</span>
+      </div>
+      <p style="font-size: 13.5px; color: var(--muted); margin: 0 0 14px; line-height: 1.5;">
+        <span class="ko">설치기(<code>Setup.bat</code>)를 받아 실행하면 <code>%LOCALAPPDATA%\ClaudePixelOffice</code>에 자동 설치되고 <strong>바탕화면에 바로가기 아이콘</strong>이 생깁니다.</span>
+        <span class="en">Downloads <code>Setup.bat</code> to install into LocalAppData and automatically create a Desktop shortcut icon.</span>
+      </p>
+      <a class="btn btn-primary btn-sm" href="ClaudePixelOffice-Setup.bat" download style="width: 100%;">
+        <span class="ko">설치기 다운로드 (ClaudePixelOffice-Setup.bat)</span>
+        <span class="en">Download Setup.bat</span>
+      </a>
+    </div>
+
+    <!-- 옵션 2 -->
+    <div style="background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px; margin-bottom: 16px;">
+      <strong style="font-size: 15px; display: block; margin-bottom: 8px; color: #fff;">2. <span class="ko">터미널(PowerShell) 1줄 명령어로 설치</span><span class="en">PowerShell One-Liner</span></strong>
+      <div class="cmd-box" style="margin-bottom: 0;">
+        <code style="font-size: 12px;">irm https://jibong614.github.io/claude-pixel-office/install.ps1 | iex</code>
+        <button type="button" class="cmd-copy-btn" onclick="copyInstallCmd(this)"><span class="ko">복사</span><span class="en">Copy</span></button>
+      </div>
+    </div>
+
+    <!-- 옵션 3 -->
+    <div style="background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: flex; align-items: center; justify-content: space-between;">
+      <div>
+        <strong style="font-size: 14.5px; color: #fff;">3. <span class="ko">무설치 포터블 ZIP</span><span class="en">Portable ZIP</span></strong>
+        <div style="font-size: 12.5px; color: var(--faint);"><span class="ko">직접 압축 해제 후 실행</span><span class="en">Extract manually and run</span></div>
+      </div>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/jibong614/claude-pixel-office/releases/latest" target="_blank" rel="noopener">
+        <span class="ko">릴리스 다운로드</span><span class="en">Download ZIP</span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 다국어 토글 제어
+  (function () {
+    var root = document.documentElement;
+    function setLang(l) {
+      root.className = 'lang-' + l;
+      root.lang = l;
+      document.querySelectorAll('.lang-switch button').forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute('data-lang') === l ? 'true' : 'false');
+      });
+      try { localStorage.setItem('co-lang', l); } catch (e) {}
+    }
+    document.querySelectorAll('.lang-switch button').forEach(function (b) {
+      b.addEventListener('click', function () { setLang(b.getAttribute('data-lang')); });
+    });
+    setLang(root.className.indexOf('lang-en') >= 0 ? 'en' : 'ko');
+  })();
+
+  // 모달 제어
+  function openInstallModal() {
+    document.getElementById('installModal').classList.add('active');
+  }
+  function closeInstallModal(e) {
+    if (!e || e.target === document.getElementById('installModal') || e.target.classList.contains('modal-close')) {
+      document.getElementById('installModal').classList.remove('active');
+    }
+  }
+
+  // 명령어 복사 제어
+  function copyInstallCmd(btn) {
+    var cmd = 'irm https://jibong614.github.io/claude-pixel-office/install.ps1 | iex';
+    navigator.clipboard.writeText(cmd).then(function () {
+      var orig = btn.textContent;
+      btn.textContent = '✓ 복사됨!';
+      setTimeout(function () { btn.textContent = orig; }, 2000);
+    });
+  }
+
+  // 최신 버전 번호 동적 반영
+  fetch('https://api.github.com/repos/jibong614/claude-pixel-office/releases/latest')
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      if (j && j.tag_name) {
+        document.querySelectorAll('.app-ver').forEach(function (e) { e.textContent = j.tag_name; });
+      }
+    })
+    .catch(function () {});
+</script>
+</body>
+</html>

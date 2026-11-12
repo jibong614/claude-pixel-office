@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.13';
+const PAGE_VERSION = '1.9.14';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -60,6 +60,9 @@ window.addEventListener('hashchange', () => {
 });
 // 웹 서버(공용 페이지 GitHub Pages)에 올린 휴대폰 화면 — 연결 정보가 없으면 견본 대신 "QR을 찍어 주세요"를 보여 준다
 const HOSTED = location.protocol === 'https:' && location.hostname !== 'office.local';
+if (HOSTED && !remoteLink && !params.has('demo') && !params.has('app') && !params.has('pet') && !params.has('widget_window') && !params.has('settings_window')) {
+  location.replace('intro.html' + location.search + location.hash);
+}
 const REMOTE = !params.has('demo') && (!!remoteLink || HOSTED);
 const DEMO = !REMOTE && (!host || params.has('demo'));
 const WIDGET_WINDOW = params.has('pet') || params.has('widget_window') || params.has('miniwidget'); // 바탕화면 미니위젯 전용 창(?widget_window=1)

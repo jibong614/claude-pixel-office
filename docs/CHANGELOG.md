@@ -2,6 +2,17 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.14 — 2026-11-12
+- **🌐 🚀 GitHub.io 공식 웹사이트(랜딩 페이지) 구축 & 내 PC 원클릭 설치기 지원**:
+  - **공식 웹사이트(`intro.html` & `site.css`) 제작 (nori-launcher.github.io 레퍼런스)**:
+    - 다크 네온 감성의 반응형 모던 웹 디자인, Pretendard 폰트 및 한국어/English 실시간 전환
+    - 픽셀 오피스 ↔ 비즈니스 모드, 5곡 Lo-Fi 믹서 & YouTube 코딩음악, 고양이 육성/칸반, 미니위젯, 모바일 원격 제어 핵심 기능 쇼케이스 구성
+    - 접속 환경(일반 웹 방문 ➔ 공식 웹사이트, 휴대폰 QR ➔ 모바일 원격 제어, 데모 ➔ 웹 오피스 체험)에 따른 스마트 라우팅 적용
+  - **내 PC 원클릭 설치기(`ClaudePixelOffice-Setup.bat`) & 터미널 1줄 설치(`install.ps1`) 탑재**:
+    - 웹에서 버튼 하나로 다운로드하여 실행 시 확인을 거쳐 `%LOCALAPPDATA%\ClaudePixelOffice`에 자동 설치
+    - 설치 완료 시 Windows 바탕화면에 `Claude Pixel Office` 바로가기 아이콘 및 시작 메뉴 등록 자동화
+    - PowerShell 1줄 명령어(`irm https://.../install.ps1 | iex`) 복사 지원
+
 ## 1.9.13 — 2026-11-12
 - **📖 📸 GitHub 저장소 소개 페이지(README) 및 신규 기능 스크린샷 5종 전면 갱신**:
   - **신규 기능 고해상도 스크린샷 5종 추가 (`docs/screenshots/`)**:
