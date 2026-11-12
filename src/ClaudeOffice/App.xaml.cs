@@ -38,6 +38,34 @@ public partial class App : Application
     /// 데이터 폴더(훅 기록, 화면 설정, 휴대폰 보기 키). CLAUDEOFFICE_DATA_DIR 이 있으면 그곳 —
     /// 점검 도구(tools\pagetest.ps1)가 평소 쓰는 설정·키를 건드리지 않게 하려는 것.
     /// </summary>
+    private static Microsoft.Web.WebView2.Core.CoreWebView2Environment? _sharedEnv;
+    private static readonly System.Threading.SemaphoreSlim _envLock = new(1, 1);
+
+    /// <summary>
+    /// 프로세스 내 모든 창(메인창·위젯창·설정창)이 공유하는 단일 WebView2 환경.
+    /// 동일 UserDataFolder 를 쓰는 프로세스에서는 반드시 동일한 CoreWebView2Environment 인스턴스를 공유해야
+    /// 창이 뒤늦게 활성화될 때 RPC_E_DISCONNECTED (0x80010108) 오류가 발생하지 않는다.
+    /// </summary>
+    public static async Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment> GetSharedEnvironmentAsync()
+    {
+        if (_sharedEnv != null) return _sharedEnv;
+        await _envLock.WaitAsync();
+        try
+        {
+            return _sharedEnv ??= await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
+                null, Path.Combine(DataDir, "WebView2"));
+        }
+        finally
+        {
+            _envLock.Release();
+        }
+    }
+
+    public static void ResetSharedEnvironment()
+    {
+        _sharedEnv = null;
+    }
+
     public static string DataDir { get; } =
         Environment.GetEnvironmentVariable("CLAUDEOFFICE_DATA_DIR") is { Length: > 0 } dir
             ? dir

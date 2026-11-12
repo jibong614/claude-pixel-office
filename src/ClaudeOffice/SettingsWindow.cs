@@ -177,8 +177,17 @@ internal sealed class SettingsWindow : Window
         try
         {
             _web.DefaultBackgroundColor = System.Drawing.Color.Transparent;
-            var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(App.DataDir, "WebView2"));
-            await _web.EnsureCoreWebView2Async(env);
+            var env = await App.GetSharedEnvironmentAsync();
+            try
+            {
+                await _web.EnsureCoreWebView2Async(env);
+            }
+            catch (System.Runtime.InteropServices.COMException ex) when ((uint)ex.HResult == 0x80010108)
+            {
+                App.ResetSharedEnvironment();
+                env = await App.GetSharedEnvironmentAsync();
+                await _web.EnsureCoreWebView2Async(env);
+            }
         }
         catch (WebView2RuntimeNotFoundException)
         {

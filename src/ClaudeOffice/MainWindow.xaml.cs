@@ -711,8 +711,18 @@ public partial class MainWindow : Window
         try
         {
             Web.DefaultBackgroundColor = System.Drawing.Color.FromArgb(255, 0x1E, 0x1B, 0x2E);   // 로딩 중 흰 화면 깜빡임 방지
-            var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(App.DataDir, "WebView2"));
-            await Web.EnsureCoreWebView2Async(env);
+            var env = await App.GetSharedEnvironmentAsync();
+            try
+            {
+                await Web.EnsureCoreWebView2Async(env);
+            }
+            catch (System.Runtime.InteropServices.COMException ex) when ((uint)ex.HResult == 0x80010108) // RPC_E_DISCONNECTED
+            {
+                // 다른 창(위젯 등)이 먼저 뜬 상태에서 메인 창 활성화 시 RPC 연결 끊김 복구 재시도
+                App.ResetSharedEnvironment();
+                env = await App.GetSharedEnvironmentAsync();
+                await Web.EnsureCoreWebView2Async(env);
+            }
         }
         catch (WebView2RuntimeNotFoundException)
         {
@@ -722,8 +732,14 @@ public partial class MainWindow : Window
             ExitApp();
             return;
         }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MainWindow] WebView2 initialization error: {ex}");
+            return;
+        }
 
         var core = Web.CoreWebView2;
+        if (core == null) return;
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsZoomControlEnabled = false;
 #if !DEBUG
@@ -1015,6 +1031,27 @@ public partial class MainWindow : Window
 
                     break;
 
+                case "icon-style":
+                    if (root.TryGetProperty("style", out var istElem) && istElem.GetString() is { Length: > 0 } ist)
+                    {
+                        var iconMsg = JsonSerializer.Serialize(new { type = "icon-style", style = ist });
+                        _widgetWindow?.Post(iconMsg);
+                        _widgetWindow?.ReloadLanguage();
+                        Post(iconMsg);
+                    }
+                    break;
+                case "scanline-setting":
+                    {
+                        var scMsg = JsonSerializer.Serialize(new
+                        {
+                            type = "scanline-setting",
+                            enabled = root.TryGetProperty("enabled", out var enElem) && enElem.GetBoolean(),
+                            style = root.TryGetProperty("style", out var stElem) ? stElem.GetString() : "soft"
+                        });
+                        _widgetWindow?.Post(scMsg);
+                        Post(scMsg);
+                    }
+                    break;
                 case "pet-backdrop":
                     if (!App.DemoMode && root.TryGetProperty("noBg", out var pbd))
                     {

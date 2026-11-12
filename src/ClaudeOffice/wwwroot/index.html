@@ -19,6 +19,7 @@
 </head>
 <body>
   <canvas id="office"></canvas>
+  <div id="scanlineOverlay" class="scanline-overlay" aria-hidden="true"></div>
   <!-- 💼 오피스 모드: 그래픽 요소를 제외한 깔끔한 비즈니스 대시보드 뷰 -->
   <div id="officeCleanView" class="office-clean-view" hidden>
     <div class="ocv-header">
@@ -42,7 +43,7 @@
     </div>
     <!-- 영어 화면이면 office.js 가 data-en(글)·data-en-title·data-en-ph 로 바꾼다 -->
     <button id="btnSearch" title="직원 빠른 검색 (단축키: /)" data-en-title="Quick search employees (Shortcut: /)"><span class="px-icon px-search"></span></button>
-    <button id="btnPet" title="바탕화면 미니위젯 (단축키: M) — 직원을 바탕화면 구석에 꺼내 두고 실시간 모니터링" data-en-title="Desktop MiniWidget (Shortcut: M) — Pin employee to desktop corner for real-time monitoring"><span class="px-icon px-laptop"></span></button>
+    <button id="btnPet" title="바탕화면 미니위젯 (단축키: M) — 직원을 바탕화면 구석에 꺼내 두고 실시간 모니터링" data-en-title="Desktop MiniWidget (Shortcut: M) — Pin employee to desktop corner for real-time monitoring"><span class="px-icon px-window"></span></button>
     <button id="btnCoins" class="hud-coins" title="상점 & 보관함 열기 (단축키: S)" data-en-title="Current Coins — open shop (Shortcut: S)"><span class="px-icon px-coin"></span> <span id="hudCoins">0</span></button>
     <button id="btnPin" title="항상 위에 표시" data-en-title="Always on top">📌</button>
     <div class="hud-more-wrap">
@@ -54,8 +55,9 @@
         <button id="btnAway" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-moon"></span></span> <span class="m-txt" data-en="Toggle absent staff">퇴근 직원 표시</span></button>
         <div class="more-divider"></div>
         <div class="more-sec-lbl" data-en="Advanced Features">고급 기능</div>
-        <button id="btnBroadcast" class="more-item" type="button"><span class="m-icon">📢</span> <span class="m-txt" data-en="Broadcast (B)">전체 브로드캐스트 (B)</span></button>
+        <button id="btnBroadcast" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-broadcast"></span></span> <span class="m-txt" data-en="Broadcast (B)">전체 브로드캐스트 (B)</span></button>
         <button id="btnNightShift" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-moon"></span></span> <span class="m-txt" data-en="Night Shift (N)">야간 당직 모드 (N)</span></button>
+        <button id="btnWrapped" class="more-item" type="button"><span class="m-icon">📊</span> <span class="m-txt" data-en="2026 Office Wrapped">연말 결산 Wrapped</span></button>
       </div>
     </div>
     <button id="btnSettings" title="설정" data-en-title="Settings"><span class="px-icon px-gear"></span></button>
@@ -129,7 +131,7 @@
         <div id="pLookBar" class="look-bar"></div>
         <dl>
           <dt data-en="Team">팀</dt><dd><span id="pTeam"></span> <span class="seat"><button id="pSeatL" class="mini" title="같은 팀 안에서 자리를 앞으로" data-en-title="Move the seat earlier in the team" data-en="◀ Seat">◀ 자리</button><button id="pSeatR" class="mini" title="같은 팀 안에서 자리를 뒤로" data-en-title="Move the seat later in the team" data-en="Seat ▶">자리 ▶</button></span></dd>
-          <dt data-en="Folder">작업 폴더</dt><dd><span id="pCwd" class="mono"></span> <button id="pOpenDir" class="mini" title="탐색기로 작업 폴더 열기" data-en-title="Open the working folder in Explorer" data-en="📂 Open">📂 열기</button></dd>
+          <dt data-en="Folder">작업 폴더</dt><dd><span id="pCwd" class="mono"></span> <button id="pOpenDir" class="mini" title="탐색기로 작업 폴더 열기" data-en-title="Open the working folder in Explorer" data-en="📁 Open">📁 열기</button></dd>
           <dt data-en="Runs in">실행 위치</dt><dd><span id="pEntry"></span> <button id="pFocusWin" class="mini" title="이 세션이 열려 있는 VS Code·터미널 창을 맨 앞으로 가져옵니다" data-en-title="Bring this session's VS Code or terminal window to the front" data-en="🖥️ Window">🖥️ 창으로</button></dd>
           <dt data-en="Model">모델</dt><dd id="pModel"></dd>
           <dt data-en="Branch">브랜치</dt><dd id="pBranch"></dd>
@@ -254,10 +256,12 @@
       <div class="ac-nav">
         <button type="button" id="acTabBadges" class="ac-tab active" data-en="🏅 Achievement Codex">🏅 도전 과제 도감</button>
         <button type="button" id="acTabRanks" class="ac-tab" data-en="🎖️ Employee Leaderboard">🎖️ 직원 직급 랭킹</button>
+        <button type="button" id="acTabDaily" class="ac-tab" data-en="📅 Daily Quests &amp; Streak">📅 일일 업무 &amp; 출석</button>
       </div>
       <div class="ac-body" id="acBody">
         <div id="acSecBadges" class="ac-sec"></div>
         <div id="acSecRanks" class="ac-sec" hidden></div>
+        <div id="acSecDaily" class="ac-sec" hidden></div>
       </div>
     </div>
   </div>
@@ -379,6 +383,7 @@
     <div class="mbox mode-select-box" role="dialog" aria-modal="true" aria-labelledby="msTitle">
       <div class="mhead mode-select-head">
         <h2 id="msTitle" data-en="💼 Select Operation Mode">💼 시작 모드 선택</h2>
+        <button id="msClose" class="close" title="닫기" data-en-title="Close">✕</button>
       </div>
       <div class="mode-select-body">
         <p class="mode-select-desc" data-en="Choose a display mode suitable for your work environment. You can change this anytime in Settings (⚙️).">
@@ -400,6 +405,58 @@
               <div class="mode-sub" data-en="Clean developer dashboard without gaming graphics. Perfect for company work.">캐릭터·가구 등 게임 요소를 제외한 깔끔한 비즈니스 대시보드 모드</div>
             </div>
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🕹️ 8비트 아케이드 미니게임 모달 -->
+  <div id="arcadeModal" class="modal" hidden>
+    <div class="mbox arcade-box" role="dialog" aria-modal="true" aria-labelledby="arcadeTitle">
+      <div class="mhead arcade-head">
+        <div class="arcade-head-info">
+          <h2 id="arcadeTitle">🕹️ <span data-en="8-Bit Bug Squash Arcade">8비트 버그 퇴치 작전</span></h2>
+          <span class="arcade-summary" data-en="Catch bugs to protect system integrity &amp; earn coins!">30초 동안 쏟아지는 버그를 잡아 시스템 무결성을 지키고 코인을 획득하세요!</span>
+        </div>
+        <div class="arcade-head-stats">
+          <span class="arcade-stat-pill">⏱️ <span id="arcadeTimer">30</span>s</span>
+          <span class="arcade-stat-pill">🎯 <span id="arcadeScore">0</span>점</span>
+          <span class="arcade-stat-pill">🔥 <span id="arcadeCombo">0</span>x</span>
+        </div>
+        <button id="arcadeClose" class="close" title="닫기" data-en-title="Close">✕</button>
+      </div>
+      <div class="arcade-body">
+        <canvas id="arcadeCanvas" width="560" height="340"></canvas>
+        <div id="arcadeOverlay" class="arcade-overlay">
+          <div id="arcadeMsgBox" class="arcade-msg-box">
+            <h3 id="arcadeMsgTitle">👾 버그 사냥 준비!</h3>
+            <p id="arcadeMsgDesc">날아다니는 버그(🐛 일반 10점, 🪲 메모리 20점, 👾 크리티컬 50점)를 클릭하세요.</p>
+            <div id="arcadeHighScoreWrap">🏆 최고 기록: <span id="arcadeHighScore">0</span>점</div>
+            <button id="arcadeStartBtn" class="arcade-start-btn" type="button">🎮 게임 시작</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📊 2026 Claude Office Wrapped (연말 결산) 모달 -->
+  <div id="wrappedModal" class="modal" hidden>
+    <div class="mbox wrapped-box" role="dialog" aria-modal="true" aria-labelledby="wrappedTitle">
+      <div class="mhead wrapped-head">
+        <div class="wrapped-head-info">
+          <h2 id="wrappedTitle">📊 <span data-en="2026 Claude Office Wrapped">2026 Claude Office Wrapped</span></h2>
+          <span class="wrapped-summary" data-en="Your Year in Review &amp; Coding Milestones">올 한 해 나와 Claude 에이전트들이 함께 이룬 빛나는 기록</span>
+        </div>
+        <button id="wrappedClose" class="close" title="닫기" data-en-title="Close">✕</button>
+      </div>
+      <div class="wrapped-body" id="wrappedBody">
+        <div class="wrapped-card" id="wrappedCard">
+          <div class="wrapped-card-badge">✨ 2026 ANNUAL REPORT</div>
+          <h3 class="wrapped-hero-title" id="wrappedDevTitle">🚀 불굴의 풀스택 아키텍트</h3>
+          <div class="wrapped-grid" id="wrappedGrid"></div>
+          <div class="wrapped-footer">
+            <button id="wrappedCopyBtn" class="wrapped-action-btn" type="button">📋 결과 복사하기</button>
+          </div>
         </div>
       </div>
     </div>

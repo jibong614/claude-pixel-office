@@ -47,6 +47,12 @@ internal sealed class WidgetWindow : Window
     public const double MaxWidgetHeight = 840;
     public const double MiniBarWidth = 540;
     public const double MiniBarHeight = 44;
+    public const double WalkWidthLarge = 680;
+    public const double WalkWidthMedium = 540;
+    public const double WalkWidthSmall = 420;
+    public const double WalkHeightLarge = 190;
+    public const double WalkHeightMedium = 170;
+    public const double WalkHeightSmall = 150;
     private const double MinPetHeight = 40, MaxPetHeight = 840;
 
     private readonly WebView2 _web = new();
@@ -77,10 +83,14 @@ internal sealed class WidgetWindow : Window
         _webSubclass = OnWebChildWndProc;
 
         Title = "Claude Office — MiniWidget";
-        Width = App.Settings.PetIsland ? MiniBarWidth : GetWidthForSize();
-        Height = App.Settings.PetIsland ? MiniBarHeight : GetSavedWidgetHeight();
+        Width = App.Settings.PetIsland ? MiniBarWidth
+              : App.Settings.PetWalk ? GetWalkWidthForSize()
+              : GetWidthForSize();
+        Height = App.Settings.PetIsland ? MiniBarHeight
+              : App.Settings.PetWalk ? GetWalkHeightForSize()
+              : GetSavedWidgetHeight();
         MinWidth = 240;
-        MaxWidth = 800;
+        MaxWidth = 900;
         MinHeight = MinPetHeight;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -208,8 +218,17 @@ internal sealed class WidgetWindow : Window
             {
                 _subclassed = SetWindowSubclass(_web.Handle, _webSubclass, 1, IntPtr.Zero);
             }
-            var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(App.DataDir, "WebView2"));
-            await _web.EnsureCoreWebView2Async(env);
+            var env = await App.GetSharedEnvironmentAsync();
+            try
+            {
+                await _web.EnsureCoreWebView2Async(env);
+            }
+            catch (System.Runtime.InteropServices.COMException ex) when ((uint)ex.HResult == 0x80010108)
+            {
+                App.ResetSharedEnvironment();
+                env = await App.GetSharedEnvironmentAsync();
+                await _web.EnsureCoreWebView2Async(env);
+            }
         }
         catch (WebView2RuntimeNotFoundException)
         {
@@ -317,6 +336,18 @@ internal sealed class WidgetWindow : Window
         };
     }
 
+    /// <summary>산책 모드(시메지) 전용 가상 와이드 너비: 넓은 공간을 자유롭게 활보할 수 있도록 확장</summary>
+    public static double GetWalkWidthForSize(string? size = null)
+    {
+        size ??= App.Settings.WidgetSize;
+        return size switch
+        {
+            "small" => WalkWidthSmall,
+            "medium" => WalkWidthMedium,
+            _ => WalkWidthLarge
+        };
+    }
+
     /// <summary>산책 모드(시메지) 전용 높이: 캐릭터 캔버스 및 상단 툴바 여백을 포함한 컴팩트 높이</summary>
     public static double GetWalkHeightForSize(string? size = null)
     {
@@ -408,19 +439,22 @@ internal sealed class WidgetWindow : Window
         }
         else if (App.Settings.PetWalk)
         {
-            Width = wWidth;
-            Height = GetWalkHeightForSize(_currentWidgetSize);
-            if ((App.Settings.MiniWidgetPlacement ?? App.Settings.MiniWidgetWindow) is { } w && OnScreen(w, wWidth, Height))
+            double walkW = GetWalkWidthForSize(_currentWidgetSize);
+            double walkH = GetWalkHeightForSize(_currentWidgetSize);
+            Width = walkW;
+            Height = walkH;
+            if ((App.Settings.MiniWidgetPlacement ?? App.Settings.MiniWidgetWindow) is { } w && OnScreen(w, wWidth, walkH))
             {
-                Left = w.Left;
                 double savedH = (w.Height >= MinWidgetHeight && w.Height <= MaxWidgetHeight) ? w.Height : GetDefaultHeightForMode();
                 double curBottom = w.Top + savedH;
-                Top = Math.Clamp(curBottom - Height, wa.Top + 8, wa.Bottom - Height - 8);
+                double curRight = w.Left + wWidth;
+                Left = Math.Clamp(curRight - walkW, wa.Left + 8, wa.Right - walkW - 8);
+                Top = Math.Clamp(curBottom - walkH, wa.Top + 8, wa.Bottom - walkH - 8);
             }
             else
             {
-                Left = wa.Right - Width - 20;
-                Top = wa.Bottom - Height - 20;
+                Left = wa.Right - walkW - 20;
+                Top = wa.Bottom - walkH - 20;
             }
         }
         else
@@ -445,11 +479,23 @@ internal sealed class WidgetWindow : Window
     {
         if (WindowState != WindowState.Normal) return;
         if (App.Settings.PetIsland) return; // 미니바는 높이 고정(44px)
+        double curH = ActualHeight > 0 ? ActualHeight : Height;
+        double bottom = Top + curH;
+        if (App.Settings.PetWalk)
+        {
+            double targetH = GetWalkHeightForSize(_currentWidgetSize);
+            if (Math.Abs(Height - targetH) < 1) return;
+            Height = targetH;
+            if (!App.Offscreen && bottom > 0)
+            {
+                var wa = SystemParameters.WorkArea;
+                Top = Math.Clamp(bottom - targetH, wa.Top + 8, wa.Bottom - targetH - 8);
+            }
+            return;
+        }
         double chrome = ActualHeight > 0 && _web.ActualHeight > 0 ? Math.Max(0, ActualHeight - _web.ActualHeight) : 0;
         double target = Math.Clamp(Math.Ceiling(contentHeight + chrome), MinWidgetHeight, MaxWidgetHeight);
         if (Math.Abs(Height - target) < 1) return;
-        double curH = ActualHeight > 0 ? ActualHeight : Height;
-        double bottom = Top + curH;
         Height = target;
         if (!App.Offscreen && bottom > 0)
         {
@@ -468,6 +514,14 @@ internal sealed class WidgetWindow : Window
             Width = MiniBarWidth;
             return;
         }
+        if (App.Settings.PetWalk)
+        {
+            double targetW = GetWalkWidthForSize(_currentWidgetSize);
+            double curRight = Left + Width;
+            Width = targetW;
+            Left = curRight - targetW;
+            return;
+        }
         Width = DefaultWidth;
     }
 
@@ -480,7 +534,7 @@ internal sealed class WidgetWindow : Window
 
     public void OnResizeStart(string edge)
     {
-        if (App.Settings.PetIsland) return; // 미니바는 리사이즈 불가
+        if (App.Settings.PetIsland || App.Settings.PetWalk) return; // 미니바 및 산책모드는 리사이즈 불가 (높이 고정)
         _dragStartTop = Top;
         _dragStartHeight = ActualHeight > 0 ? ActualHeight : Height;
     }
@@ -488,7 +542,7 @@ internal sealed class WidgetWindow : Window
     public void OnResizeMove(string edge, double deltaY)
     {
         if (WindowState != WindowState.Normal) return;
-        if (App.Settings.PetIsland) return;
+        if (App.Settings.PetIsland || App.Settings.PetWalk) return;
         var wa = SystemParameters.WorkArea;
         double maxH = (wa.Height > 0) ? Math.Min(MaxWidgetHeight, wa.Height - 40) : MaxWidgetHeight;
         double minH = GetMinHeightForCurrent(_currentAppMode, _currentWidgetSize);
@@ -517,7 +571,7 @@ internal sealed class WidgetWindow : Window
 
     public void OnResizeEnd(string edge, double deltaY)
     {
-        if (App.Settings.PetIsland) return;
+        if (App.Settings.PetIsland || App.Settings.PetWalk) return;
         OnResizeMove(edge, deltaY);
         SaveWidgetPlacement();
     }
@@ -598,6 +652,29 @@ internal sealed class WidgetWindow : Window
         double prevGraphicH = GetGraphicHeightForSize(prevSize);
         double newGraphicH = GetGraphicHeightForSize(newSize);
         double graphicDelta = newGraphicH - prevGraphicH;
+
+        if (App.Settings.PetWalk)
+        {
+            double targetWalkW = GetWalkWidthForSize(newSize);
+            double targetWalkH = GetWalkHeightForSize(newSize);
+            double curH2 = ActualHeight > 0 ? ActualHeight : Height;
+            double curW2 = ActualWidth > 0 ? ActualWidth : Width;
+            double fixedB = Top + curH2;
+            double fixedR = Left + curW2;
+            double targetT = fixedB - targetWalkH;
+            double targetL = fixedR - targetWalkW;
+            var waWalk = SystemParameters.WorkArea;
+            if (!App.Offscreen && waWalk.Height > 0 && waWalk.Width > 0)
+            {
+                targetT = Math.Clamp(targetT, waWalk.Top + 8, waWalk.Bottom - targetWalkH - 8);
+                targetL = Math.Clamp(targetL, waWalk.Left + 8, waWalk.Right - targetWalkW - 8);
+            }
+            Top = targetT;
+            Left = targetL;
+            Width = targetWalkW;
+            Height = targetWalkH;
+            return;
+        }
 
         if (App.Settings.PetIsland)
         {
@@ -690,8 +767,8 @@ internal sealed class WidgetWindow : Window
         }
         else if (walk)
         {
-            // 미니바/위젯 -> 산책 모드: 하단(Bottom) 및 우측(Right) 기준 정렬, 캐릭터 캔버스 높이 적용
-            double targetW = GetWidthForSize(_currentWidgetSize);
+            // 미니바/위젯 -> 산책 모드: 하단(Bottom) 및 우측(Right) 기준 정렬, 캐릭터 캔버스 높이 및 산책 전용 가상 와이드 너비 적용
+            double targetW = GetWalkWidthForSize(_currentWidgetSize);
             double targetH = GetWalkHeightForSize(_currentWidgetSize);
             double newTop = curBottom - targetH;
             double newLeft = curRight - targetW;
@@ -865,6 +942,19 @@ internal sealed class WidgetWindow : Window
     public void SaveWidgetPlacement()
     {
         if (App.Offscreen || App.DemoMode || !IsLoaded || Left <= -10000) return;
+        if (App.Settings.PetWalk)
+        {
+            // 산책 모드일 때는 창 위치(Left, Top)만 저장하고 일반 위젯 고유의 높이는 유지
+            App.Settings.MiniWidgetPlacement = new AppSettings.WindowPlacement
+            {
+                Left = Left,
+                Top = Top,
+                Width = GetWidthForSize(_currentWidgetSize),
+                Height = GetSavedWidgetHeight(),
+            };
+            try { App.Settings.Save(); } catch { }
+            return;
+        }
         double h = ActualHeight > 0 ? ActualHeight : Height;
         double savedH = (h >= MinWidgetHeight && h <= MaxWidgetHeight) ? h : GetSavedWidgetHeight();
         App.Settings.MiniWidgetPlacement = new AppSettings.WindowPlacement

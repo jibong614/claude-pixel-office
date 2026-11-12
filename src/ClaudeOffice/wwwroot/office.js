@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.8.6';
+const PAGE_VERSION = '1.9.7';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1274,6 +1274,113 @@ const COIN_KEY = STORE_PREFIX + 'coins';
 const FURNITURE_KEY = STORE_PREFIX + 'furniture';
 const OFFICE_CAT_KEY = STORE_PREFIX + 'office_cat_state';
 
+
+// ── 🎨 오피스 비주얼 인테리어 테마 시스템 (v1.9.4) ──
+const OFFICE_THEMES = {
+  default: {
+    id: 'default',
+    name: '클래식 오피스',
+    enName: 'Classic Office',
+    swatches: ['#3d3558', '#6f5139'],
+    pal: {
+      wall: '#3d3558', wallStripe: '#38304f', wainscot: '#2f2843', wainscotHi: '#4a4068', base: '#221d33',
+      floorA: '#6f5139', floorB: '#674b35', floorLine: '#57402e',
+      plaque: '#5a3d26', plaqueIn: '#7d5536'
+    }
+  },
+  cyberpunk: {
+    id: 'cyberpunk',
+    name: '사이버펑크 네온',
+    enName: 'Cyberpunk Neon',
+    swatches: ['#1b1433', '#00f0ff'],
+    pal: {
+      wall: '#1b1433', wallStripe: '#251b47', wainscot: '#120d24', wainscotHi: '#00f0ff', base: '#090614',
+      floorA: '#16192b', floorB: '#1a1f36', floorLine: '#ff007f',
+      plaque: '#2a1b4e', plaqueIn: '#3e2475'
+    }
+  },
+  cozy_wood: {
+    id: 'cozy_wood',
+    name: '따스한 우드 카페',
+    enName: 'Cozy Wood Cafe',
+    swatches: ['#443831', '#7d532c'],
+    pal: {
+      wall: '#443831', wallStripe: '#3c312a', wainscot: '#2e2520', wainscotHi: '#5c4b42', base: '#211a16',
+      floorA: '#7d532c', floorB: '#734c27', floorLine: '#5c3c1e',
+      plaque: '#4a2f1c', plaqueIn: '#6b4529'
+    }
+  },
+  hanok: {
+    id: 'hanok',
+    name: '고즈넉한 한옥',
+    enName: 'Traditional Hanok',
+    swatches: ['#e6ded3', '#995c35'],
+    pal: {
+      wall: '#e6ded3', wallStripe: '#d8cfc2', wainscot: '#5c3a21', wainscotHi: '#8b5a2b', base: '#3d2514',
+      floorA: '#995c35', floorB: '#8c522e', floorLine: '#6b3d1f',
+      plaque: '#3d2514', plaqueIn: '#5c3a21'
+    }
+  },
+  space: {
+    id: 'space',
+    name: '스페이스 정거장',
+    enName: 'Space Station',
+    swatches: ['#1e2638', '#38bdf8'],
+    pal: {
+      wall: '#1e2638', wallStripe: '#161d2d', wainscot: '#101624', wainscotHi: '#38bdf8', base: '#0a0e17',
+      floorA: '#2b354c', floorB: '#252e42', floorLine: '#0284c7',
+      plaque: '#1e293b', plaqueIn: '#334155'
+    }
+  }
+};
+
+function getCurOfficeTheme() {
+  const tid = store.get('officeTheme', 'default');
+  return OFFICE_THEMES[tid] || OFFICE_THEMES.default;
+}
+
+function setOfficeTheme(tid) {
+  if (!OFFICE_THEMES[tid]) return;
+  store.set('officeTheme', tid);
+  markQuest('theme_stylist');
+  showToast(T(`🎨 "${T(OFFICE_THEMES[tid].name, OFFICE_THEMES[tid].enName)}" 테마가 적용되었습니다!`, `🎨 Applied "${T(OFFICE_THEMES[tid].name, OFFICE_THEMES[tid].enName)}" theme!`), '🎨');
+  playRetroSound('buy');
+  renderShopModal();
+}
+
+function feedCatTreat(type) {
+  const treats = store.get('officeTreats', { churu: 0, catnip: 0 });
+  if ((treats[type] || 0) <= 0) {
+    showToast(T('보유한 간식이 없습니다! 상점에서 먼저 구매해주세요.', 'No treats available! Buy from shop.'), '⚠️');
+    return;
+  }
+  treats[type]--;
+  store.set('officeTreats', treats);
+
+  playRetroSound('cat');
+  playRetroSound('purr');
+  recordDailyQuestProgress('daily_cat', 1);
+  markQuest('cat_treat_master');
+
+  for (const cat of (officeCats || [])) {
+    spawnHearts(cat.x + 4, cat.y, 'heart');
+    spawnHearts(cat.x + 6, cat.y - 2, 'sparkle');
+    if (type === 'churu') {
+      officeCatState.growthBonus = officeCatState.growthBonus || {};
+      officeCatState.growthBonus[cat.type] = (officeCatState.growthBonus[cat.type] || 0) + 15;
+    }
+    cat.state = 'walk';
+    cat.vx = cat.dir * (type === 'catnip' ? 2.2 : 1.2);
+  }
+  saveOfficeCatState();
+
+  const msg = type === 'churu'
+    ? T('🐟 츄르를 맛있게 챱챱 먹었습니다! 골골송을 부르며 애교를 부립니다. 💕 (+성장 보너스)', '🐟 Enjoyed the delicious Churu treat! Purring happily. 💕')
+    : T('🌿 캣닢 파우더를 솔솔 뿌렸습니다! 고양이들이 뒹굴뒹굴 신나게 활보합니다! 🐾', '🌿 Sprinkled catnip! Cats are tumbling and dashing happily! 🐾');
+  showToast(msg, type === 'churu' ? '🐟' : '🌿');
+  renderShopModal();
+}
+
 const CAT_BREEDS = {
   cheese: {
     id: 'cheese',
@@ -1331,6 +1438,34 @@ const CAT_BREEDS = {
       eye: '#38bdf8',
       eyeR: '#fbbf24',
       ear: '#fbcfe8',
+    },
+  },
+  mackerel: {
+    id: 'mackerel',
+    name: '고등어태비 「호야」',
+    enName: 'Mackerel Tabby "Hoya"',
+    defaultName: '호야',
+    palette: {
+      base: '#6b665c',
+      dark: '#3d3830',
+      white: '#f5f5f5',
+      nose: '#f472b6',
+      eye: '#84cc16',
+      ear: '#fb7185',
+    },
+  },
+  russian_blue: {
+    id: 'russian_blue',
+    name: '러시안블루 「라떼」',
+    enName: 'Russian Blue "Latte"',
+    defaultName: '라떼',
+    palette: {
+      base: '#64748b',
+      dark: '#334155',
+      white: '#94a3b8',
+      nose: '#475569',
+      eye: '#10b981',
+      ear: '#cbd5e1',
     },
   },
 };
@@ -1744,7 +1879,7 @@ const SHOP_ITEMS = [
     name: '턱시도 「까망이」 입양',
     enName: 'Adopt Tuxedo "Kkamang"',
     price: 150,
-    icon: '🐈‍⬛',
+    icon: '🐱',
     desc: '하얀 양말을 신은 젠틀한 냥이. 개발자의 모니터 위를 가장 좋아합니다. (화장실 & 식기 필요)',
     enDesc: 'Gentleman cat with white socks. Loves sleeping on monitors. (Requires Litter Box & Bowls)',
     reqItems: ['cat_litter_box', 'cat_food_bowl'],
@@ -1770,10 +1905,122 @@ const SHOP_ITEMS = [
     name: '터키시앙고라 「구름이」 입양',
     enName: 'Adopt White "Gureum"',
     price: 180,
-    icon: '🤍',
+    icon: '🐱',
     desc: '신비로운 오드아이를 가진 새하얀 고양이. 도도하면서도 쓰다듬기를 좋아합니다. (화장실 & 식기 필요)',
     enDesc: 'White fur with charming odd-eyes. Elegant and loves gentle pats. (Requires Litter Box & Bowls)',
     reqItems: ['cat_litter_box', 'cat_food_bowl'],
+  },
+  {
+    id: 'cat_adopt_mackerel',
+    catGroup: 'cat',
+    catType: 'mackerel',
+    catName: '호야',
+    name: '고등어태비 「호야」 입양',
+    enName: 'Adopt Mackerel Tabby "Hoya"',
+    price: 170,
+    icon: '🐱',
+    desc: '영리하고 호기심 많은 토종 고등어냥. 책상 위를 날렵하게 뛰어넘습니다. (화장실 & 식기 필요)',
+    enDesc: 'Smart & agile mackerel tabby. Loves jumping between desks. (Requires Litter Box & Bowls)',
+    reqItems: ['cat_litter_box', 'cat_food_bowl'],
+  },
+  {
+    id: 'cat_adopt_russian_blue',
+    catGroup: 'cat',
+    catType: 'russian_blue',
+    catName: '라떼',
+    name: '러시안블루 「라떼」 입양',
+    enName: 'Adopt Russian Blue "Latte"',
+    price: 200,
+    icon: '🐱',
+    desc: '은빛 털과 에메랄드 눈망울의 귀족 냥이. 조용히 집사 곁을 지킵니다. (화장실 & 식기 필요)',
+    enDesc: 'Noble cat with silver-blue fur & emerald eyes. Stays quietly by your side. (Requires Litter Box & Bowls)',
+    reqItems: ['cat_litter_box', 'cat_food_bowl'],
+  },
+
+  // ── 🍖 고양이 간식 & 소모품 (v1.9.4) ──
+  {
+    id: 'cat_churu',
+    catGroup: 'treat',
+    name: '🐟 프리미엄 츄르 간식',
+    enName: 'Premium Churu Treat',
+    price: 25,
+    icon: '🐟',
+    desc: '고양이들의 특급 영양 간식! 급여 시 모든 고양이에게 하트 폭발과 골골송, +50 보너스 성장치를 선물합니다.',
+    enDesc: 'Beloved cat paste treat! Gives hearts, purrs, and +50 bonus growth points to all cats.',
+  },
+  {
+    id: 'cat_catnip',
+    catGroup: 'treat',
+    name: '🌿 특급 캣닢 파우더',
+    enName: 'Organic Catnip Powder',
+    price: 30,
+    icon: '🌿',
+    desc: '은은한 캣닢 향기! 냥이들의 스트레스를 해소하고 기분 좋은 우다다를 유도합니다.',
+    enDesc: 'Fragrant catnip powder! Relieves stress and induces joyful room dashes.',
+  },
+
+  // ── 🎨 사무실 인테리어 테마 (v1.9.4) ──
+  {
+    id: 'theme_cyberpunk',
+    catGroup: 'theme',
+    name: '사이버펑크 네온 테마',
+    enName: 'Cyberpunk Neon Theme',
+    price: 250,
+    icon: '🌆',
+    desc: '심야 코딩 감성의 다크 바이올렛 벽지와 네온 사이언/마젠타 발광 그리드 바닥재.',
+    enDesc: 'Dark violet cyber walls and glowing neon cyan/magenta grid flooring.',
+  },
+  {
+    id: 'theme_cozy_wood',
+    catGroup: 'theme',
+    name: '따스한 우드 카페 테마',
+    enName: 'Cozy Wood Cafe Theme',
+    price: 200,
+    icon: '☕',
+    desc: '향긋한 커피 향이 어울리는 따뜻한 원목 브라운 벽면과 고급 마루 바닥재.',
+    enDesc: 'Warm natural wood walls and parquet floor creating a peaceful cafe atmosphere.',
+  },
+  {
+    id: 'theme_hanok',
+    catGroup: 'theme',
+    name: '고즈넉한 한옥 테마',
+    enName: 'Traditional Hanok Theme',
+    price: 220,
+    icon: '🏮',
+    desc: '우아한 한지 창살 무늬 벽지와 기품 있는 대청마루 바닥재의 전통 한국식 오피스.',
+    enDesc: 'Traditional Hanji wallpaper pattern and Korean wooden Daecheong floor.',
+  },
+  {
+    id: 'theme_space',
+    catGroup: 'theme',
+    name: '스페이스 정거장 테마',
+    enName: 'Space Station Theme',
+    price: 260,
+    icon: '🚀',
+    desc: '우주선 조종석 느낌의 다크 네이비 메탈 패널과 푸른 LED 라인 인테리어.',
+    enDesc: 'Sci-Fi spaceship dark navy metal panels and neon blue LED line interior.',
+  },
+
+  // ── 🎄 겨울 & 크리스마스 시즌 한정 (v1.9.4) ──
+  {
+    id: 'xmas_tree',
+    catGroup: 'seasonal',
+    name: '🎄 반짝이는 크리스마스 트리',
+    enName: 'Sparkling Christmas Tree',
+    price: 180,
+    icon: '🎄',
+    desc: '색색의 전구 불빛이 깜빡이며 선물 상자가 가득한 따뜻한 연말 크리스마스 트리.',
+    enDesc: 'Christmas tree with twinkling fairy lights and colorful holiday gifts.',
+  },
+  {
+    id: 'snow_globe',
+    catGroup: 'seasonal',
+    name: '🔮 낭만 스노우볼',
+    enName: 'Winter Snow Globe',
+    price: 90,
+    icon: '🔮',
+    desc: '흔들면 펄 눈송이가 아름답게 흩날리는 겨울 낭만 스노우볼 오브제.',
+    enDesc: 'Shimmering winter snow globe with drifting pearl snowflakes inside.',
   },
 
   // ── 🧶 고양이 추가 놀이 용품 ──
@@ -2089,6 +2336,115 @@ function drawCoffeeTable(x, y, t) {
   P(x + 10, y + 4, '#ffffff');
 }
 
+
+// ── 🎵 턴테이블 절차적 로파이 코딩 BGM 시스템 (v1.9.4) ──
+let lofiBgmState = {
+  playing: false,
+  timer: null,
+  step: 0,
+  crackleNode: null
+};
+
+function toggleTurntableLofi(b) {
+  if (lofiBgmState.playing) {
+    stopTurntableLofi();
+    showToast(T('🔇 턴테이블 음악을 껐습니다.', '🔇 Turntable music paused.'), '🔇');
+  } else {
+    startTurntableLofi(b);
+    showToast(T('🎵 턴테이블에서 감미로운 로파이 코딩 비트가 흐릅니다! 🎶', '🎵 Playing chill lofi coding beats on turntable! 🎶'), '🎵');
+  }
+}
+
+function startTurntableLofi(b) {
+  if (lofiBgmState.playing) stopTurntableLofi();
+  const ctx = getRetroAudioCtx();
+  if (!ctx) return;
+  lofiBgmState.playing = true;
+  lofiBgmState.step = 0;
+
+  try {
+    const bufferSize = ctx.sampleRate * 2;
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * 0.012;
+    }
+    const whiteNoise = ctx.createBufferSource();
+    whiteNoise.buffer = noiseBuffer;
+    whiteNoise.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 850;
+    const crackleGain = ctx.createGain();
+    crackleGain.gain.value = 0.15;
+    whiteNoise.connect(filter);
+    filter.connect(crackleGain);
+    crackleGain.connect(ctx.destination);
+    whiteNoise.start(0);
+    lofiBgmState.crackleNode = whiteNoise;
+  } catch {}
+
+  const chords = [
+    [146.83, 174.61, 220.00, 261.63, 329.63], // Dm9
+    [98.00, 174.61, 246.94, 329.63],          // G13
+    [130.81, 164.81, 196.00, 246.94, 293.66], // Cmaj9
+    [110.00, 174.61, 261.63, 329.63]          // Am7
+  ];
+
+  function playNextChord() {
+    if (!lofiBgmState.playing) return;
+    const chord = chords[lofiBgmState.step % chords.length];
+    lofiBgmState.step++;
+    const t0 = ctx.currentTime;
+    const chordDuration = 2.4;
+
+    chord.forEach((freq, idx) => {
+      try {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const filt = ctx.createBiquadFilter();
+
+        osc.type = idx === 0 ? 'sine' : 'triangle';
+        osc.frequency.setValueAtTime(freq, t0 + idx * 0.03);
+
+        filt.type = 'lowpass';
+        filt.frequency.setValueAtTime(700, t0);
+        filt.frequency.exponentialRampToValueAtTime(350, t0 + chordDuration);
+
+        gain.gain.setValueAtTime(0.001, t0);
+        gain.gain.linearRampToValueAtTime(0.045 / (chord.length * 0.5), t0 + 0.12 + idx * 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + chordDuration);
+
+        osc.connect(filt);
+        filt.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(t0 + idx * 0.03);
+        osc.stop(t0 + chordDuration);
+      } catch {}
+    });
+
+    if (isFurniturePlaced('turntable')) {
+      const bx = b ? b.x : 32;
+      const by = b ? b.y : (WALL_H + 54);
+      spawnHearts(bx + 7, by + 4, 'note');
+    }
+
+    lofiBgmState.timer = setTimeout(playNextChord, 2800);
+  }
+
+  playNextChord();
+}
+
+function stopTurntableLofi() {
+  lofiBgmState.playing = false;
+  if (lofiBgmState.timer) clearTimeout(lofiBgmState.timer);
+  if (lofiBgmState.crackleNode) {
+    try { lofiBgmState.crackleNode.stop(0); } catch {}
+    lofiBgmState.crackleNode = null;
+  }
+}
+
 function drawTurntable(x, y, t) {
   curFurnitureBoxes.push({
     id: 'turntable',
@@ -2280,6 +2636,121 @@ function drawTechBookshelf(x, y, t) {
   // 3단 (미니 트로피 & 책)
   P(x + 3, y + 20, '#ffd700'); P(x + 3, y + 21, '#d97706');
   R(x + 7, y + 19, 6, 4, '#64748b');
+}
+
+
+// ── 🎄 겨울 & 크리스마스 시즌 오브젝트 렌더링 (v1.9.4) ──
+function drawXmasTree(x, y, t) {
+  const uX = Math.round(x);
+  const uY = Math.round(y);
+  curFurnitureBoxes.push({ id: 'xmas_tree', x: uX, y: uY, w: 16, h: 24, name: T('🎄 크리스마스 트리', '🎄 Christmas Tree') });
+  R(uX + 7, uY + 18, 3, 4, '#5c3a21');
+  R(uX + 2, uY + 13, 13, 5, '#15803d');
+  R(uX + 4, uY + 8, 9, 5, '#16a34a');
+  R(uX + 6, uY + 3, 5, 5, '#22c55e');
+  P(uX + 8, uY + 1, '#facc15');
+  P(uX + 7, uY + 2, '#fde047');
+  P(uX + 9, uY + 2, '#fde047');
+  P(uX + 8, uY + 3, '#facc15');
+  const blink = Math.floor(t / 280) % 3;
+  P(uX + 4, uY + 15, blink === 0 ? '#ef4444' : '#fb7185');
+  P(uX + 8, uY + 14, blink === 1 ? '#38bdf8' : '#60a5fa');
+  P(uX + 12, uY + 16, blink === 2 ? '#facc15' : '#fef08a');
+  P(uX + 6, uY + 10, blink === 2 ? '#ec4899' : '#f472b6');
+  P(uX + 10, uY + 9, blink === 0 ? '#38bdf8' : '#22d3ee');
+  R(uX, uY + 19, 4, 3, '#ef4444');
+  P(uX + 2, uY + 19, '#facc15');
+  R(uX + 13, uY + 18, 4, 4, '#3b82f6');
+  P(uX + 15, uY + 18, '#ffffff');
+}
+
+function drawSnowGlobe(x, y, t) {
+  const uX = Math.round(x);
+  const uY = Math.round(y);
+  curFurnitureBoxes.push({ id: 'snow_globe', x: uX, y: uY, w: 12, h: 12, name: T('🔮 낭만 스노우볼', '🔮 Snow Globe') });
+  R(uX + 2, uY + 8, 8, 3, '#78350f');
+  R(uX + 1, uY + 1, 10, 7, 'rgba(186, 230, 253, 0.55)');
+  R(uX + 5, uY + 4, 2, 4, '#15803d');
+  const sOff = (Math.floor(t / 400) % 3);
+  P(uX + 3 + sOff, uY + 3, '#ffffff');
+  P(uX + 7 - sOff, uY + 5, '#ffffff');
+}
+
+let winterSnowflakes = null;
+function drawSnowflakes(t) {
+  const m = new Date().getMonth();
+  const isWinter = [10, 11, 0, 1].includes(m);
+  if (!isWinter) return;
+  if (!winterSnowflakes) {
+    winterSnowflakes = [];
+    for (let i = 0; i < 32; i++) {
+      winterSnowflakes.push({
+        x: Math.random() * logicalW,
+        y: Math.random() * logicalH,
+        vx: (Math.random() - 0.5) * 0.25,
+        vy: 0.3 + Math.random() * 0.45,
+        size: Math.random() > 0.8 ? 2 : 1,
+        alpha: 0.35 + Math.random() * 0.5
+      });
+    }
+  }
+  ctx.save();
+  for (const s of winterSnowflakes) {
+    s.y += s.vy;
+    s.x += s.vx + Math.sin(t / 600 + s.y / 15) * 0.12;
+    if (s.y > logicalH) { s.y = 0; s.x = Math.random() * logicalW; }
+    if (s.x < 0) s.x = logicalW;
+    if (s.x > logicalW) s.x = 0;
+    ctx.fillStyle = `rgba(240, 248, 255, ${s.alpha})`;
+    ctx.fillRect(Math.round(s.x * U), Math.round(s.y * U), Math.round(s.size * U), Math.round(s.size * U));
+  }
+  ctx.restore();
+}
+
+let devCelebrationConfetti = [];
+function triggerDevCelebration(title = '개발 마일스톤 달성!') {
+  playRetroSound('done');
+  playRetroSound('buy');
+  showToast(`🎉 ${title}`, '🎉');
+  for (let i = 0; i < 40; i++) {
+    devCelebrationConfetti.push({
+      x: Math.random() * logicalW,
+      y: -Math.random() * 20,
+      vx: (Math.random() - 0.5) * 1.6,
+      vy: 0.8 + Math.random() * 1.4,
+      color: ['#f43f5e', '#38bdf8', '#facc15', '#a855f7', '#22c55e', '#fb923c'][Math.floor(Math.random() * 6)],
+      size: Math.random() > 0.5 ? 2 : 3,
+      life: 2800,
+      birth: Date.now()
+    });
+  }
+  const quotes = [
+    T('🎉 배포 성공! 무결성 100%!', '🎉 Deployment Succeeded!'),
+    T('🚀 Git 커밋 완료! 완벽합니다.', '🚀 Git Commit Complete!'),
+    T('✨ 모든 테스트 올그린 통과!', '✨ All Tests Passed Green!'),
+    T('🍻 오늘 업무 대성공!', '🍻 Work Done! Cheers!')
+  ];
+  const list = visibleSessions();
+  list.slice(0, 3).forEach((s, idx) => {
+    setTimeout(() => {
+      s.text = quotes[idx % quotes.length];
+      s.bubbleUntil = Date.now() + 4500;
+    }, idx * 250);
+  });
+}
+
+function drawCelebrationConfetti(t) {
+  if (devCelebrationConfetti.length === 0) return;
+  const now = Date.now();
+  devCelebrationConfetti = devCelebrationConfetti.filter((c) => now - c.birth < c.life);
+  ctx.save();
+  for (const c of devCelebrationConfetti) {
+    c.y += c.vy;
+    c.x += c.vx + Math.sin(t / 200 + c.y / 10) * 0.4;
+    ctx.fillStyle = c.color;
+    ctx.fillRect(Math.round(c.x * U), Math.round(c.y * U), Math.round(c.size * U), Math.round(c.size * U));
+  }
+  ctx.restore();
 }
 
 function drawMonsteraPlant(x, y, t) {
@@ -3261,9 +3732,22 @@ function interactFurniture(b) {
     playRetroSound('coffee');
     spawnHearts(b.x + 11, b.y + 4);
     markQuest('coffee_break');
+    triggerDevMeme(false);
   } else if (b.id === 'arcade_cabinet') {
     playRetroSound('arcade');
     spawnHearts(b.x + 9, b.y + 8);
+    openArcadeModal();
+    recordDailyQuestProgress('daily_furniture', 1);
+  } else if (b.id === 'xmas_tree') {
+    playRetroSound('buy');
+    spawnHearts(b.x + 8, b.y + 6, 'sparkle');
+    showToast(T('🎄 반짝반짝! 크리스마스 트리가 영롱한 불빛을 냅니다. 메리 크리스마스! ✨', '🎄 Merry Christmas!'), '🎄');
+    recordDailyQuestProgress('daily_furniture', 1);
+  } else if (b.id === 'snow_globe') {
+    playRetroSound('coin');
+    spawnHearts(b.x + 6, b.y + 4, 'sparkle');
+    showToast(T('🔮 스노우볼을 살짝 흔들자 반짝이는 펄 눈송이가 흩날립니다.', '🔮 Shook the snow globe!'), '🔮');
+    recordDailyQuestProgress('daily_furniture', 1);
   } else if (b.id === 'vending_machine') {
     playRetroSound('vending');
     spawnHearts(b.x + 9, b.y + 12);
@@ -3307,9 +3791,8 @@ function interactFurniture(b) {
     spawnHearts(b.x + 8, b.y + 6);
     showToast(T('🍵 따뜻한 허브티 한 잔의 여유를 즐깁니다. 머리가 맑아집니다.', '🍵 Enjoying a hot cup of herbal tea.'), '🍵');
   } else if (b.id === 'turntable') {
-    playRetroSound('coin');
-    spawnHearts(b.x + 7, b.y + 7);
-    showToast(T('🎵 치지직- 감미로운 로파이 코딩 비트가 사무실에 울려 퍼집니다.', '🎵 Playing sweet lofi coding beats on vinyl.'), '🎵');
+    toggleTurntableLofi(b);
+    recordDailyQuestProgress('daily_furniture', 1);
   } else if (b.id === 'bean_bag') {
     playRetroSound('stretch');
     spawnHearts(b.x + 9, b.y + 6);
@@ -3328,12 +3811,14 @@ function interactFurniture(b) {
 // ───────────────────────────── 방: 바닥·벽·창문·장식 ─────────────────────────────
 
 function drawFloor() {
-  R(0, WALL_H, logicalW, logicalH - WALL_H, PAL.floorA);
+  const theme = getCurOfficeTheme();
+  const pal = theme.pal;
+  R(0, WALL_H, logicalW, logicalH - WALL_H, pal.floorA);
   for (let y = WALL_H, row = 0; y < logicalH; y += 8, row++) {
-    if (row % 2) R(0, y + 1, logicalW, 7, PAL.floorB);
-    R(0, y, logicalW, 1, PAL.floorLine);
+    if (row % 2) R(0, y + 1, logicalW, 7, pal.floorB);
+    R(0, y, logicalW, 1, pal.floorLine);
     const off = (row * 23) % 40;
-    for (let x = -off; x < logicalW; x += 40) R(x, y + 1, 1, 7, PAL.floorLine);
+    for (let x = -off; x < logicalW; x += 40) R(x, y + 1, 1, 7, pal.floorLine);
   }
 }
 
@@ -3360,16 +3845,18 @@ function skyAt(h) {
 }
 
 function drawWall(t) {
-  R(0, 0, logicalW, WALL_H, PAL.wall);
-  for (let x = 0; x < logicalW; x += 10) R(x, 0, 1, WALL_H - 10, PAL.wallStripe);
-  R(0, WALL_H - 10, logicalW, 8, PAL.wainscot);
-  R(0, WALL_H - 10, logicalW, 1, PAL.wainscotHi);
-  R(0, WALL_H - 2, logicalW, 2, PAL.base);
+  const theme = getCurOfficeTheme();
+  const pal = theme.pal;
+  R(0, 0, logicalW, WALL_H, pal.wall);
+  for (let x = 0; x < logicalW; x += 10) R(x, 0, 1, WALL_H - 10, pal.wallStripe);
+  R(0, WALL_H - 10, logicalW, 8, pal.wainscot);
+  R(0, WALL_H - 10, logicalW, 1, pal.wainscotHi);
+  R(0, WALL_H - 2, logicalW, 2, pal.base);
 
   // 회사 간판 — 폭은 사무실 이름에 맞추고, 시계·화분·창문은 그 오른쪽에 둔다
   const pw = plaqueWidth();
-  R(6, 8, pw, 14, PAL.plaque);
-  R(7, 9, pw - 2, 12, PAL.plaqueIn);
+  R(6, 8, pw, 14, pal.plaque);
+  R(7, 9, pw - 2, 12, pal.plaqueIn);
   P(9, 11, '#c9a46a'); P(pw + 2, 11, '#c9a46a'); P(9, 18, '#c9a46a'); P(pw + 2, 18, '#c9a46a');
 
   const d = new Date();
@@ -3410,6 +3897,8 @@ function drawWall(t) {
   if (isFurniturePlaced('aquarium')) drawAquarium(logicalW - 88, WALL_H - 26, t);
   if (isFurniturePlaced('vending_machine')) drawVendingMachine(logicalW - 66, WALL_H - 30, t);
   if (isFurniturePlaced('coffee_bar')) drawCoffeeBar(logicalW - 44, WALL_H - 26, t);
+  if (isFurniturePlaced('xmas_tree')) drawXmasTree(logicalW - 110, WALL_H - 24, t);
+  if (isFurniturePlaced('snow_globe')) drawSnowGlobe(pw + 30, WALL_H - 12, t);
 }
 
 function drawWhiteboard(x, y) {
@@ -3894,6 +4383,8 @@ function drawOverlay(t) {
   for (const d of desks) drawInternChips(d);
   drawAmbientLighting(t);
   drawFloatingHearts(t);
+  drawSnowflakes(t);
+  drawCelebrationConfetti(t);
   drawMeetingBubbles(t);
   drawCatOverlays(t);
   for (const d of desks) drawDeskBubble(d, t);   // 말풍선은 맨 위에
@@ -4042,6 +4533,14 @@ function drawDeskBubble(d, t) {
       '테스트 코드 통과했을까? 🧪',
       '이번 주말엔 뭐 하지? 🎮',
       '코드 리팩토링 각이다 🧹',
+      '세미콜론 다 찍었나? 🧐',
+      '퇴근하고 치킨 각 🍗',
+      '누가 메인에 직접 푸시했지? 😱',
+      '고양이 쓰다듬고 싶다 🐾',
+      '스택오버플로우 선생님 감사합니다 🙏',
+      '커피 한 잔 더 마실까... ☕',
+      '이 버그만 잡고 진짜 잔다 🛌',
+      '클로드야 다음 프롬프트 줘 🤖',
     ];
     const hashVal = hash(s.id);
     const cycle = ((t + hashVal * 251) % 30000) / 1000;
@@ -4741,7 +5240,47 @@ const DEV_MEMES = [
   { ko: "재부팅 한 번에 해결되는 버그만큼 허탈한 것도 없다. 🔄", en: "Nothing feels emptier than a bug fixed by a simple reboot. 🔄" },
   { ko: "하드코딩은 미래의 나에게 빚을 지는 일이다. 💳", en: "Hardcoding is just taking a loan from future me. 💳" },
   { ko: "콘솔창에 'asdf' 찍어가며 디버깅하는 나를 발견했다. 🕵️", en: "Caught myself debugging with console.log('asdf'). 🕵️" },
-  { ko: "오늘 할 일을 내일의 AI에게 미루자. 🤖", en: "Never do today what AI can do for you tomorrow. 🤖" }
+  { ko: "오늘 할 일을 내일의 AI에게 미루자. 🤖", en: "Never do today what AI can do for you tomorrow. 🤖" },
+  { ko: "개발자의 가장 큰 거짓말 TOP 3: 1. 다 됐어요 2. 5분만요 3. 버그 없어요 🤥", en: "Top 3 dev lies: 1. Almost done 2. Just 5 mins 3. No bugs 🤥" },
+  { ko: "자바스크립트: [] + [] = '' 인데 [] + {} = [object Object] 입니다. 🤯", en: "JS: [] + [] = '' but [] + {} = [object Object]. Beautiful. 🤯" },
+  { ko: "이 코드는 절대 건드리지 마세요. 왜 돌아가는지 아무도 모릅니다. ⚠️", en: "Do not touch this code. Nobody knows why it works. ⚠️" },
+  { ko: "프로그래밍: 10초 걸리는 반복 작업을 자동화하려고 사흘 밤을 새우는 여정 💡", en: "Programming: spending 3 days automating a 10-second task. 💡" },
+  { ko: "git push --force 를 누르는 순간 인생의 주마등이 스쳐 지나갔다. 💥", en: "Life flashed before my eyes right when I ran git push --force. 💥" },
+  { ko: "패키지 하나 추가했을 뿐인데 node_modules가 블랙홀이 되었습니다. 🕳️", en: "Added one package, now node_modules has its own gravity. 🕳️" },
+  { ko: "QA 엔지니어가 펍에 와서 맥주 0잔, 999999잔, 도마뱀 한 마리를 주문했다. 🦎", en: "QA engineer orders: 0 beers, 999999 beers, and a lizard. 🦎" },
+  { ko: "개발자가 제일 무서워하는 슬랙: '혹시 지금 잠깐 통화 가능하세요?' 😱", en: "Scariest Slack message: 'Quick call right now?' 😱" },
+  { ko: "변수명 고민하는 데 40분, 실제 로직 코딩하는 데 3분 걸렸습니다. 🏷️", en: "Naming variables: 40 mins. Writing logic: 3 mins. 🏷️" },
+  { ko: "코드가 깔끔해질 때까지 리팩토링하다가 원래 기능 구현을 까먹었다. 🌀", en: "Refactored so hard I forgot what the function was for. 🌀" },
+  { ko: "개발자에게 10월 31일(Oct 31)과 12월 25일(Dec 25)은 같은 날이다. (Oct 31 == Dec 25) 🎃", en: "Why Halloween == Christmas? Because Oct 31 == Dec 25! 🎃" },
+  { ko: "도커(Docker)를 썼더니 이제 모든 컴퓨터에서 똑같이 에러가 납니다! 🐳", en: "Used Docker: now it crashes on everyone's PC identically! 🐳" },
+  { ko: "키보드 샷건 치려다가 기계식 키보드 스위치 가격 생각하고 참았습니다. ⌨️", en: "Wanted to smash my keyboard, but remembered switch prices. ⌨️" },
+  { ko: "배포 직후 트래픽 그래프가 0으로 떨어졌다... 트래픽이 없거나 서버가 죽었거나. 📉", en: "Traffic graph dropped to 0: either no visitors, or server is dead. 📉" },
+  { ko: "이번 패치: 버그 1개 수정 완료, 새로운 미지의 버그 10개 도입! 🎁", en: "Patch notes: 1 bug fixed, 10 new mystery bugs introduced! 🎁" },
+  { ko: "개발자 면접: '당신의 단점은?' '재귀호출(재귀호출(재귀호출)).' 🔄", en: "Interviewer: 'Your weakness?' Me: 'recursion(recursion()).' 🔄" },
+  { ko: "소프트웨어의 모든 문제는 중간 추상화 레이어 하나를 더 두면 해결된다. 🧅", en: "All problems can be solved by another layer of abstraction. 🧅" },
+  { ko: "주말에 심심해서 토이 프로젝트 시작했다가 월요일에 멘붕이 왔습니다. 🧸", en: "Started a fun toy project on Saturday; full panic by Monday. 🧸" },
+  { ko: "Ctrl+C, Ctrl+V 는 인류 최고의 발명품이자 기술 부채의 어머니입니다. 📋", en: "Copy-paste: humanity's best gift and mother of tech debt. 📋" },
+  { ko: "AI야, 네가 직접 짠 코드인데 왜 널 포인터 익셉션이 나니? 🤖💥", en: "Dear AI, you wrote this, why NullPointerException? 🤖💥" },
+  { ko: "누가 이 끔찍한 코드를 짰나 git blame을 켰더니 어제의 나였다. 🤫", en: "Ran git blame in anger, turned out to be me yesterday. 🤫" },
+  { ko: "테스트 커버리지 100% 달성! 하지만 유저가 엔터 키를 5번 연타했다. 💥", en: "100% test coverage until user spams Enter 5 times. 💥" },
+  { ko: "세상에서 가장 오래 살아남는 코드는 '임시로 대충 땜질한 코드'이다. 🏛️", en: "Nothing lasts longer than a temporary quick fix. 🏛️" },
+  { ko: "세상에서 제일 위험한 말: '코드 딱 한 줄 고쳤으니까 그냥 배포하자.' ⚠️", en: "Deadliest words: 'Just a one-line change, ship it!' ⚠️" },
+  { ko: "메모리 릭 원인 분석 중... 크롬 탭 70개 켜둔 건 절대 비밀입니다. 🤫", en: "Hunting a memory leak... ignore my 70 Chrome tabs. 🤫" },
+  { ko: "디버깅은 자기가 범인이면서 동시에 탐정인 추리 영화를 찍는 것과 같다. 🕵️‍♂️", en: "Debugging is being both the detective and the murderer. 🕵️‍♂️" },
+  { ko: "퇴근 5분 전에 온 메신저: '혹시 이거 간단한 수정 하나만 부탁드려도 될까요?' 🚨", en: "5 mins to 6 PM: 'Hey, could you do one tiny quick fix?' 🚨" },
+  { ko: "RESTful하게 만들려다 결국 POST 만능주의로 타협한 나의 API... 🤝", en: "Started RESTful, ended up making everything POST. 🤝" },
+  { ko: "개발자의 아침 루틴: 커피 마시며 어제 왜 코드가 작동했는지 의심하기 ☕", en: "Morning routine: sipping coffee wondering why it worked yesterday. ☕" },
+  { ko: "README.md: 작성하겠다고 결심한 뒤 영원히 방치되는 문서 1위 📜", en: "README.md: the doc everyone promises to finish tomorrow. 📜" },
+  { ko: "클라우드 인프라 월간 청구서 메일을 여는 순간 식은땀이 흘렀다. 💸", en: "Opening the monthly AWS bill: the ultimate horror film. 💸" },
+  { ko: "의자 높이와 모니터 각도 세팅에 하루 근무 시간의 30%를 투자합니다. 💺", en: "Ergonomic adjustments: 30% of total daily output. 💺" },
+  { ko: "주니어 개발자: '이거 왜 안 되죠?' / 시니어 개발자: '이거 왜 되죠?' 🧙‍♂️", en: "Junior: 'Why doesn't this work?' Senior: 'Why DOES this work?' 🧙‍♂️" },
+  { ko: "코드가 한 번에 컴파일되면 기쁜 게 아니라 등골이 오싹해진다. 👻", en: "Code compiled on the first try? Panic ensues. 👻" },
+  { ko: "인덴트 논쟁: 탭(Tab)파와 스페이스 2칸파, 그리고 스페이스 4칸파의 대전쟁 🥊", en: "Tabs vs 2 Spaces vs 4 Spaces: the never-ending holy war. 🥊" },
+  { ko: "하드웨어: 발로 찰 수 있는 부품 / 소프트웨어: 욕만 할 수 있는 부품 🖥️", en: "Hardware: part you can kick. Software: part you can only curse at. 🖥️" },
+  { ko: "밤샘 코딩의 진리: 새벽 3시에 짠 천재적인 코드는 아침 9시에 쓰레기가 된다. 🌙", en: "Genius code written at 3 AM becomes garbage at 9 AM. 🌙" },
+  { ko: "스택오버플로우 답변: '저도 같은 문제를 겪고 있습니다' (작성일: 2012년) 💀", en: "StackOverflow answer: 'I have the same issue too' (Posted 2012) 💀" },
+  { ko: "버그를 고쳤더니 고객이 '그 기능 좋아했는데 왜 없앴어요?'라고 항의했다. 🙃", en: "Fixed a bug, user complained: 'I loved that feature!' 🙃" },
+  { ko: "개발자 십계명 제1조: 잘 돌아가는 레거시는 숨소리도 내지 말고 건너지 마라. 🤫", en: "Dev rule #1: If legacy code works, don't even breathe near it. 🤫" }
 ];
 
 const playSfx = (k) => playRetroSound(k === 'quest' ? 'done' : k);
@@ -5133,7 +5672,11 @@ function drawMeetingBubbles(t) {
     const dialogues = [
       { a: T("백엔드 API 규격 배포 완료했습니다! 🚀", "Backend API schema v2 deployed! 🚀"), b: T("확인 완료! 프론트엔드 연동 시작합니다 💻", "Got it! Starting frontend integration 💻") },
       { a: T("핵심 로직 단위 테스트 작성 완료! ✅", "Unit tests for core logic done! ✅"), b: T("CI 파이프라인 자동 빌드 통과 확인! 🧪", "CI pipeline build passed! 🧪") },
-      { a: T("성능 최적화로 응답 속도 40% 개선 ⚡", "Optimized performance, 40% faster ⚡"), b: T("모바일 뷰에서도 매끄럽게 렌더링되네요 👍", "Rendering super smooth on mobile too 👍") }
+      { a: T("성능 최적화로 응답 속도 40% 개선 ⚡", "Optimized performance, 40% faster ⚡"), b: T("모바일 뷰에서도 매끄럽게 렌더링되네요 👍", "Rendering super smooth on mobile too 👍") },
+      { a: T("혹시 이 레거시 모듈 누가 짰는지 아세요? 🧐", "Do you know who wrote this legacy module? 🧐"), b: T("git blame 보니까... 저네요 죄송합니다 😅", "Checked git blame... it was me, sorry 😅") },
+      { a: T("이 버그 제 로컬에선 재현이 안 되는데요? 🤷‍♂️", "Can't reproduce this bug on my machine 🤷‍♂️"), b: T("캐시 지우고 시크릿 모드로 다시 켜보세요! 🪄", "Clear cache and open in incognito! 🪄") },
+      { a: T("오늘 배포하고 정시 퇴근 가시죠? 🏃‍♂️", "Deploy now and leave right on time? 🏃‍♂️"), b: T("금요일 배포는 금기입니다 참으세요! 🛑", "Friday deploys are cursed! Hold on! 🛑") },
+      { a: T("AI가 짠 코드 리뷰 중인데 감탄만 나옵니다 🤖", "Reviewing code written by AI, mind blown 🤖"), b: T("인간 개발자의 자리가 위태롭습니다... ☕", "Our developer jobs are on the line... ☕") }
     ];
     const d = dialogues[Math.floor(Math.random() * dialogues.length)];
     activeCollab = { s1, s2, textA: d.a, textB: d.b, start: t };
@@ -6164,6 +6707,59 @@ function showQuestToast(ach) {
 
 // ───────────────────────────── 21종 온보딩 & 실전 도전 과제 카탈로그 ─────────────────────────────
 const ALL_ACHIEVEMENTS = [
+  {
+    id: 'arcade_master',
+    cat: 'mastery',
+    icon: '🕹️',
+    name: '오락실 제왕',
+    en: 'Arcade Master',
+    desc: '8비트 버그 퇴치 아케이드 게임에서 300점 이상을 달성하세요.',
+    enDesc: 'Score 300+ points in the 8-bit Bug Squash arcade minigame.',
+    guide: '오락기 가구 클릭 ➔ 30초 동안 날아다니는 버그 클릭',
+    enGuide: 'Click arcade cabinet ➔ Squash bugs in 30s',
+    exp: 100,
+    check: () => (store.get('arcadeHighScore', 0) >= 300) || !!getQuest('arcade_master'),
+  },
+  {
+    id: 'winter_season',
+    cat: 'onboarding',
+    icon: '❄️',
+    name: '첫눈의 설렘',
+    en: 'Winter Wonderland',
+    desc: '창밖으로 새하얀 눈송이가 내리는 겨울 시즌에 사무실을 방문해보세요.',
+    enDesc: 'Visit the office during the winter snow season.',
+    guide: '겨울 시즌(11~2월)에 오피스 접속',
+    enGuide: 'Visit office during winter season (Nov-Feb)',
+    exp: 80,
+    check: () => [10, 11, 0, 1].includes(new Date().getMonth()) || !!getQuest('winter_season'),
+  },
+  {
+    id: 'cat_treat_master',
+    cat: 'mastery',
+    icon: '🐟',
+    name: '특급 츄르 요리사',
+    en: 'Master Treat Chef',
+    desc: '상점에서 츄르 또는 캣닢을 구매하여 고양이들에게 직접 급여해보세요.',
+    enDesc: 'Feed Churu or Catnip treats to office cats from the shop.',
+    guide: '상점 ➔ 츄르 또는 캣닢 구매 후 [급여하기] 클릭',
+    enGuide: 'Shop ➔ Buy Churu or Catnip ➔ Click [Feed]',
+    exp: 80,
+    check: () => !!getQuest('cat_treat_master'),
+  },
+  {
+    id: 'theme_stylist',
+    cat: 'mastery',
+    icon: '🎨',
+    name: '공간 스타일리스트',
+    en: 'Interior Stylist',
+    desc: '상점에서 사이버펑크, 우드카페 등 새로운 인테리어 테마를 구매하여 적용해보세요.',
+    enDesc: 'Apply a custom office interior theme (Cyberpunk, Wood Cafe, Hanok, Space).',
+    guide: '상점 ➔ 테마 구매 ➔ [테마 적용] 클릭',
+    enGuide: 'Shop ➔ Buy theme ➔ Click [Apply]',
+    exp: 100,
+    check: () => (store.get('officeTheme', 'default') !== 'default') || !!getQuest('theme_stylist'),
+  },
+
   // 🏢 1. 오피스 기초 & 온보딩 (12개)
   {
     id: 'rename_company',
@@ -6733,6 +7329,280 @@ function closeAchieveModal() {
   achieveModalEl.hidden = true;
 }
 
+
+// ── 🕹️ 8비트 버그 퇴치 아케이드 미니게임 시스템 (v1.9.4) ──
+let arcadeGameState = {
+  running: false,
+  timer: 30,
+  score: 0,
+  combo: 0,
+  bugs: [],
+  timerInterval: null,
+  animId: null
+};
+
+function openArcadeModal() {
+  const modal = $('arcadeModal');
+  if (!modal) return;
+  modal.hidden = false;
+  $('arcadeHighScore').textContent = store.get('arcadeHighScore', 0);
+  $('arcadeScore').textContent = '0';
+  $('arcadeCombo').textContent = '0';
+  $('arcadeTimer').textContent = '30';
+  $('arcadeOverlay').hidden = false;
+  $('arcadeMsgTitle').textContent = T('👾 버그 사냥 준비!', '👾 Ready to Hunt Bugs!');
+  $('arcadeMsgDesc').textContent = T('30초 동안 날아다니는 버그(🐛 일반 10점, 🪲 메모리 20점, 👾 크리티컬 50점)를 클릭하세요.', 'Click flying bugs (🐛 Common 10, 🪲 Leak 20, 👾 Critical 50) in 30s!');
+  $('arcadeStartBtn').textContent = T('🎮 게임 시작', '🎮 Start Game');
+  drawArcadeScreen();
+}
+
+function closeArcadeModal() {
+  stopArcadeGame();
+  const modal = $('arcadeModal');
+  if (modal) modal.hidden = true;
+}
+
+function startArcadeGame() {
+  const canvas = $('arcadeCanvas');
+  if (!canvas) return;
+  stopArcadeGame();
+  $('arcadeOverlay').hidden = true;
+
+  arcadeGameState.running = true;
+  arcadeGameState.timer = 30;
+  arcadeGameState.score = 0;
+  arcadeGameState.combo = 0;
+  arcadeGameState.bugs = [];
+  arcadeGameState.particles = [];
+
+  $('arcadeScore').textContent = '0';
+  $('arcadeCombo').textContent = '0';
+  $('arcadeTimer').textContent = '30';
+
+  for (let i = 0; i < 4; i++) spawnArcadeBug();
+
+  arcadeGameState.timerInterval = setInterval(() => {
+    arcadeGameState.timer--;
+    $('arcadeTimer').textContent = arcadeGameState.timer;
+    if (arcadeGameState.timer <= 0) {
+      endArcadeGame();
+    }
+  }, 1000);
+
+  function loop() {
+    if (!arcadeGameState.running) return;
+    updateArcadeGame();
+    drawArcadeScreen();
+    arcadeGameState.animId = requestAnimationFrame(loop);
+  }
+  arcadeGameState.animId = requestAnimationFrame(loop);
+}
+
+function stopArcadeGame() {
+  arcadeGameState.running = false;
+  if (arcadeGameState.timerInterval) clearInterval(arcadeGameState.timerInterval);
+  if (arcadeGameState.animId) cancelAnimationFrame(arcadeGameState.animId);
+}
+
+function spawnArcadeBug() {
+  const canvas = $('arcadeCanvas');
+  if (!canvas) return;
+  const w = canvas.width, h = canvas.height;
+  const rand = Math.random();
+  let type = 'common', points = 10, icon = '🐛', radius = 18, speed = 1.6;
+  if (rand > 0.85) {
+    type = 'critical'; points = 50; icon = '👾'; radius = 24; speed = 3.0;
+  } else if (rand > 0.60) {
+    type = 'leak'; points = 20; icon = '🪲'; radius = 20; speed = 2.2;
+  }
+  arcadeGameState.bugs.push({
+    x: 20 + Math.random() * (w - 40),
+    y: 20 + Math.random() * (h - 40),
+    vx: (Math.random() - 0.5) * speed * 2,
+    vy: (Math.random() - 0.5) * speed * 2,
+    type, points, icon, radius,
+    wobble: Math.random() * 10
+  });
+}
+
+function updateArcadeGame() {
+  const canvas = $('arcadeCanvas');
+  if (!canvas) return;
+  const w = canvas.width, h = canvas.height;
+
+  if (arcadeGameState.bugs.length < 5 && Math.random() < 0.04) {
+    spawnArcadeBug();
+  }
+
+  for (const b of arcadeGameState.bugs) {
+    b.x += b.vx;
+    b.y += b.vy;
+    b.wobble += 0.08;
+    if (b.x < b.radius || b.x > w - b.radius) b.vx *= -1;
+    if (b.y < b.radius || b.y > h - b.radius) b.vy *= -1;
+  }
+}
+
+function drawArcadeScreen() {
+  const canvas = $('arcadeCanvas');
+  if (!canvas) return;
+  const aCtx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+
+  // Retro cyber grid background
+  aCtx.fillStyle = '#060a14';
+  aCtx.fillRect(0, 0, w, h);
+
+  aCtx.strokeStyle = 'rgba(34, 197, 94, 0.08)';
+  aCtx.lineWidth = 1;
+  for (let x = 0; x < w; x += 20) {
+    aCtx.beginPath(); aCtx.moveTo(x, 0); aCtx.lineTo(x, h); aCtx.stroke();
+  }
+  for (let y = 0; y < h; y += 20) {
+    aCtx.beginPath(); aCtx.moveTo(0, y); aCtx.lineTo(w, y); aCtx.stroke();
+  }
+
+  // Draw bugs
+  aCtx.textAlign = 'center';
+  aCtx.textBaseline = 'middle';
+  for (const b of arcadeGameState.bugs) {
+    aCtx.font = `${b.radius * 1.6}px sans-serif`;
+    aCtx.fillText(b.icon, b.x, b.y);
+  }
+}
+
+function onArcadeCanvasClick(e) {
+  if (!arcadeGameState.running) return;
+  const canvas = $('arcadeCanvas');
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const clickX = (e.clientX - rect.left) * scaleX;
+  const clickY = (e.clientY - rect.top) * scaleY;
+
+  let hitIndex = -1;
+  for (let i = arcadeGameState.bugs.length - 1; i >= 0; i--) {
+    const b = arcadeGameState.bugs[i];
+    const dist = Math.hypot(b.x - clickX, b.y - clickY);
+    if (dist <= b.radius * 1.3) {
+      hitIndex = i;
+      break;
+    }
+  }
+
+  if (hitIndex >= 0) {
+    const b = arcadeGameState.bugs[hitIndex];
+    arcadeGameState.bugs.splice(hitIndex, 1);
+    arcadeGameState.combo++;
+    const comboMultiplier = Math.min(5, Math.floor(arcadeGameState.combo / 3) + 1);
+    const added = b.points * comboMultiplier;
+    arcadeGameState.score += added;
+    $('arcadeScore').textContent = arcadeGameState.score;
+    $('arcadeCombo').textContent = arcadeGameState.combo;
+    playRetroSound('coin', true);
+    spawnArcadeBug();
+  } else {
+    arcadeGameState.combo = 0;
+    $('arcadeCombo').textContent = '0';
+  }
+}
+
+function endArcadeGame() {
+  stopArcadeGame();
+  const score = arcadeGameState.score;
+  const oldHigh = store.get('arcadeHighScore', 0);
+  if (score > oldHigh) {
+    store.set('arcadeHighScore', score);
+    $('arcadeHighScore').textContent = score;
+  }
+  if (score >= 300) markQuest('arcade_master');
+
+  // Daily arcade reward
+  const today = getTodayDateStr();
+  const lastPlay = store.get('arcadeLastRewardDate', '');
+  let rewardCoins = 0;
+  if (lastPlay !== today && score >= 100) {
+    store.set('arcadeLastRewardDate', today);
+    rewardCoins = score >= 500 ? 50 : (score >= 300 ? 30 : 15);
+    addCoins(rewardCoins, T('오락실 일일 랭킹 보너스', 'Arcade Daily Bonus'));
+    playRetroSound('done');
+  }
+
+  $('arcadeOverlay').hidden = false;
+  $('arcadeMsgTitle').textContent = T(`🎉 게임 종료! ${score}점 달성`, `🎉 Game Over! ${score} pts`);
+  $('arcadeMsgDesc').textContent = rewardCoins > 0
+    ? T(`축하합니다! 일일 랭킹 보너스로 +${rewardCoins}🪙 획득!`, `Congrats! Earned +${rewardCoins}🪙 daily bonus!`)
+    : T(`수고하셨습니다! 시스템 무결성이 정상 유지되었습니다.`, `Great work! System integrity preserved.`);
+  $('arcadeStartBtn').textContent = T('🔄 다시 도전하기', '🔄 Play Again');
+}
+
+
+// ── 📊 2026 Claude Office Wrapped (연말 결산) 시스템 (v1.9.4) ──
+function openWrappedModal() {
+  const modal = $('wrappedModal');
+  if (!modal) return;
+  modal.hidden = false;
+  renderWrappedReport();
+}
+
+function closeWrappedModal() {
+  const modal = $('wrappedModal');
+  if (modal) modal.hidden = true;
+}
+
+function renderWrappedReport() {
+  const grid = $('wrappedGrid');
+  if (!grid) return;
+  grid.replaceChildren();
+
+  const sessions = data.sessions || [];
+  let totalWorkMs = 0;
+  let totalPrompts = 0;
+
+  for (const s of sessions) {
+    const st = getSessionStats(s);
+    totalWorkMs += st.workMs;
+    totalPrompts += st.prompts;
+  }
+
+  const workHours = (totalWorkMs / 3600000).toFixed(1);
+  const coinsTotal = getCoins();
+  const achievementsCount = Object.keys(getQuestStore()).length;
+  const catsAdopted = officeCatState.adoptedCats?.length || 0;
+  const streak = store.get('userStreak', { count: 1 }).count || 1;
+
+  let title = '🚀 불굴의 풀스택 아키텍트';
+  if (catsAdopted >= 3) title = '🐾 전설의 다묘 오피스 집사';
+  else if (totalPrompts > 50) title = '⚡ 초고속 AI 페어 프로그래밍 장인';
+  else if (parseFloat(workHours) > 20) title = '🌙 불야성 오피스 나이트가드';
+  $('wrappedDevTitle').textContent = title;
+
+  const statsList = [
+    { val: `${workHours}h`, lbl: T('총 코딩 시간', 'Total Work Time') },
+    { val: `${totalPrompts}회`, lbl: T('AI 에이전트 지시', 'Total Prompts') },
+    { val: `${achievementsCount}개`, lbl: T('달성한 도전과제', 'Achievements') },
+    { val: `${coinsTotal}🪙`, lbl: T('보유 코인 자산', 'Total Coins') },
+    { val: `${catsAdopted}마리`, lbl: T('입양한 고양이', 'Office Cats') },
+    { val: `${streak}일`, lbl: T('연속 출근 기록', 'Day Streak') }
+  ];
+
+  for (const stat of statsList) {
+    const card = elem('div', 'wrapped-stat-card');
+    const val = elem('div', 'wrapped-stat-val', stat.val);
+    const lbl = elem('div', 'wrapped-stat-lbl', stat.lbl);
+    card.append(val, lbl);
+    grid.append(card);
+  }
+
+  $('wrappedCopyBtn').onclick = () => {
+    const text = `📊 [2026 Claude Office Wrapped]\n👑 칭호: ${title}\n⏱️ 총 코딩 시간: ${workHours}시간\n💬 AI 지시: ${totalPrompts}회\n🏆 업적: ${achievementsCount}개 달성\n🐱 반려묘: ${catsAdopted}마리\n🔥 연속 출근: ${streak}일\nhttps://github.com/jibong614/claude-pixel-office`;
+    navigator.clipboard.writeText(text).then(() => {
+      showToast(T('📋 클립보드에 결과가 복사되었습니다!', '📋 Copied to clipboard!'), '📋');
+    });
+  };
+}
+
 function openShopModal() {
   if (!shopModalEl) return;
   shopModalEl.hidden = false;
@@ -6744,6 +7614,102 @@ function openShopModal() {
 function closeShopModal() {
   if (!shopModalEl) return;
   shopModalEl.hidden = true;
+}
+
+// ── 🐾 상점 고양이 16x16 픽셀아트 아이콘 렌더러 (v1.9.7) ──
+function createCatPixelIcon(breedId) {
+  const cvs = document.createElement('canvas');
+  cvs.width = 32;
+  cvs.height = 32;
+  cvs.className = 'cat-pixel-icon-canvas';
+  const ctx = cvs.getContext('2d');
+  if (!ctx) return cvs;
+
+  const breed = CAT_BREEDS[breedId] || CAT_BREEDS.cheese;
+  const pal = breed.palette;
+
+  const base = pal.base;
+  const dark = pal.dark;
+  const white = pal.white || '#ffffff';
+  const nose = pal.nose || '#f472b6';
+  const eye = pal.eye || '#10b981';
+  const eyeR = pal.eyeR || eye;
+  const ear = pal.ear || '#f43f5e';
+
+  // 16x16 그리드, 2배 스케일 렌더링 (각 도트 = 2x2)
+  const p = (x, y, c) => {
+    ctx.fillStyle = c;
+    ctx.fillRect(x * 2, y * 2, 2, 2);
+  };
+  const r = (x, y, w, h, c) => {
+    ctx.fillStyle = c;
+    ctx.fillRect(x * 2, y * 2, w * 2, h * 2);
+  };
+
+  // 귀 (Ears)
+  p(4, 2, base);
+  r(3, 3, 3, 1, base);
+  r(3, 4, 3, 2, base);
+  p(4, 4, ear);
+
+  p(11, 2, base);
+  r(10, 3, 3, 1, base);
+  r(10, 4, 3, 2, base);
+  p(11, 4, ear);
+
+  // 머리 기본 형태 (Head base)
+  r(4, 5, 8, 9, base);
+  r(3, 6, 10, 7, base);
+
+  // 품종별 고유 털 무늬 (Breed Markings)
+  if (breedId === 'cheese') {
+    r(7, 5, 2, 3, dark);
+    p(5, 6, dark);
+    p(10, 6, dark);
+    p(3, 9, dark);
+    p(12, 9, dark);
+    r(6, 10, 4, 3, white);
+  } else if (breedId === 'tuxedo') {
+    r(6, 10, 4, 4, white);
+    r(7, 9, 2, 1, white);
+  } else if (breedId === 'calico') {
+    r(3, 3, 3, 6, '#1f2937');
+    p(4, 4, ear);
+    r(10, 3, 3, 6, '#ea580c');
+    p(11, 4, ear);
+    r(6, 10, 4, 3, white);
+  } else if (breedId === 'white') {
+    r(4, 12, 8, 2, '#e2e8f0');
+    r(5, 10, 6, 3, '#ffffff');
+  } else if (breedId === 'mackerel') {
+    r(7, 5, 2, 3, dark);
+    p(5, 6, dark);
+    p(10, 6, dark);
+    p(3, 9, dark);
+    p(12, 9, dark);
+    r(6, 10, 4, 3, white);
+  } else if (breedId === 'russian_blue') {
+    r(4, 12, 8, 2, dark);
+    r(6, 10, 4, 3, '#94a3b8');
+  }
+
+  // 눈 및 하이라이트 (Eyes & pupil shine)
+  p(5, 8, eye);
+  p(10, 8, eyeR);
+  p(5, 7, '#ffffff');
+  p(10, 7, '#ffffff');
+
+  // 코 (Nose)
+  r(7, 10, 2, 1, nose);
+
+  // 수염 (Whiskers)
+  const wColor = (breedId === 'tuxedo' || breedId === 'mackerel' || breedId === 'russian_blue') ? '#ffffff' : '#cbd5e1';
+  r(1, 9, 2, 1, wColor);
+  r(1, 11, 2, 1, wColor);
+  r(13, 9, 2, 1, wColor);
+  r(13, 11, 2, 1, wColor);
+
+  return cvs;
 }
 
 function renderShopModal() {
@@ -6759,6 +7725,30 @@ function renderShopModal() {
       lastGroup = item.catGroup;
       const header = elem('div', 'shop-section-header');
       if (item.catGroup === 'pet' || item.catGroup === 'cat') {
+        const left = elem('div', 'shop-section-title-wrap');
+        const title = elem('div', '', T('🐾 고양이 입양 & 필수 용품', '🐾 Cat Adoption & Essentials'));
+        const note = elem('div', 'shop-section-note', T('※ 고양이를 분양받으려면 [모래 화장실 🚽]과 [식기 🥣]를 먼저 구비해야 합니다.', '※ Must prepare Litter Box 🚽 & Food Bowl 🥣 before adopting a cat.'));
+        left.append(title, note);
+        header.append(left);
+      } else if (item.catGroup === 'treat') {
+        const left = elem('div', 'shop-section-title-wrap');
+        const title = elem('div', '', T('🍖 고양이 간식 & 힐링 아이템', '🍖 Cat Treats & Play Items'));
+        const note = elem('div', 'shop-section-note', T('반려묘를 위한 프리미엄 간식과 힐링 소모품입니다.', 'Special treats and consumable gifts for your office cats.'));
+        left.append(title, note);
+        header.append(left);
+      } else if (item.catGroup === 'theme') {
+        const left = elem('div', 'shop-section-title-wrap');
+        const title = elem('div', '', T('🎨 사무실 인테리어 테마', '🎨 Office Themes'));
+        const note = elem('div', 'shop-section-note', T('사무실 벽지와 바닥, 분위기를 완전히 새롭게 탈바꿈합니다.', 'Transform the office walls, floor, and atmosphere.'));
+        left.append(title, note);
+        header.append(left);
+      } else if (item.catGroup === 'seasonal') {
+        const left = elem('div', 'shop-section-title-wrap');
+        const title = elem('div', '', T('🎄 겨울 & 크리스마스 시즌 한정', '🎄 Winter & Holiday Specials'));
+        const note = elem('div', 'shop-section-note', T('포근한 연말 분위기를 더해주는 시즌 한정 데코레이션입니다.', 'Limited-edition decorations for the cozy holiday season.'));
+        left.append(title, note);
+        header.append(left);
+      } else if (false) {
         const left = elem('div', 'shop-section-title-wrap');
         const title = elem('div', '', T('🐾 고양이 입양 & 필수 용품', '🐾 Cat Adoption & Essentials'));
         const note = elem('div', 'shop-section-note', T('※ 고양이를 분양받으려면 [모래 화장실 🚽]과 [식기 🥣]를 먼저 구비해야 합니다.', '※ Must prepare Litter Box 🚽 & Food Bowl 🥣 before adopting a cat.'));
@@ -6867,7 +7857,13 @@ function renderShopModal() {
     const card = elem('div', `shop-card ${isOwned || isAdopted ? 'owned' : ''} ${!isAdopted && !hasReqs ? 'locked' : ''}`);
 
     const top = elem('div', 'shop-card-top');
-    const icon = elem('div', 'shop-card-icon', item.icon);
+    let icon;
+    if (isCat && item.catType && CAT_BREEDS[item.catType]) {
+      icon = elem('div', 'shop-card-icon shop-card-cat-icon');
+      icon.append(createCatPixelIcon(item.catType));
+    } else {
+      icon = elem('div', 'shop-card-icon', item.icon);
+    }
     const info = elem('div', 'shop-card-info');
 
     if (isCat && !isAdopted) {
@@ -6938,6 +7934,45 @@ function renderShopModal() {
           toggleCatActive(item.catType, !active);
         });
       }
+    } else if (item.catGroup === 'theme') {
+      const currentTheme = store.get('officeTheme', 'default');
+      const themeId = item.id.replace('theme_', '');
+      if (isOwned) {
+        if (currentTheme === themeId) {
+          setPixelContent(btn, T('✅ 적용 중', '✅ Active'));
+          btn.disabled = true;
+        } else {
+          setPixelContent(btn, T('🎨 테마 적용', '🎨 Apply'));
+          btn.disabled = false;
+          btn.addEventListener('click', () => setOfficeTheme(themeId));
+        }
+      } else {
+        btn.textContent = canAfford ? T('테마 구매', 'Buy Theme') : T('코인 부족', 'Need Coins');
+        btn.disabled = !canAfford;
+        btn.addEventListener('click', () => buyFurniture(item.id));
+      }
+    } else if (item.catGroup === 'treat') {
+      const treats = store.get('officeTreats', { churu: 0, catnip: 0 });
+      const treatType = item.id.replace('cat_', '');
+      const count = treats[treatType] || 0;
+      price.textContent = `🪙 ${item.price} 코인 (보유: ${count}개)`;
+      if (count > 0) {
+        setPixelContent(btn, T(`😋 급여하기 (${count}개)`, `Feed (${count})`));
+        btn.disabled = false;
+        btn.addEventListener('click', () => feedCatTreat(treatType));
+      } else {
+        btn.textContent = canAfford ? T('간식 구매', 'Buy Treat') : T('코인 부족', 'Need Coins');
+        btn.disabled = !canAfford;
+        btn.addEventListener('click', () => {
+          if (spendCoins(item.price)) {
+            treats[treatType] = (treats[treatType] || 0) + 1;
+            store.set('officeTreats', treats);
+            playRetroSound('buy');
+            showToast(T(`🛍️ "${item.name}"을(를) 구매했습니다!`, `Purchased "${item.enName}"!`), '🛍️');
+            renderShopModal();
+          }
+        });
+      }
     } else if (isOwned) {
       const placed = isFurniturePlaced(item.id);
       card.classList.toggle('placed', placed);
@@ -6981,6 +8016,78 @@ function renderShopModal() {
   }
 }
 
+
+// ── 📅 일일 업무 & 연속 출석 시스템 (v1.9.4) ──
+function getTodayDateStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function checkDailyStreak() {
+  const today = getTodayDateStr();
+  const streakData = store.get('userStreak', { lastDate: '', count: 0, highest: 0 });
+  if (streakData.lastDate === today) return streakData;
+
+  const yesterday = new Date(Date.now() - 86400000);
+  const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+  if (streakData.lastDate === yStr) {
+    streakData.count = (streakData.count || 0) + 1;
+  } else {
+    streakData.count = 1;
+  }
+  streakData.highest = Math.max(streakData.highest || 0, streakData.count);
+  streakData.lastDate = today;
+
+  const bonusCoins = 10 + Math.min(streakData.count, 5) * 5;
+  addCoins(bonusCoins, T(`연속 ${streakData.count}일 출근 보너스`, `Daily Streak ${streakData.count}d Bonus`));
+  playRetroSound('coin');
+  showToast(T(`🔥 ${streakData.count}일 연속 출근! 출근 보너스 (+${bonusCoins}🪙)`, `🔥 Day ${streakData.count} Streak! Login Bonus (+${bonusCoins}🪙)`), '🔥');
+
+  store.set('userStreak', streakData);
+  return streakData;
+}
+
+function getDailyQuests() {
+  const today = getTodayDateStr();
+  let dData = store.get('dailyQuestsData', null);
+  if (!dData || dData.date !== today) {
+    dData = {
+      date: today,
+      bonusClaimed: false,
+      quests: [
+        { id: 'daily_prompt', icon: '💬', title: 'AI 지시 1회 전달하기', enTitle: 'Send 1 AI Instruction', target: 1, current: 0, reward: 20, done: false, claimed: false },
+        { id: 'daily_cat', icon: '🐱', title: '고양이와 2회 교감하기 (쓰다듬기·밥주기·간식)', enTitle: 'Pet / Feed Cat 2 times', target: 2, current: 0, reward: 20, done: false, claimed: false },
+        { id: 'daily_furniture', icon: '🛋️', title: '사무실 가구 1회 이용하기 (커피·자판기·오락기 등)', enTitle: 'Use Office Furniture 1 time', target: 1, current: 0, reward: 20, done: false, claimed: false }
+      ]
+    };
+    store.set('dailyQuestsData', dData);
+  }
+  return dData;
+}
+
+function recordDailyQuestProgress(type, count = 1) {
+  const dData = getDailyQuests();
+  let changed = false;
+  for (const q of dData.quests) {
+    if (q.id === type && !q.done) {
+      q.current = Math.min(q.target, q.current + count);
+      if (q.current >= q.target) {
+        q.done = true;
+        showToast(T(`📋 일일 미션 달성: "${T(q.title, q.enTitle)}" (업적 도감에서 보상 수령)`, `📋 Daily Quest Done: "${T(q.title, q.enTitle)}"`), '📋');
+        playRetroSound('done');
+      }
+      changed = true;
+    }
+  }
+  if (changed) {
+    store.set('dailyQuestsData', dData);
+    if (achieveModalEl && !achieveModalEl.hidden && achieveCurTab === 'daily') {
+      renderAchieveModal();
+    }
+  }
+}
+
 function renderAchieveModal() {
   if (!achieveModalEl || achieveModalEl.hidden) return;
   const sumEl = $('acSummary');
@@ -6989,10 +8096,14 @@ function renderAchieveModal() {
   const secBadges = $('acSecBadges');
   const secRanks = $('acSecRanks');
 
+  const tabDaily = $('acTabDaily');
+  const secDaily = $('acSecDaily');
   tabBadges?.classList.toggle('active', achieveCurTab === 'badges');
   tabRanks?.classList.toggle('active', achieveCurTab === 'ranks');
+  tabDaily?.classList.toggle('active', achieveCurTab === 'daily');
   if (secBadges) secBadges.hidden = achieveCurTab !== 'badges';
   if (secRanks) secRanks.hidden = achieveCurTab !== 'ranks';
+  if (secDaily) secDaily.hidden = achieveCurTab !== 'daily';
 
   const sessions = data.sessions || [];
 
@@ -7139,6 +8250,95 @@ function renderAchieveModal() {
     secBadges.append(grid);
   }
 
+
+  // 3. 📅 일일 업무 & 연속 출석 탭
+  if (secDaily && achieveCurTab === 'daily') {
+    secDaily.replaceChildren();
+    const wrap = elem('div', 'ac-daily-wrap');
+
+    const streak = checkDailyStreak();
+    const streakCard = elem('div', 'ac-streak-card');
+    const sInfo = elem('div', 'ac-streak-info');
+    const flame = elem('div', 'ac-streak-flame', '🔥');
+    const sTexts = elem('div', 'ac-streak-texts');
+    const sTitle = elem('div', 'ac-streak-title', T(`현재 ${streak.count}일 연속 출근 중!`, `${streak.count} Day Streak!`));
+    const sSub = elem('div', 'ac-streak-sub', T(`최고 연속 출근: ${streak.highest}일 · 매일 로그인 시 코인 지급`, `Highest streak: ${streak.highest}d · Daily login bonus awarded`));
+    sTexts.append(sTitle, sSub);
+    sInfo.append(flame, sTexts);
+    const sBadge = elem('div', 'ac-streak-bonus-badge', T('✅ 오늘 출석 완료', '✅ Attended Today'));
+    streakCard.append(sInfo, sBadge);
+    wrap.append(streakCard);
+
+    const dData = getDailyQuests();
+    const qList = elem('div', 'ac-quests-list');
+    let allDone = true;
+
+    for (const q of dData.quests) {
+      if (!q.done || !q.claimed) allDone = false;
+      const item = elem('div', `ac-quest-item ${q.done ? 'done' : ''}`);
+      const left = elem('div', 'ac-quest-left');
+      const icon = elem('div', 'ac-quest-icon', q.icon);
+      const details = elem('div', 'ac-quest-details');
+      const title = elem('div', 'ac-quest-title', T(q.title, q.enTitle));
+      const barWrap = elem('div', 'ac-quest-bar-wrap');
+      const barBg = elem('div', 'ac-quest-bar-bg');
+      const pct = Math.min(100, Math.round((q.current / q.target) * 100));
+      const barFill = elem('div', 'ac-quest-bar-fill');
+      barFill.style.width = `${pct}%`;
+      barBg.append(barFill);
+      const barTxt = elem('div', 'ac-quest-bar-txt', `${q.current}/${q.target}`);
+      barWrap.append(barBg, barTxt);
+      details.append(title, barWrap);
+      left.append(icon, details);
+
+      const btn = elem('button', `ac-quest-claim-btn ${q.claimed ? 'claimed' : ''}`);
+      if (q.claimed) {
+        btn.textContent = T('수령 완료', 'Claimed');
+        btn.disabled = true;
+      } else if (q.done) {
+        btn.textContent = T(`보상 받기 (+${q.reward}🪙)`, `Claim (+${q.reward}🪙)`);
+        btn.addEventListener('click', () => {
+          q.claimed = true;
+          addCoins(q.reward, T(`일일 미션 달성: ${q.title}`, `Daily Quest: ${q.enTitle}`));
+          playRetroSound('coin');
+          store.set('dailyQuestsData', dData);
+          renderAchieveModal();
+        });
+      } else {
+        btn.textContent = `+${q.reward}🪙`;
+        btn.disabled = true;
+      }
+      item.append(left, btn);
+      qList.append(item);
+    }
+    wrap.append(qList);
+
+    const allQuestsDone = dData.quests.every((x) => x.done);
+    const allBanner = elem('div', 'ac-all-done-banner');
+    const bTitle = elem('div', '', T('🎯 오늘의 모든 미션 올클리어 보너스 (+30🪙)', '🎯 Daily All-Clear Bonus (+30🪙)'));
+    const bBtn = elem('button', `ac-quest-claim-btn ${dData.bonusClaimed ? 'claimed' : ''}`);
+    if (dData.bonusClaimed) {
+      bBtn.textContent = T('수령 완료', 'Claimed');
+      bBtn.disabled = true;
+    } else if (allQuestsDone) {
+      bBtn.textContent = T('보너스 받기 (+30🪙)', 'Claim (+30🪙)');
+      bBtn.addEventListener('click', () => {
+        dData.bonusClaimed = true;
+        addCoins(30, T('일일 미션 올클리어 보너스', 'Daily All-Clear Bonus'));
+        playRetroSound('buy');
+        store.set('dailyQuestsData', dData);
+        renderAchieveModal();
+      });
+    } else {
+      bBtn.textContent = '+30🪙';
+      bBtn.disabled = true;
+    }
+    allBanner.append(bTitle, bBtn);
+    wrap.append(allBanner);
+
+    secDaily.append(wrap);
+  }
+
   // 2. 직원 직급 랭킹 탭 (명예의 전당)
   if (secRanks && achieveCurTab === 'ranks') {
     secRanks.replaceChildren();
@@ -7273,6 +8473,7 @@ function sendPetSay() {
     return;
   }
   send({ cmd: 'pet-say', sid: s.id, text: text.slice(0, 1000) });
+  recordDailyQuestProgress('daily_prompt', 1);
   playRetroSound('send');
   const r = remoteOf(s.id);
   const listening = r && r.listen;
@@ -7932,16 +9133,20 @@ if (nsToggleBtn) nsToggleBtn.addEventListener('click', toggleNightShift);
 if (nsCopyBtn) nsCopyBtn.addEventListener('click', copyNightShiftReport);
 
 if (btnCoins) btnCoins.addEventListener('click', openShopModal);
+$('btnWrapped')?.addEventListener('click', openWrappedModal);
+$('wrappedClose')?.addEventListener('click', closeWrappedModal);
+$('arcadeClose')?.addEventListener('click', closeArcadeModal);
+$('arcadeStartBtn')?.addEventListener('click', startArcadeGame);
+$('arcadeCanvas')?.addEventListener('click', onArcadeCanvasClick);
+$('acTabDaily')?.addEventListener('click', () => {
+  achieveCurTab = 'daily';
+  renderAchieveModal();
+});
 if (shopCloseBtn) shopCloseBtn.addEventListener('click', closeShopModal);
 const shopCoinBadgeEl = $('shopCoinsTotal')?.parentElement;
 if (shopCoinBadgeEl) {
-  shopCoinBadgeEl.style.cursor = 'pointer';
-  shopCoinBadgeEl.title = T('클릭 시 테스트 코인 +50,000 충전', 'Click to charge +50,000 test coins');
-  shopCoinBadgeEl.addEventListener('click', () => {
-    addCoins(50000, '테스트 코인 충전');
-    playRetroSound('coin');
-    showToast(T('🪙 테스트 코인 +50,000 지급 완료!', '🪙 Added +50,000 test coins!'), '🪙');
-  });
+  shopCoinBadgeEl.style.cursor = 'default';
+  shopCoinBadgeEl.removeAttribute('title');
 }
 btnPin.addEventListener('click', () => setPinned(!pinned));
 if (btnHook) btnHook.addEventListener('click', toggleHooks);
@@ -8218,6 +9423,24 @@ const SETTINGS = [
         desc: T('개발자 밈이 팝업될 때 재생되는 효과음을 켜거나 끕니다.', 'Play a sound effect when a developer meme pops up.'),
         get: () => store.get('memeSound', true) !== false,
         set: (v) => { store.set('memeSound', v); refreshSettings(); }
+      },
+      {
+        type: 'toggle',
+        name: T('🎵 로파이 코딩 BGM (OST)', '🎵 Lofi Coding BGM (OST)'),
+        pcOnly: true,
+        desc: T('LP 턴테이블의 절차적 로파이 코딩 배경음악을 켜거나 끕니다.', 'Play or mute procedural chill lofi coding background music from the turntable.'),
+        get: () => lofiBgmState.playing,
+        set: (v) => {
+          if (v) {
+            startTurntableLofi();
+            showToast(T('🎵 턴테이블에서 로파이 코딩 비트가 흐릅니다! 🎶', '🎵 Playing lofi coding beats! 🎶'), '🎵');
+          } else {
+            stopTurntableLofi();
+            showToast(T('🔇 턴테이블 음악을 껐습니다.', '🔇 Turntable music paused.'), '🔇');
+          }
+          store.set('bgmAutoPlay', v);
+          refreshSettings();
+        }
       }
     ],
   },
@@ -8273,6 +9496,20 @@ const SETTINGS = [
       { type: 'action', name: T('효과음 미리듣기', 'Preview sound'), pcOnly: true, shown: () => !!appSettings?.notifySound,
         desc: T('승인 요청·작업 완료 시 재생되는 8비트 효과음을 들어봅니다.', 'Listen to the 8-bit sound effects for approvals and finished work.'),
         label: () => T('▶ 들어보기', '▶ Play'), run: () => playRetroSound('test', true), enabled: appReady },
+      { type: 'toggle', name: T('🎵 로파이 코딩 BGM (OST)', '🎵 Lofi Coding BGM (OST)'),
+        desc: T('LP 턴테이블에서 재생되는 감미로운 절차적 로파이(Lo-Fi) 코딩 배경음악을 켜거나 끕니다.', 'Play or mute procedural chill lofi coding background music from the turntable.'),
+        get: () => lofiBgmState.playing,
+        set: (v) => {
+          if (v) {
+            startTurntableLofi();
+            showToast(T('🎵 턴테이블에서 로파이 코딩 비트가 흐릅니다! 🎶', '🎵 Playing lofi coding beats! 🎶'), '🎵');
+          } else {
+            stopTurntableLofi();
+            showToast(T('🔇 턴테이블 음악을 껐습니다.', '🔇 Turntable music paused.'), '🔇');
+          }
+          store.set('bgmAutoPlay', v);
+          refreshSettings();
+        } }, 
       { type: 'toggle', name: T('방해 금지 시간대', 'Quiet hours'), pcOnly: true,
         desc: () => (appSettings?.quietEnabled
           ? T(`${appSettings.quietStart}시부터 ${appSettings.quietEnd}시까지는 PC 알림을 띄우지 않습니다.`, `No notifications from ${appSettings.quietStart}:00 to ${appSettings.quietEnd}:00.`)
@@ -9260,6 +10497,10 @@ document.addEventListener('keydown', (e) => {
     if (broadcastModalEl && !broadcastModalEl.hidden) { closeBroadcastModal(); return; }
     if (nightShiftModalEl && !nightShiftModalEl.hidden) { closeNightShiftModal(); return; }
     if (shopModalEl && !shopModalEl.hidden) { closeShopModal(); return; }
+    const arcModal = $('arcadeModal');
+    if (arcModal && !arcModal.hidden) { closeArcadeModal(); return; }
+    const wrpModal = $('wrappedModal');
+    if (wrpModal && !wrpModal.hidden) { closeWrappedModal(); return; }
     if (!settingsEl.hidden) { setSettingsOpen(false); return; }
     selectedId = null;
     renderPanel();

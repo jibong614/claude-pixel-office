@@ -9,7 +9,7 @@
 [![Release](https://img.shields.io/github/v/release/jibong614/claude-pixel-office?color=7c3aed&label=Release)](https://github.com/jibong614/claude-pixel-office/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078d4)](https://github.com/jibong614/claude-pixel-office)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512bd4)](https://dotnet.microsoft.com/download/dotnet/8.0)
-[![Tests](https://img.shields.io/badge/Tests-45%20Passed-brightgreen)](tests/ClaudeOffice.Tests)
+[![Tests](https://img.shields.io/badge/Tests-52%20Passed-brightgreen)](tests/ClaudeOffice.Tests)
 [![License](https://img.shields.io/github/license/jibong614/claude-pixel-office?color=green)](LICENSE)
 
 **See at a glance what Claude Code is doing and whether it's waiting for your approval — as a retro pixel-art office on Windows.**
@@ -69,7 +69,7 @@
 - **Always-on-Top Floating Companion**: Monitor your primary agent in the corner of your screen even when editors or browsers are full-screen.
 - **3-Tier Responsive Scaling (Large 360px · Medium 300px · Small 260px)**: Fonts (11.5px ➔ 10.5px ➔ 9.5px) and control buttons scale proportionally to preserve whitespace and readability.
 - **Ultra-Slim Dynamic Island (MiniBar)**: Floats at the top as a 44px capsule that expands on hover with one-click terminal jump, emergency stop, and widget restore (`🪟` / `💼`) buttons.
-- **🚶 Shimeji Walk Mode**: Agent steps away from the desk to stroll, jump, and hop across the bottom of your screen.
+- **🐾 Shimeji Wide Walk Mode**: Agents step away from their desks to freely roam a 680px wide virtual stage across the bottom of your screen. Features single-visible-arm walking (no flapping, back arm fully occluded in side profile), walking while holding warm coffee (`walk_coffee`), relaxed standing coffee breaks for over 10 seconds (`sip`), floor sitting rest, and 10 expressive idle motions moving at a peaceful, cozy pace (12–20s duration).
 - **💡 25 Developer Memes Easter Egg**: Click to trigger humorous developer quotes wrapped into 2-line thought bubbles while keeping the last answer card safe.
 
 ### 3. 📱 Mobile Remote Control — Keep Work Moving While Away
@@ -81,7 +81,8 @@
 - **🔒 End-to-End Encryption (AES-256-GCM)**: Relayed via Google Firebase free tier, but encrypted using a local key in the QR `#hash` that never touches any server.
 
 ### 4. 🛋️ Office Life & Productivity Tools
-- **🪙 Coins & Office Decor Shop**: Earn coins by finishing tasks and saving prompt cache tokens. Purchase 7 interactive props (Espresso machine, office cat 'Nabi', retro arcade cabinet, etc.) with custom 8-bit sound effects.
+- **🪙 Coins & Office Decor Shop**: Earn coins by finishing tasks, saving prompt cache tokens, and interacting with furniture (1-hour cooldown prevents infinite farming). Purchase 7 interactive props with zero whiteboard overlap.
+- **🐱 3-Stage Cat Evolution & Multiline Reactions**: Watch the office cat grow from Kitten ➔ Teen ➔ Adult cat. Automatic monitor perch distribution (left/right/desk top) prevents sprite overlap, and petting triggers lovely purring with multiline thought bubbles.
 - **☕ Autonomous Idle AI & 24h Day/Night Lighting**: Resting agents stretch, sip warm coffee, and share random thoughts. Lighting shifts dynamically from daylight to sunset, evening, and late-night spotlight cones.
 - **🤝 Multi-Agent Meeting Table & 📢 Broadcast (`Shortcut B`)**: Collaborative conference table animations and bulk broadcast commands (`/compact`, unit tests, etc.) to all sessions.
 - **📋 Whiteboard Kanban & 🧠 Context Gauge**: 3-column To Do / In Progress / Done card view and real-time context token load gauge.
@@ -90,7 +91,7 @@
 ### 5. ⚙️ Lightweight, Native Windows Performance
 - **Standalone Transparent Settings**: Right-click the system tray to open a lightweight 720×640 modal without loading the main dashboard.
 - **Zero-Idle CPU Footprint**: Efficient 0.7s delta parsing uses 0% CPU when sessions are idle.
-- **45 Passing Automated Unit Tests**: Complete xUnit test suite ensuring rendering, hook dispatch, encryption, and widget layout integrity.
+- **52 Passing Automated Unit Tests**: Complete xUnit test suite ensuring rendering, hook dispatch, encryption, virtual wide layout, and window mode switching integrity.
 
 ---
 
