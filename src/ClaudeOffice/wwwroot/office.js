@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.14';
+const PAGE_VERSION = '1.9.15';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -543,14 +543,25 @@ function initModeSelectModal() {
   const modal = $('modeSelectModal');
   if (!modal) return;
   const cards = modal.querySelectorAll('.mode-card');
+  const applyChoice = (mode) => {
+    store.set('appModeChosen', true);
+    setAppMode(mode);
+    const chk = $('msAutoStart');
+    const autoStartOn = chk ? chk.checked : true;
+    setAppSetting('autoStart', autoStartOn);
+    modal.hidden = true;
+  };
   cards.forEach((card) => {
     card.addEventListener('click', () => {
-      const mode = card.dataset.mode;
-      store.set('appModeChosen', true);
-      setAppMode(mode);
-      modal.hidden = true;
+      applyChoice(card.dataset.mode);
     });
   });
+  const closeBtn = $('msClose');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      applyChoice(appMode || 'basic');
+    });
+  }
 }
 
 function checkFirstLaunchMode() {
@@ -558,7 +569,11 @@ function checkFirstLaunchMode() {
   const chosen = store.get('appModeChosen', false);
   if (!chosen) {
     const modal = $('modeSelectModal');
-    if (modal) modal.hidden = false;
+    if (modal) {
+      modal.hidden = false;
+      const chk = $('msAutoStart');
+      if (chk) chk.checked = appSettings ? appSettings.autoStart !== false : true;
+    }
   }
 }
 // 팀(작업 폴더) 표시: {팀: {name, color(RUGS 번호)}} · 팀 순서 · 직원 자리 순서(세션 ID). 휴대폰은 PC가 보낸 것을 쓴다(remoteShare)
@@ -3265,179 +3280,94 @@ if (!lofiBgmState.activeTracks.includes(5)) {
   lofiBgmState.activeTracks.sort((a, b) => a - b);
 }
 
-function loadYouTubeApi() {
-  if (window.YT && window.YT.Player) {
-    initYouTubePlayer();
-    return;
-  }
-  if (document.getElementById('yt-iframe-api')) return;
-  const tag = document.createElement('script');
-  tag.id = 'yt-iframe-api';
-  tag.src = 'https://www.youtube.com/iframe_api';
-  tag.onerror = () => {
-    console.warn('YouTube script load error');
-    showToast(T('⚠️ YouTube 연결 실패: 내장 Lo-Fi 음악으로 자동 전환합니다.', '⚠️ Cannot load YouTube: switching to Built-in Lo-Fi.'), '⚠️');
-    setBgmSource('internal');
-  };
-  const first = document.getElementsByTagName('script')[0];
-  if (first && first.parentNode) first.parentNode.insertBefore(tag, first);
-  else document.head.appendChild(tag);
-}
-
-window.onYouTubeIframeAPIReady = function() {
-  ytApiLoaded = true;
-  initYouTubePlayer();
-};
+let ytIframe = null;
 
 function ensureYtContainer() {
-  let container = document.getElementById('ytAudioContainer');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'ytAudioContainer';
-    container.className = 'bgm-yt-floating-player';
-    container.style.display = 'none';
-
-    // 미니 플레이어 헤더
-    const header = document.createElement('div');
-    header.className = 'bgm-yt-float-header';
-
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'bgm-yt-float-title';
-    titleSpan.id = 'ytFloatTitle';
-    titleSpan.textContent = '📺 YouTube BGM';
-
-    const btnGroup = document.createElement('div');
-    btnGroup.className = 'bgm-yt-float-btns';
-
-    const minBtn = document.createElement('button');
-    minBtn.type = 'button';
-    minBtn.className = 'bgm-yt-float-min';
-    minBtn.textContent = '−';
-    minBtn.title = T('창 접기/펼치기', 'Minimize/Expand');
-    minBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      ytContainerMinimized = !ytContainerMinimized;
-      container.classList.toggle('minimized', ytContainerMinimized);
-      minBtn.textContent = ytContainerMinimized ? '+' : '−';
-    });
-
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'bgm-yt-float-close';
-    closeBtn.textContent = '✕';
-    closeBtn.title = T('BGM 끄기', 'Turn off BGM');
-    closeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      setBgmPlaying(false);
-    });
-
-    btnGroup.append(minBtn, closeBtn);
-    header.append(titleSpan, btnGroup);
-
-    const pDiv = document.createElement('div');
-    pDiv.id = 'ytPlayerDiv';
-
-    container.append(header, pDiv);
-    document.body.appendChild(container);
+  if (!ytIframe) {
+    ytIframe = document.getElementById('ytAudioIframe');
   }
+  if (!ytIframe) {
+    ytIframe = document.createElement('iframe');
+    ytIframe.id = 'ytAudioIframe';
+    ytIframe.title = 'YouTube BGM Audio Player';
+    ytIframe.src = 'about:blank';
+    ytIframe.allow = 'autoplay; encrypted-media';
+    // 화면에 조그마한 창이나 팝업이 노출되지 않도록 투명 백그라운드 배치
+    ytIframe.style.cssText = 'position:fixed!important;bottom:0!important;right:0!important;width:200px!important;height:200px!important;opacity:0.001!important;pointer-events:none!important;z-index:-9999!important;border:none!important;';
+    document.body.appendChild(ytIframe);
+
+    // YouTube iframe postMessage 응답 리스너 (재생 상태 및 자동 다음곡)
+    window.addEventListener('message', (event) => {
+      try {
+        if (!event.origin || !event.origin.includes('youtube')) return;
+        const msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (msg && msg.event === 'onStateChange') {
+          if (msg.info === 1) { // PLAYING
+            lofiBgmState.ytPlaying = true;
+            updateLofiUiDisplay();
+          } else if (msg.info === 2) { // PAUSED
+            lofiBgmState.ytPlaying = false;
+            updateLofiUiDisplay();
+          } else if (msg.info === 0) { // ENDED
+            advanceToNextYtTrack();
+          }
+        }
+      } catch (e) {}
+    });
+  }
+  return ytIframe;
 }
 
 function showYtContainer(show) {
   ensureYtContainer();
-  const c = document.getElementById('ytAudioContainer');
-  if (!c) return;
-  if (show && lofiBgmState.source === 'youtube' && lofiBgmState.enabled) {
-    c.style.display = 'flex';
-    const curYt = getCurYtTrack();
-    const tEl = document.getElementById('ytFloatTitle');
-    if (tEl) tEl.textContent = `📺 ${curYt.author} - ${curYt.badge || 'BGM'}`;
-  } else {
-    c.style.display = 'none';
-  }
-}
-
-function initYouTubePlayer() {
-  ensureYtContainer();
-  if (ytPlayer || !window.YT || !window.YT.Player) return;
-  const curYt = getCurYtTrack();
-  try {
-    ytPlayer = new YT.Player('ytPlayerDiv', {
-      height: '135',
-      width: '240',
-      videoId: curYt.videoId,
-      playerVars: {
-        autoplay: 1,
-        controls: 1,
-        disablekb: 0,
-        fs: 0,
-        modestbranding: 1,
-        rel: 0,
-        playsinline: 1
-      },
-      events: {
-        onReady: () => {
-          if (ytPendingPlay || lofiBgmState.enabled) {
-            ytPendingPlay = false;
-            playYouTubeVideo();
-          }
-        },
-        onStateChange: (e) => {
-          if (e.data === 0) { // ENDED (영상 종료 -> 다음 체크된 영상 자동 재생)
-            advanceToNextYtTrack();
-          } else if (e.data === 1) { // PLAYING
-            lofiBgmState.ytPlaying = true;
-            showYtContainer(true);
-            updateLofiUiDisplay();
-          } else if (e.data === 2) { // PAUSED
-            lofiBgmState.ytPlaying = false;
-            updateLofiUiDisplay();
-          }
-        },
-        onError: (e) => {
-          console.warn('YouTube Player error:', e.data);
-          showToast(T('⚠️ YouTube 연결 실패: 내장 Lo-Fi 음악으로 자동 전환합니다.', '⚠️ YouTube unavailable: switching to Built-in Lo-Fi.'), '⚠️');
-          setBgmSource('internal');
-        }
-      }
-    });
-  } catch (err) {
-    console.warn('Failed to initialize YouTube Player:', err);
-    showToast(T('⚠️ YouTube 로드 실패: 내장 Lo-Fi 음악으로 자동 전환합니다.', '⚠️ Failed to load YouTube: switching to Built-in Lo-Fi.'), '⚠️');
-    setBgmSource('internal');
-  }
 }
 
 function playYouTubeVideo() {
   const curYt = getCurYtTrack();
-  ensureYtContainer();
-  showYtContainer(true);
+  const iframe = ensureYtContainer();
+  const targetEmbed = https://www.youtube-nocookie.com/embed/?enablejsapi=1&autoplay=1&playsinline=1&controls=0&origin=;
 
-  if (!ytPlayer || typeof ytPlayer.playVideo !== 'function') {
-    ytPendingPlay = true;
-    loadYouTubeApi();
-    return;
-  }
   try {
-    const curUrl = ytPlayer.getVideoUrl ? ytPlayer.getVideoUrl() : '';
-    if (!curUrl || !curUrl.includes(curYt.videoId)) {
-      ytPlayer.loadVideoById(curYt.videoId);
+    if (!iframe.src || !iframe.src.includes(curYt.videoId)) {
+      iframe.src = targetEmbed;
     } else {
-      ytPlayer.playVideo();
+      iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: '' }), '*');
     }
-    lofiBgmState.ytPlaying = true;
-  } catch (e) {
-    try { ytPlayer.loadVideoById(curYt.videoId); } catch {}
-    lofiBgmState.ytPlaying = true;
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: '' }), '*');
+        iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
+        iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: '' }), '*');
+      } catch (e) {}
+    }, 600);
+  } catch (err) {
+    iframe.src = targetEmbed;
   }
+  lofiBgmState.ytPlaying = true;
   updateLofiUiDisplay();
 }
 
 function pauseYouTubeVideo() {
-  if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
-    try { ytPlayer.pauseVideo(); } catch {}
+  const iframe = document.getElementById('ytAudioIframe') || ytIframe;
+  if (iframe && iframe.contentWindow) {
+    try {
+      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }), '*');
+    } catch (e) {}
   }
   lofiBgmState.ytPlaying = false;
-  showYtContainer(false);
+  updateLofiUiDisplay();
+}
+
+function stopYouTubeVideo() {
+  const iframe = document.getElementById('ytAudioIframe') || ytIframe;
+  if (iframe) {
+    try {
+      iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }), '*');
+      iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'stopVideo', args: '' }), '*');
+    } catch (e) {}
+    iframe.src = 'about:blank';
+  }
+  lofiBgmState.ytPlaying = false;
   updateLofiUiDisplay();
 }
 
@@ -3463,14 +3393,7 @@ function selectYtTrack(trackId, immediatePlay = true) {
       store.set('bgmSource', 'youtube');
       stopTurntableLofi();
     }
-    if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-      const curYt = getCurYtTrack();
-      ytPlayer.loadVideoById(curYt.videoId);
-      lofiBgmState.ytPlaying = true;
-      showYtContainer(true);
-    } else {
-      playYouTubeVideo();
-    }
+    playYouTubeVideo();
     const tr = getCurYtTrack();
     showToast(T(`▶ YouTube 코딩음악: ${tr.title} 재생!`, `▶ Playing YouTube: ${tr.enTitle}!`), '📺');
   }
@@ -11572,7 +11495,8 @@ const RENDER = {
     // (B-1) YouTube 제어 바
     const ytControlBar = elem('div', 'bgm-yt-control-bar');
     const ytPrevBtn = elem('button', 'bgm-yt-btn', '⏮️ ' + T('이전곡', 'Prev'));
-    const ytPlayBtn = elem('button', 'bgm-yt-btn play-btn', '▶ ' + T('재생', 'Play'));
+    const isInitialYtPlaying = lofiBgmState.enabled && lofiBgmState.source === 'youtube';
+    const ytPlayBtn = elem('button', 'bgm-yt-btn play-btn' + (isInitialYtPlaying ? ' is-playing' : ''), isInitialYtPlaying ? '■ ' + T('정지', 'Stop') : '▶ ' + T('재생', 'Play'));
     const ytNextBtn = elem('button', 'bgm-yt-btn', T('다음곡', 'Next') + ' ⏭️');
     ytPrevBtn.type = 'button'; ytPlayBtn.type = 'button'; ytNextBtn.type = 'button';
 
@@ -11583,7 +11507,13 @@ const RENDER = {
       selectYtTrack(active[prevIdx], true);
     });
     ytPlayBtn.addEventListener('click', () => {
-      setBgmPlaying(!lofiBgmState.enabled);
+      if (lofiBgmState.enabled && lofiBgmState.source === 'youtube') {
+        setBgmPlaying(false);
+      } else {
+        lofiBgmState.source = 'youtube';
+        store.set('bgmSource', 'youtube');
+        setBgmPlaying(true);
+      }
     });
     ytNextBtn.addEventListener('click', () => {
       advanceToNextYtTrack();
@@ -11701,7 +11631,8 @@ const RENDER = {
           ? `${ytStatusIcon} YouTube: [${curYt.id}] ${T(curYt.title, curYt.enTitle)} (${curYt.author} · ${curYt.duration}) · ${ytActive.length}${T('곡 순차 재생', ' tracks')}`
           : `${ytStatusIcon} YouTube ${T('일시 정지됨 (대기)', 'Paused (Ready)')}: [${curYt.id}] ${T(curYt.title, curYt.enTitle)}`;
 
-        ytPlayBtn.textContent = isYtActivelyPlaying ? '⏸️ ' + T('일시정지', 'Pause') : '▶ ' + T('재생', 'Play');
+        ytPlayBtn.textContent = isYtActivelyPlaying ? '■ ' + T('정지', 'Stop') : '▶ ' + T('재생', 'Play');
+        ytPlayBtn.classList.toggle('is-playing', isYtActivelyPlaying);
       }
     };
 
@@ -13751,6 +13682,7 @@ if (REMOTE) {
   host.addEventListener('message', (e) => {
     const m = e.data;
     if (m?.type === 'cloud') onCloud(m);
+    else if (m?.type === 'toast') showToast(m.msg || '', m.icon || '🚀', m.duration || 5000);
     else if (m?.type === 'app') onApp(m);
     else if (m?.type === 'share') onSavedShare(m.data);
     else if (m?.type === 'remote') onRemote(m.data);

@@ -14,7 +14,7 @@ internal sealed class UpdateChecker : IDisposable
     public const string Repo = "jibong614/claude-pixel-office";
     public const string ReleasesUrl = $"https://github.com/{Repo}/releases/latest";
 
-    private static readonly TimeSpan FirstDelay = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan FirstDelay = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan Interval = TimeSpan.FromHours(12);
 
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };

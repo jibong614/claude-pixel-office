@@ -5873,6 +5873,28 @@ body.settings-window .scanline-overlay {
   border-color: #ef4444;
   color: #fecaca;
 }
+.bgm-yt-btn.play-btn.is-playing {
+  background: rgba(239, 68, 68, 0.45);
+  border-color: #f87171;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+}
+
+/* YouTube 백그라운드 오디오 플레이어 (화면에 팝업창이나 부유 창 노출 없음) */
+.bgm-yt-floating-player,
+#ytAudioContainer,
+#ytAudioIframe {
+  position: fixed !important;
+  bottom: 0 !important;
+  right: 0 !important;
+  width: 200px !important;
+  height: 200px !important;
+  opacity: 0.001 !important;
+  pointer-events: none !important;
+  z-index: -9999 !important;
+  border: none !important;
+  overflow: hidden !important;
+}
 
 /* 📺 YouTube 플로팅 미니 플레이어 (화면 구석 안정적 백그라운드 재생 지원) */
 .bgm-yt-floating-player {
@@ -5964,4 +5986,41 @@ body.settings-window .scanline-overlay {
     width: 140px !important;
     height: 30px !important;
   }
+}
+
+.mode-autostart-opt {
+  margin-top: 4px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+.mode-autostart-lbl {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.mode-autostart-lbl input[type="checkbox"] {
+  margin-top: 3px;
+  accent-color: #6366f1;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.mode-autostart-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mode-autostart-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+.mode-autostart-sub {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.35;
 }

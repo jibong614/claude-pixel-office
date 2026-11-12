@@ -270,23 +270,48 @@ public partial class MainWindow : Window
         else _pendingSelect = id;
     }
 
-    private void OnUpdateChecked()
+    private async void OnUpdateChecked()
     {
         Post(AppSettingsJson());
-        if (!_updates.IsNewer || _tray is null || _updates.Latest == App.Settings.UpdateNotified) return;
-        App.Settings.UpdateNotified = _updates.Latest;   // 같은 버전은 한 번만 알린다
-        TrySaveSettings();
+        if (!_updates.IsNewer || _updater.State is "downloading" or "installing") return;
+
         bool canInstall = CanInstallUpdate();
-        _tray.Notify(L.T($"새 버전 {_updates.Latest} 이 나왔어요", $"Version {_updates.Latest} is out"),
-                     canInstall
-                         ? L.T($"지금은 {App.Version} — 누르면 업데이트할지 묻습니다", $"You have {App.Version} — click to update")
-                         : L.T($"지금은 {App.Version} — 누르면 내려받는 페이지가 열립니다", $"You have {App.Version} — click to open the download page"),
-                     silent: true, onClick: () =>
-                     {
-                         if (!canInstall) { OpenUrl(_updates.Url); return; }
-                         ShowFromTray();
-                         StartUpdate();
-                     });
+        if (!canInstall)
+        {
+            if (_updates.Latest == App.Settings.UpdateNotified) return;
+            App.Settings.UpdateNotified = _updates.Latest;
+            TrySaveSettings();
+            _tray?.Notify(L.T($"새 버전 {_updates.Latest} 이 나왔어요", $"Version {_updates.Latest} is out"),
+                         L.T($"지금은 {App.Version} — 누르면 내려받는 페이지가 열립니다", $"You have {App.Version} — click to open the download page"),
+                         silent: true, onClick: () => OpenUrl(_updates.Url));
+            return;
+        }
+
+        // 새 버전 발견 시 묻지 않고 토스트 표시 후 백그라운드 자동 업데이트 진행
+        if (_updates.Latest == App.Settings.UpdateNotified) return;
+        App.Settings.UpdateNotified = _updates.Latest;
+        TrySaveSettings();
+
+        string toastMsg = L.T(
+            $"최신 버전 업데이트가 발견되었습니다. 빌드({_updates.Latest})으로 자동 업데이트 진행 중입니다...",
+            $"New version found. Automatically updating to build ({_updates.Latest})...");
+
+        Post(JsonSerializer.Serialize(new { type = "toast", msg = toastMsg, icon = "🚀", duration = 8000 }));
+        _tray?.Notify(L.T("새 버전 자동 업데이트", "Automatic Update"), toastMsg, silent: false);
+
+        var extra = App.Offscreen ? new[] { "--offscreen" } : Array.Empty<string>();
+        if (await _updater.RunAsync(_updates.Latest!, _updates.ZipUrl!, _updates.ShaUrl!, extra))
+        {
+            ExitApp();
+        }
+        else
+        {
+            string failMsg = L.T(
+                $"자동 업데이트를 완료하지 못했습니다: {_updater.Error}",
+                $"Automatic update failed: {_updater.Error}");
+            Post(JsonSerializer.Serialize(new { type = "toast", msg = failMsg, icon = "⚠️", duration = 6000 }));
+            _tray?.Notify("Claude Office", failMsg, silent: false);
+        }
     }
 
     /// <summary>앱 안에서 바로 바꿀 수 있는지: 새 버전이 있고, 릴리스에 zip·SHA-256 이 있고, 이 실행 파일이 배포본이며 폴더에 쓸 수 있을 때.</summary>
@@ -294,24 +319,32 @@ public partial class MainWindow : Window
         _updates.IsNewer && _updates.ZipUrl != null && _updates.ShaUrl != null && Updater.CannotReason() is null;
 
     /// <summary>
-    /// "업데이트할까요?" → 켜진 채로 받기·대조·풀기(진행률은 설정 → 정보) → 파일 바꾸기 → 새 버전 실행 → 이 프로그램 끝내기.
+    /// 새 버전 자동 업데이트: 묻지 않고 받기·대조·풀기(진행률은 설정 → 정보) → 파일 바꾸기 → 새 버전 실행 → 종료.
     /// 바로 바꿀 수 없으면(개발용 빌드·쓰기 권한 없음·옛 릴리스) 릴리스 페이지를 연다.
     /// </summary>
     private async void StartUpdate()
     {
         if (!CanInstallUpdate()) { OpenUrl(_updates.Url); return; }
         if (_updater.State is "downloading" or "installing") return;
-        if (!App.Offscreen && MessageBox.Show(this,
-                L.T($"새 버전 {_updates.Latest} 으로 업데이트할까요?\r\n\r\n받는 동안(약 65MB) 계속 쓸 수 있고, 다 받아 확인하면 잠깐 꺼졌다가 새 버전으로 다시 켜집니다.\r\n설정·별명·메모·휴대폰 연결는 그대로입니다.",
-                    $"Update to version {_updates.Latest}?\r\n\r\nYou can keep working while it downloads (about 65 MB). When it's verified, the app closes for a moment and reopens as the new version.\r\nSettings, nicknames, memos and the phone connection stay as they are."),
-                "Claude Office", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
-            return;
-        var extra = App.Offscreen ? new[] { "--offscreen" } : Array.Empty<string>();   // 점검 도구로 시험할 때는 새 버전도 화면 밖에
+
+        string toastMsg = L.T(
+            $"최신 버전 업데이트가 발견되었습니다. 빌드({_updates.Latest})으로 자동 업데이트 진행 중입니다...",
+            $"New version found. Automatically updating to build ({_updates.Latest})...");
+
+        Post(JsonSerializer.Serialize(new { type = "toast", msg = toastMsg, icon = "🚀", duration = 8000 }));
+        _tray?.Notify(L.T("새 버전 자동 업데이트", "Automatic Update"), toastMsg, silent: false);
+
+        var extra = App.Offscreen ? new[] { "--offscreen" } : Array.Empty<string>();
         if (await _updater.RunAsync(_updates.Latest!, _updates.ZipUrl!, _updates.ShaUrl!, extra))
             ExitApp();
-        else if (!App.Offscreen)
-            MessageBox.Show(this, L.T($"업데이트하지 못했습니다. 지금 버전은 그대로입니다.\r\n\r\n{_updater.Error}", $"The update failed. Your current version is unchanged.\r\n\r\n{_updater.Error}"),
-                "Claude Office", MessageBoxButton.OK, MessageBoxImage.Warning);
+        else
+        {
+            string failMsg = L.T(
+                $"자동 업데이트를 완료하지 못했습니다: {_updater.Error}",
+                $"Automatic update failed: {_updater.Error}");
+            Post(JsonSerializer.Serialize(new { type = "toast", msg = failMsg, icon = "⚠️", duration = 6000 }));
+            _tray?.Notify("Claude Office", failMsg, silent: false);
+        }
     }
 
     // ───────────────────────── 자리 비움 원격 · 바탕화면 미니위젯 ─────────────────────────

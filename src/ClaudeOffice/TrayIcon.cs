@@ -174,7 +174,7 @@ internal sealed class TrayIcon : IDisposable
     /// silent 면 소리 없이 — WinForms 가 소리 끄기(NIIF_NOSOUND)를 내주지 않아 아이콘의 창 핸들·ID 로 Shell_NotifyIcon 을 직접 부른다.
     /// 그 둘을 찾지 못하면(WinForms 내부가 바뀐 경우) 소리 있는 보통 알림으로.
     /// </summary>
-    public void Notify(string title, string text, bool silent, Action? onClick)
+    public void Notify(string title, string text, bool silent, Action? onClick = null)
     {
         _onClick = onClick;
         title = title.Length <= 63 ? title : title[..62] + "…";
