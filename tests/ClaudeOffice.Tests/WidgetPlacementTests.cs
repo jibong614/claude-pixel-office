@@ -269,13 +269,13 @@ public class WidgetPlacementTests
     [Fact]
     public void GetWalkHeightForSize_ReturnsProportionalWalkHeights()
     {
-        Assert.Equal(WidgetWindow.GraphicLarge + 16, WidgetWindow.GetWalkHeightForSize("large"));
-        Assert.Equal(WidgetWindow.GraphicMedium + 16, WidgetWindow.GetWalkHeightForSize("medium"));
-        Assert.Equal(WidgetWindow.GraphicSmall + 16, WidgetWindow.GetWalkHeightForSize("small"));
+        Assert.Equal(WidgetWindow.WalkHeightLarge, WidgetWindow.GetWalkHeightForSize("large"));
+        Assert.Equal(WidgetWindow.WalkHeightMedium, WidgetWindow.GetWalkHeightForSize("medium"));
+        Assert.Equal(WidgetWindow.WalkHeightSmall, WidgetWindow.GetWalkHeightForSize("small"));
 
-        Assert.Equal(246, WidgetWindow.GetWalkHeightForSize("large"));
-        Assert.Equal(206, WidgetWindow.GetWalkHeightForSize("medium"));
-        Assert.Equal(176, WidgetWindow.GetWalkHeightForSize("small"));
+        Assert.Equal(135, WidgetWindow.GetWalkHeightForSize("large"));
+        Assert.Equal(120, WidgetWindow.GetWalkHeightForSize("medium"));
+        Assert.Equal(105, WidgetWindow.GetWalkHeightForSize("small"));
     }
 
     [Fact]
@@ -292,14 +292,14 @@ public class WidgetPlacementTests
         double curRight = curLeft + curWidth;
 
         double targetW = WidgetWindow.GetWidthForSize("small"); // 260
-        double targetH = WidgetWindow.GetWalkHeightForSize("small"); // 176
+        double targetH = WidgetWindow.GetWalkHeightForSize("small"); // 105
 
-        double newTop = curBottom - targetH; // 950 - 176 = 774
+        double newTop = curBottom - targetH; // 950 - 105 = 845
         double newLeft = curRight - targetW; // 1560 - 260 = 1300
 
         Assert.Equal(260, targetW);
-        Assert.Equal(176, targetH);
-        Assert.Equal(774, newTop);
+        Assert.Equal(105, targetH);
+        Assert.Equal(845, newTop);
         Assert.Equal(1300, newLeft);
 
         // 하단(Bottom) 및 우측(Right) 기준선 일치
@@ -371,7 +371,7 @@ public class WidgetPlacementTests
         double h3 = WidgetWindow.GetWalkHeightForSize("small");
         double top3 = (top2 + h2) - h3;
         double left3 = (left2 + w2) - w3;
-        Assert.Equal(774, top3);
+        Assert.Equal(845, top3);
         Assert.Equal(1300, left3);
         Assert.Equal(fixedBottom, top3 + h3);
         Assert.Equal(fixedRight, left3 + w3);

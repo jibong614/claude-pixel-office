@@ -47,12 +47,12 @@ internal sealed class WidgetWindow : Window
     public const double MaxWidgetHeight = 840;
     public const double MiniBarWidth = 540;
     public const double MiniBarHeight = 44;
-    public const double WalkWidthLarge = 440;
-    public const double WalkWidthMedium = 380;
-    public const double WalkWidthSmall = 320;
-    public const double WalkHeightLarge = 110;
-    public const double WalkHeightMedium = 98;
-    public const double WalkHeightSmall = 88;
+    public const double WalkWidthLarge = 580;
+    public const double WalkWidthMedium = 500;
+    public const double WalkWidthSmall = 420;
+    public const double WalkHeightLarge = 135;
+    public const double WalkHeightMedium = 120;
+    public const double WalkHeightSmall = 105;
     private const double MinPetHeight = 40, MaxPetHeight = 840;
 
     private readonly WebView2 _web = new();
