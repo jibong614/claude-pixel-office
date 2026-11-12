@@ -9,12 +9,13 @@
 [![Release](https://img.shields.io/github/v/release/jibong614/claude-pixel-office?color=7c3aed&label=Release)](https://github.com/jibong614/claude-pixel-office/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078d4)](https://github.com/jibong614/claude-pixel-office)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512bd4)](https://dotnet.microsoft.com/download/dotnet/8.0)
-[![Tests](https://img.shields.io/badge/Tests-52%20Passed-brightgreen)](tests/ClaudeOffice.Tests)
+[![Tests](https://img.shields.io/badge/Tests-45%20Passed-brightgreen)](tests/ClaudeOffice.Tests)
 [![License](https://img.shields.io/github/license/jibong614/claude-pixel-office?color=green)](LICENSE)
 
-**See at a glance what Claude Code is doing and whether it's waiting for your approval — as a retro pixel-art office on Windows.**
+**See at a glance what Claude Code is doing and whether it's waiting for your approval — as a retro pixel-art office on Windows.**  
+*Features procedural Lo-Fi turntable & popular YouTube coding music, cozy cat adoption, desktop MiniWidget, and mobile remote control.*
 
-[🚀 Quick Start](#-quick-start) · [✨ Key Features](#-key-features) · [📸 Screenshots](#-screenshots) · [📱 Mobile Remote Control](#-mobile-remote-control-optional) · [📖 FAQ](#-frequently-asked-questions-faq)
+[🚀 Quick Start](#-quick-start) · [✨ Key Features](#-key-features) · [📸 Screenshots](#-screenshots) · [🎮 Controls](#-shortcuts--controls) · [📱 Mobile Remote Control](#-mobile-remote-control-optional) · [📖 FAQ](#-frequently-asked-questions-faq)
 
 <br/>
 
@@ -25,7 +26,7 @@
 </div>
 
 > [!NOTE]
-> This is an unofficial, community-driven open-source tool not affiliated with Anthropic. It safely and read-only parses local conversation logs recorded by Claude Code on your PC.
+> This is an unofficial, community-driven open-source tool not affiliated with Anthropic. It safely and read-only parses local conversation logs recorded by Claude Code on your PC.  
 > To switch language in the app: Tray right-click ⚙️ **Settings → 🏢 Office → Language → English**.
 
 ---
@@ -38,17 +39,29 @@
 | <img src="docs/screenshots/basic_office.png" width="460" alt="Pixel Office Mode"> | <img src="docs/screenshots/office_mode.png" width="460" alt="Business Dashboard Mode"> |
 | *Pixel art agents, desks, subagent interns, autonomous idle behaviors* | *Clean, dot-free card grid with a unified dark tone (`#0d0f17`)* |
 
+### 🎵 Cozy Coding BGM Player (Built-in 5 Tracks ⇄ YouTube Top 3)
+| 🎹 Built-in Lo-Fi 5 Tracks & 4 Stem Live Mixer | 📺 YouTube Coding Music 3-Mix & Vertical Checklist |
+| :---: | :---: |
+| <img src="docs/screenshots/bgm_internal.png" width="460" alt="Built-in Lo-Fi 5 Tracks Mixer"> | <img src="docs/screenshots/bgm_youtube.png" width="460" alt="YouTube Coding Music Player"> |
+| *5 distinct 4-minute tracks (Jazz Lo-Fi, Synthwave, Bossa Nova, Ambient, 16-Bit Arcade) + 4-stem live instrument toggles* | *Curated top 3 coding music streams + `✓` checkbox loop toggle + floating mini player* |
+
+### 🛋️ Office Life & Kanban
+| 🛋️ Furniture Decor & 3-Stage Cat Adoption Shop | 📋 Live 3-Column Kanban Board (Auto-extracted) |
+| :---: | :---: |
+| <img src="docs/screenshots/shop_storage.png" width="460" alt="Interior Shop & Cat Adoption"> | <img src="docs/screenshots/kanban_board.png" width="460" alt="Live Whiteboard Kanban"> |
+| *Spend earned coins on turntables & beanbags; kitten ➔ teen ➔ adult cat perches on monitors* | *Automatically parses session transcripts into live To Do / In Progress / Done cards* |
+
+### 🏆 Quests & Details
+| 🏆 30 Challenge Badges & Title Book | 🔍 Agent Detail Drawer Panel (Tokens & Cost Stats) |
+| :---: | :---: |
+| <img src="docs/screenshots/achievements.png" width="460" alt="Achievement System"> | <img src="docs/screenshots/panel.png" width="460" alt="Agent Detail Drawer"> |
+| *Earn coin rewards and developer EXP titles by completing milestones* | *Active tool, recent actions, today's tokens, and cache cost savings* |
+
 ### 🪟 Desktop MiniWidget
 | 🪟 Desktop MiniWidget (3-Tier Responsive) | 🏝️ Ultra-Slim Dynamic Island (MiniBar) |
 | :---: | :---: |
 | <img src="docs/screenshots/widget.png" width="460" alt="Desktop MiniWidget"> | <img src="docs/screenshots/minibar.png" width="460" alt="Ultra-Slim Dynamic Island"> |
 | *Large/Medium/Small scaling + developer meme thought bubbles* | *Floating 44px pill capsule; hover for jump, stop, and widget restore* |
-
-### ⚙️ Details & Standalone Settings
-| ⚙️ Standalone Settings Window (Tray Right-Click) | 🔍 Agent Detail Drawer Panel |
-| :---: | :---: |
-| <img src="docs/screenshots/settings.png" width="460" alt="Standalone Settings Window"> | <img src="docs/screenshots/panel.png" width="460" alt="Agent Detail Drawer"> |
-| *Lightweight 720×640 transparent modal without loading main dashboard* | *Active tool, recent actions, today's tokens, and cache cost savings* |
 
 ### 📱 Mobile Remote Monitoring & Approvals
 | 📱 Real-Time Mobile Office | 🔍 Pre-Approval Git Diff Review |
@@ -65,14 +78,33 @@
 - **Real-Time Action Speech Bubbles**: Shows reading (`Read`), searching (`Grep/Glob`), writing code (`Edit/Write`), running commands (`Bash/PowerShell`), and web queries in clear speech bubbles.
 - **Modern Clean Dashboard (`Shortcut O`)**: Switch between the retro pixel office and an enterprise-ready card grid view with a unified dark background (`#0d0f17`).
 
-### 2. 🪟 Desktop MiniWidget & Dynamic Island
-- **Always-on-Top Floating Companion**: Monitor your primary agent in the corner of your screen even when editors or browsers are full-screen.
-- **3-Tier Responsive Scaling (Large 360px · Medium 300px · Small 260px)**: Fonts (11.5px ➔ 10.5px ➔ 9.5px) and control buttons scale proportionally to preserve whitespace and readability.
-- **Ultra-Slim Dynamic Island (MiniBar)**: Floats at the top as a 44px capsule that expands on hover with one-click terminal jump, emergency stop, and widget restore (`🪟` / `💼`) buttons.
-- **🐾 Shimeji Wide Walk Mode**: Agents step away from their desks to freely roam a 680px wide virtual stage across the bottom of your screen. Features single-visible-arm walking (no flapping, back arm fully occluded in side profile), walking while holding warm coffee (`walk_coffee`), relaxed standing coffee breaks for over 10 seconds (`sip`), floor sitting rest, and 10 expressive idle motions moving at a peaceful, cozy pace (12–20s duration).
-- **💡 25 Developer Memes Easter Egg**: Click to trigger humorous developer quotes wrapped into 2-line thought bubbles while keeping the last answer card safe.
+### 2. 🎵 Cozy Coding BGM Player (Built-in 5 Tracks ⇄ YouTube Coding Music)
+- **5 Distinct Genres & 4-Minute Multi-Stage Narrative Progressions**:
+  - `[ 1 ] Midnight Coffee ☕` (72 BPM / 04:00): Jazz Lo-Fi (Rhodes chords + vibrato lead + upright bass + vinyl crackle & swing boom-bap drums)
+  - `[ 2 ] City Neon Drive 🌆` (116 BPM / 04:00): 80s Synthwave (Sawtooth brass + 16th rolling bass + 4-on-the-floor kick & gated snare)
+  - `[ 3 ] Sunny Bossa 🌿` (122 BPM / 04:01): Acoustic Bossa Nova (Nylon guitar strum + marimba/flute + walking bass + wooden rimshot & maracas)
+  - `[ 4 ] Deep Orbit 🌌` (50 BPM / 04:00): Space Ambient (Warm space drone + crystalline interstellar chimes + 40Hz sub pulse & spatial clicks)
+  - `[ 5 ] Pixel Arcade 🕹️` (138 BPM / 04:00): 16-Bit Retro Arcade (Chiptune arpeggios + 7.2Hz vibrato hero lead + slap bass)
+- **4-Stem Real-Time Stack Mixer**: Independently toggle Chords, Melody, Bass, and Drums on the fly.
+- **Curated Top 3 YouTube Coding Music**: Switch smoothly between procedural synth music and live YouTube coding streams with `[ Built-in ⇄ YouTube ]`.
+- **Vertical Checklist & Quick Jump**: Check or uncheck songs with `✓` to include or exclude them from sequential playback, or click any track to jump instantly.
+- **Floating Mini Player**: Throttling-resistant offscreen/mini playback with a 140px bottom-right pill mode (`−`) and smart audio fallback.
 
-### 3. 📱 Mobile Remote Control — Keep Work Moving While Away
+### 3. 🛋️ Office Life, Cat Adoption & Whiteboard Kanban
+- **🪙 Coins & Office Decor Shop**: Earn coins by completing tasks and saving cache tokens. Purchase 7 interactive props including a vinyl turntable, cozy beanbag, and arcade cabinet.
+- **🐱 3-Stage Cat Evolution & Monitor Perch**: Adopt a kitten and watch it grow into a mischievous teen and majestic adult cat. Cats hop across desks and nap on top of monitors; petting them triggers purring and cute thought bubbles.
+- **📋 Live 3-Column Kanban Board**: Automatically parses session conversations into live To Do / In Progress / Done cards on the office whiteboard.
+- **🏆 30 Challenge Badges & Quest Book**: Unlock achievements for coin rewards and level up your developer title and EXP.
+- **☕ 24h Day/Night Lighting Cycle**: Dynamically syncs with your PC clock for natural transitions between bright morning, warm sunset, twilight, and focused night spotlights.
+
+### 4. 🪟 Desktop MiniWidget & Dynamic Island
+- **Always-on-Top Floating Companion**: Monitor your primary agent in the corner of your screen even when editors or browsers are full-screen.
+- **3-Tier Responsive Scaling (Large 360px · Medium 300px · Small 260px)**: Fonts and buttons scale proportionally to preserve whitespace and crisp readability.
+- **Ultra-Slim Dynamic Island (MiniBar)**: Floats at the top as a 44px capsule that expands on hover with one-click terminal jump, emergency stop, and widget restore (`🪟` / `💼`) buttons.
+- **🐾 Shimeji Wide Walk Mode**: Agents step away from their desks to freely roam a 680px virtual stage across the bottom of your screen with 10 expressive idle motions.
+- **💡 25 Developer Memes Easter Egg**: Click to trigger humorous developer quotes wrapped into 2-line thought bubbles.
+
+### 5. 📱 Mobile Remote Control — Keep Work Moving While Away
 - **Zero-Setup Quick Connect**: Scan a QR code on your PC to immediately open the dashboard on your phone's browser (no login required).
 - **🔍 Pre-Approval Git Diff Review**: When Claude requests permission to modify files, expand the unified diff (`+N`, `-N`) on your phone to inspect changes before tapping **[Approve]**.
 - **🎙️ Voice-to-Prompt Instructions**: Tap the microphone on mobile to dictate instructions; speech is transcribed in real-time and delivered to Claude.
@@ -80,18 +112,10 @@
 - **❓ Multiple-Choice Answers & 🛑 Emergency Stop**: Tap buttons to answer questions directly, or safely halt runaway loops in 0.01 seconds.
 - **🔒 End-to-End Encryption (AES-256-GCM)**: Relayed via Google Firebase free tier, but encrypted using a local key in the QR `#hash` that never touches any server.
 
-### 4. 🛋️ Office Life & Productivity Tools
-- **🪙 Coins & Office Decor Shop**: Earn coins by finishing tasks, saving prompt cache tokens, and interacting with furniture (1-hour cooldown prevents infinite farming). Purchase 7 interactive props with zero whiteboard overlap.
-- **🐱 3-Stage Cat Evolution & Multiline Reactions**: Watch the office cat grow from Kitten ➔ Teen ➔ Adult cat. Automatic monitor perch distribution (left/right/desk top) prevents sprite overlap, and petting triggers lovely purring with multiline thought bubbles.
-- **☕ Autonomous Idle AI & 24h Day/Night Lighting**: Resting agents stretch, sip warm coffee, and share random thoughts. Lighting shifts dynamically from daylight to sunset, evening, and late-night spotlight cones.
-- **🤝 Multi-Agent Meeting Table & 📢 Broadcast (`Shortcut B`)**: Collaborative conference table animations and bulk broadcast commands (`/compact`, unit tests, etc.) to all sessions.
-- **📋 Whiteboard Kanban & 🧠 Context Gauge**: 3-column To Do / In Progress / Done card view and real-time context token load gauge.
-- **⚡ One-Click Console Jump (`Alt+1~9` / `J`)**: Double-click any desk to immediately bring its VS Code, Cursor, Windsurf, or terminal window into focus.
-
-### 5. ⚙️ Lightweight, Native Windows Performance
+### 6. ⚙️ Lightweight, Native Windows Performance
 - **Standalone Transparent Settings**: Right-click the system tray to open a lightweight 720×640 modal without loading the main dashboard.
 - **Zero-Idle CPU Footprint**: Efficient 0.7s delta parsing uses 0% CPU when sessions are idle.
-- **52 Passing Automated Unit Tests**: Complete xUnit test suite ensuring rendering, hook dispatch, encryption, virtual wide layout, and window mode switching integrity.
+- **45 Passing Automated Unit Tests**: Complete xUnit test suite ensuring rendering, hook dispatch, encryption, virtual wide layout, and window mode switching integrity.
 
 ---
 
@@ -131,9 +155,9 @@ src\ClaudeOffice\bin\Release\net8.0-windows\ClaudeOffice.exe
 | **`Shortcut N`** | Night Shift monitor & Morning briefing summary report |
 | **🪟 Button** | Toggle **Desktop MiniWidget** (switch to Dynamic Island via top-right pill) |
 | **🪙 / 🛋️ Button** | View coin balance and open the 7-item Office Decor Shop |
+| **📋 Whiteboard** | Real-time session TODO Kanban board extracted from conversations |
+| **🏆 Button** | View the 30-quest achievement & badge book |
 | **🛑 Button** | Immediately terminate active tool process and trigger **Emergency Stop** |
-| **📋 Whiteboard** | Real-time session TODO Kanban extracted from conversations |
-| **🏆 Button** | View the 30-quest achievement book |
 | **Tray Icon Right-Click** | Open **⚙️ Standalone Settings Window** / Toggle MiniWidget / Exit |
 
 ---
