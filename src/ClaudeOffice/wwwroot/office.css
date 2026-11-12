@@ -5676,3 +5676,292 @@ body.settings-window .scanline-overlay {
   background: #22c55e;
   box-shadow: 0 0 6px #22c55e;
 }
+
+
+/* ── 🎵 BGM 음악 소스 탭 & 수직 플레이리스트 리스트화 및 v체크 스타일 ── */
+.bgm-source-tabs {
+  display: flex;
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 4px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.bgm-src-tab {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+.bgm-src-tab:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.05);
+}
+.bgm-src-tab.active {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.bgm-src-tab.youtube-tab.active {
+  background: #dc2626 !important;
+}
+
+/* 수직 플레이리스트 리스트 */
+.bgm-playlist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.bgm-track-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.bgm-track-item:hover {
+  background: rgba(51, 65, 85, 0.75);
+  border-color: rgba(56, 189, 248, 0.35);
+  transform: translateX(2px);
+}
+.bgm-track-item.playing {
+  background: rgba(34, 197, 94, 0.16) !important;
+  border-color: #22c55e !important;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.25);
+}
+.bgm-track-item.yt-playing {
+  background: rgba(239, 68, 68, 0.16) !important;
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.25);
+}
+.bgm-track-item.excluded {
+  opacity: 0.45;
+  filter: grayscale(0.8);
+  background: rgba(15, 23, 42, 0.4);
+}
+
+/* v체크 버튼 */
+.bgm-check-btn {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 5px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  background: rgba(15, 23, 42, 0.4);
+  color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  padding: 0;
+}
+.bgm-check-btn:hover {
+  border-color: #38bdf8;
+  transform: scale(1.08);
+}
+.bgm-check-btn.checked {
+  background: #22c55e;
+  border-color: #22c55e;
+  color: #ffffff;
+}
+.bgm-track-item.yt-item .bgm-check-btn.checked {
+  background: #ef4444;
+  border-color: #ef4444;
+}
+
+.bgm-track-num {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  font-family: monospace;
+  min-width: 16px;
+  text-align: center;
+}
+.bgm-track-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bgm-track-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bgm-track-sub {
+  font-size: 11px;
+  color: #94a3b8;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.bgm-track-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+}
+.bgm-track-item.yt-item .bgm-track-badge {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+.bgm-track-duration {
+  font-size: 11px;
+  color: #64748b;
+  font-family: monospace;
+}
+.bgm-track-state-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #4ade80;
+  white-space: nowrap;
+}
+.bgm-track-item.yt-item .bgm-track-state-badge {
+  color: #f87171;
+}
+
+/* YouTube 제어 바 */
+.bgm-yt-control-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.bgm-yt-btn {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.bgm-yt-btn:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: #ef4444;
+  color: #ffffff;
+}
+.bgm-yt-btn.play-btn {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+  color: #fecaca;
+}
+
+/* 📺 YouTube 플로팅 미니 플레이어 (화면 구석 안정적 백그라운드 재생 지원) */
+.bgm-yt-floating-player {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  width: 240px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+  transition: all 0.2s ease;
+}
+.bgm-yt-floating-player.minimized {
+  height: 32px !important;
+  width: 155px !important;
+}
+.bgm-yt-floating-player.minimized #ytPlayerDiv {
+  display: none !important;
+}
+.bgm-yt-float-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(30, 41, 59, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  user-select: none;
+}
+.bgm-yt-float-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fca5a5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bgm-yt-float-btns {
+  display: flex;
+  gap: 4px;
+}
+.bgm-yt-float-min,
+.bgm-yt-float-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.bgm-yt-float-min:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+.bgm-yt-float-close:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+#ytPlayerDiv {
+  width: 240px;
+  height: 135px;
+  background: #000;
+}
+#ytPlayerDiv iframe {
+  width: 100% !important;
+  height: 100% !important;
+  border: none !important;
+}
+
+@media (max-width: 600px) {
+  .bgm-yt-floating-player {
+    width: 200px !important;
+    bottom: 8px !important;
+    right: 8px !important;
+  }
+  .bgm-yt-floating-player #ytPlayerDiv {
+    width: 200px !important;
+    height: 112px !important;
+  }
+  .bgm-yt-floating-player.minimized {
+    width: 140px !important;
+    height: 30px !important;
+  }
+}

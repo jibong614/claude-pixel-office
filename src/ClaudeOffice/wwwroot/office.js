@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.11';
+const PAGE_VERSION = '1.9.12';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -3203,15 +3203,57 @@ const LOFI_TRACKS = [
   }
 ];
 
+
+const YOUTUBE_TRACKS = [
+  {
+    id: 1,
+    videoId: 'Xc1Le3CSdrM',
+    title: '[ Playlist ] 코딩할때 듣기 좋은 노래',
+    enTitle: 'Coding Lofi Hip Hop Mix ~ Jazzhop',
+    author: 'Lofi 코딩',
+    duration: '3시간 (3 Hours)',
+    badge: '☕ 재즈 칠합'
+  },
+  {
+    id: 2,
+    videoId: 'v66yDEGA9nk',
+    title: '코딩할때 듣기 좋은 노래 • lofi type beat',
+    enTitle: 'Coding Lofi Type Beat Mix',
+    author: '내 안의음악',
+    duration: '3시간 (3 Hours)',
+    badge: '🎧 칠 바이브'
+  },
+  {
+    id: 3,
+    videoId: 'qMwzWk81tVM',
+    title: '공부/작업 할 때 집중해서 듣기 좋은 음악',
+    enTitle: 'Deep Study & Focus Piano Lofi',
+    author: '인프런 inflearn',
+    duration: '4시간 (4 Hours)',
+    badge: '✍️ 피아노 몰입'
+  }
+];
+
+let ytPlayer = null;
+let ytApiLoaded = false;
+let ytPendingPlay = false;
+let ytContainerMinimized = false;
+
 let lofiBgmState = {
-  playing: false,
-  curTrackId: store.get('lofiCurTrack', 1),
+  enabled: store.get('bgmAutoPlay', false),   // 마스터 온/오프 상태 (사용자 의도)
+  source: store.get('bgmSource', 'internal'), // 'internal' | 'youtube'
+  playing: false,                             // 내장 BGM Web Audio 재생 중 여부
+  curTrackId: store.get('lofiCurTrack', 1),   // 1 ~ 5
   barIndex: 0,
   activeTracks: store.get('lofiActiveTracks', [1, 2, 3, 4, 5]),
   layers: store.get('lofiLayers', { chords: true, melody: true, bass: true, drums: true }),
   timer: null,
   crackleNode: null,
-  furniturePos: null
+  furniturePos: null,
+  // YouTube 코딩음악 관련 상태
+  ytPlaying: false,
+  curYtTrackId: store.get('ytCurTrack', 1),   // 1 ~ 3
+  activeYtTracks: store.get('ytActiveTracks', [1, 2, 3])
 };
 
 // 트랙 5가 추가되었으므로 저장된 activeTracks에 5가 없으면 추가
@@ -3220,8 +3262,332 @@ if (!lofiBgmState.activeTracks.includes(5)) {
   lofiBgmState.activeTracks.sort((a, b) => a - b);
 }
 
+function loadYouTubeApi() {
+  if (window.YT && window.YT.Player) {
+    initYouTubePlayer();
+    return;
+  }
+  if (document.getElementById('yt-iframe-api')) return;
+  const tag = document.createElement('script');
+  tag.id = 'yt-iframe-api';
+  tag.src = 'https://www.youtube.com/iframe_api';
+  tag.onerror = () => {
+    console.warn('YouTube script load error');
+    showToast(T('⚠️ YouTube 연결 실패: 내장 Lo-Fi 음악으로 자동 전환합니다.', '⚠️ Cannot load YouTube: switching to Built-in Lo-Fi.'), '⚠️');
+    setBgmSource('internal');
+  };
+  const first = document.getElementsByTagName('script')[0];
+  if (first && first.parentNode) first.parentNode.insertBefore(tag, first);
+  else document.head.appendChild(tag);
+}
+
+window.onYouTubeIframeAPIReady = function() {
+  ytApiLoaded = true;
+  initYouTubePlayer();
+};
+
+function ensureYtContainer() {
+  let container = document.getElementById('ytAudioContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'ytAudioContainer';
+    container.className = 'bgm-yt-floating-player';
+    container.style.display = 'none';
+
+    // 미니 플레이어 헤더
+    const header = document.createElement('div');
+    header.className = 'bgm-yt-float-header';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'bgm-yt-float-title';
+    titleSpan.id = 'ytFloatTitle';
+    titleSpan.textContent = '📺 YouTube BGM';
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'bgm-yt-float-btns';
+
+    const minBtn = document.createElement('button');
+    minBtn.type = 'button';
+    minBtn.className = 'bgm-yt-float-min';
+    minBtn.textContent = '−';
+    minBtn.title = T('창 접기/펼치기', 'Minimize/Expand');
+    minBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      ytContainerMinimized = !ytContainerMinimized;
+      container.classList.toggle('minimized', ytContainerMinimized);
+      minBtn.textContent = ytContainerMinimized ? '+' : '−';
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'bgm-yt-float-close';
+    closeBtn.textContent = '✕';
+    closeBtn.title = T('BGM 끄기', 'Turn off BGM');
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setBgmPlaying(false);
+    });
+
+    btnGroup.append(minBtn, closeBtn);
+    header.append(titleSpan, btnGroup);
+
+    const pDiv = document.createElement('div');
+    pDiv.id = 'ytPlayerDiv';
+
+    container.append(header, pDiv);
+    document.body.appendChild(container);
+  }
+}
+
+function showYtContainer(show) {
+  ensureYtContainer();
+  const c = document.getElementById('ytAudioContainer');
+  if (!c) return;
+  if (show && lofiBgmState.source === 'youtube' && lofiBgmState.enabled) {
+    c.style.display = 'flex';
+    const curYt = getCurYtTrack();
+    const tEl = document.getElementById('ytFloatTitle');
+    if (tEl) tEl.textContent = `📺 ${curYt.author} - ${curYt.badge || 'BGM'}`;
+  } else {
+    c.style.display = 'none';
+  }
+}
+
+function initYouTubePlayer() {
+  ensureYtContainer();
+  if (ytPlayer || !window.YT || !window.YT.Player) return;
+  const curYt = getCurYtTrack();
+  try {
+    ytPlayer = new YT.Player('ytPlayerDiv', {
+      height: '135',
+      width: '240',
+      videoId: curYt.videoId,
+      playerVars: {
+        autoplay: 1,
+        controls: 1,
+        disablekb: 0,
+        fs: 0,
+        modestbranding: 1,
+        rel: 0,
+        playsinline: 1
+      },
+      events: {
+        onReady: () => {
+          if (ytPendingPlay || lofiBgmState.enabled) {
+            ytPendingPlay = false;
+            playYouTubeVideo();
+          }
+        },
+        onStateChange: (e) => {
+          if (e.data === 0) { // ENDED (영상 종료 -> 다음 체크된 영상 자동 재생)
+            advanceToNextYtTrack();
+          } else if (e.data === 1) { // PLAYING
+            lofiBgmState.ytPlaying = true;
+            showYtContainer(true);
+            updateLofiUiDisplay();
+          } else if (e.data === 2) { // PAUSED
+            lofiBgmState.ytPlaying = false;
+            updateLofiUiDisplay();
+          }
+        },
+        onError: (e) => {
+          console.warn('YouTube Player error:', e.data);
+          showToast(T('⚠️ YouTube 연결 실패: 내장 Lo-Fi 음악으로 자동 전환합니다.', '⚠️ YouTube unavailable: switching to Built-in Lo-Fi.'), '⚠️');
+          setBgmSource('internal');
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('Failed to initialize YouTube Player:', err);
+    showToast(T('⚠️ YouTube 로드 실패: 내장 Lo-Fi 음악으로 자동 전환합니다.', '⚠️ Failed to load YouTube: switching to Built-in Lo-Fi.'), '⚠️');
+    setBgmSource('internal');
+  }
+}
+
+function playYouTubeVideo() {
+  const curYt = getCurYtTrack();
+  ensureYtContainer();
+  showYtContainer(true);
+
+  if (!ytPlayer || typeof ytPlayer.playVideo !== 'function') {
+    ytPendingPlay = true;
+    loadYouTubeApi();
+    return;
+  }
+  try {
+    const curUrl = ytPlayer.getVideoUrl ? ytPlayer.getVideoUrl() : '';
+    if (!curUrl || !curUrl.includes(curYt.videoId)) {
+      ytPlayer.loadVideoById(curYt.videoId);
+    } else {
+      ytPlayer.playVideo();
+    }
+    lofiBgmState.ytPlaying = true;
+  } catch (e) {
+    try { ytPlayer.loadVideoById(curYt.videoId); } catch {}
+    lofiBgmState.ytPlaying = true;
+  }
+  updateLofiUiDisplay();
+}
+
+function pauseYouTubeVideo() {
+  if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+    try { ytPlayer.pauseVideo(); } catch {}
+  }
+  lofiBgmState.ytPlaying = false;
+  showYtContainer(false);
+  updateLofiUiDisplay();
+}
+
+function getCurYtTrack() {
+  return YOUTUBE_TRACKS.find((t) => t.id === lofiBgmState.curYtTrackId) || YOUTUBE_TRACKS[0];
+}
+
+function selectYtTrack(trackId, immediatePlay = true) {
+  lofiBgmState.curYtTrackId = trackId;
+  store.set('ytCurTrack', trackId);
+
+  if (!lofiBgmState.activeYtTracks.includes(trackId)) {
+    lofiBgmState.activeYtTracks.push(trackId);
+    lofiBgmState.activeYtTracks.sort((a, b) => a - b);
+    store.set('ytActiveTracks', lofiBgmState.activeYtTracks);
+  }
+
+  if (immediatePlay) {
+    lofiBgmState.enabled = true;
+    store.set('bgmAutoPlay', true);
+    if (lofiBgmState.source !== 'youtube') {
+      lofiBgmState.source = 'youtube';
+      store.set('bgmSource', 'youtube');
+      stopTurntableLofi();
+    }
+    if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+      const curYt = getCurYtTrack();
+      ytPlayer.loadVideoById(curYt.videoId);
+      lofiBgmState.ytPlaying = true;
+      showYtContainer(true);
+    } else {
+      playYouTubeVideo();
+    }
+    const tr = getCurYtTrack();
+    showToast(T(`▶ YouTube 코딩음악: ${tr.title} 재생!`, `▶ Playing YouTube: ${tr.enTitle}!`), '📺');
+  }
+  updateLofiUiDisplay();
+  if (typeof refreshSettings === 'function') refreshSettings();
+}
+
+function toggleYtActiveTrack(trackId) {
+  let active = [...lofiBgmState.activeYtTracks];
+  if (active.includes(trackId)) {
+    if (active.length <= 1) {
+      showToast(T('⚠️ 최소 하나의 YouTube 영상은 선택되어 있어야 합니다.', '⚠️ At least one YouTube track must be active.'), '⚠️');
+      return;
+    }
+    active = active.filter((id) => id !== trackId);
+  } else {
+    active.push(trackId);
+    active.sort((a, b) => a - b);
+  }
+  lofiBgmState.activeYtTracks = active;
+  store.set('ytActiveTracks', active);
+
+  if (!active.includes(lofiBgmState.curYtTrackId)) {
+    selectYtTrack(active[0], lofiBgmState.enabled && lofiBgmState.ytPlaying);
+  }
+  updateLofiUiDisplay();
+  if (typeof refreshSettings === 'function') refreshSettings();
+}
+
+function advanceToNextYtTrack() {
+  const active = lofiBgmState.activeYtTracks && lofiBgmState.activeYtTracks.length > 0
+    ? lofiBgmState.activeYtTracks
+    : [1, 2, 3];
+  const curIdx = active.indexOf(lofiBgmState.curYtTrackId);
+  const nextIdx = (curIdx + 1) % active.length;
+  selectYtTrack(active[nextIdx], true);
+}
+
+function isBgmPlaying() {
+  return !!lofiBgmState.enabled;
+}
+
+function isBgmSoundingNow() {
+  return lofiBgmState.source === 'youtube' ? lofiBgmState.ytPlaying : lofiBgmState.playing;
+}
+
+function setBgmPlaying(v) {
+  lofiBgmState.enabled = !!v;
+  store.set('bgmAutoPlay', lofiBgmState.enabled);
+
+  if (lofiBgmState.enabled) {
+    if (lofiBgmState.source === 'youtube') {
+      stopTurntableLofi();
+      playYouTubeVideo();
+      const yTr = getCurYtTrack();
+      showToast(T(`📺 YouTube 코딩음악 재생: ${yTr.title}`, `📺 Playing YouTube: ${yTr.enTitle}`), '🎵');
+    } else {
+      pauseYouTubeVideo();
+      startTurntableLofi();
+      const tr = getCurLofiTrack();
+      showToast(T(`🎵 내장 Lo-Fi 재생: ${tr.name}`, `🎵 Playing Built-in: ${tr.enName}`), '🎵');
+    }
+  } else {
+    stopTurntableLofi();
+    pauseYouTubeVideo();
+    showToast(T('🔇 BGM을 일시 정지했습니다.', '🔇 BGM paused.'), '🔇');
+  }
+  updateLofiUiDisplay();
+  if (typeof refreshSettings === 'function') refreshSettings();
+}
+
+function setBgmSource(src) {
+  if (lofiBgmState.source === src) return;
+  lofiBgmState.source = src;
+  store.set('bgmSource', src);
+
+  if (lofiBgmState.enabled) {
+    if (src === 'youtube') {
+      stopTurntableLofi();
+      playYouTubeVideo();
+      showToast(T('📺 BGM 소스: YouTube 인기 코딩음악으로 전환되었습니다.', '📺 BGM source: YouTube.'), '📺');
+    } else {
+      pauseYouTubeVideo();
+      startTurntableLofi();
+      showToast(T('🎹 BGM 소스: 내장 Lo-Fi 5곡으로 전환되었습니다.', '🎹 BGM source: Built-in.'), '🎹');
+    }
+  } else {
+    stopTurntableLofi();
+    pauseYouTubeVideo();
+    if (src === 'youtube') {
+      showToast(T('📺 BGM 소스: YouTube 코딩음악 선택됨 (스위치를 켜면 재생됩니다)', '📺 BGM source: YouTube (Turn on switch to play).'), '📺');
+    } else {
+      showToast(T('🎹 BGM 소스: 내장 Lo-Fi 5곡 선택됨 (스위치를 켜면 재생됩니다)', '🎹 BGM source: Built-in (Turn on switch to play).'), '🎹');
+    }
+  }
+  updateLofiUiDisplay();
+  if (typeof refreshSettings === 'function') refreshSettings();
+}
+
+// 저장된 bgmAutoPlay 가 true이면 첫 사용자 인터랙션(클릭/터치) 시 자동 재생
+if (lofiBgmState.enabled) {
+  const onFirstAutoPlay = () => {
+    window.removeEventListener('pointerdown', onFirstAutoPlay);
+    window.removeEventListener('keydown', onFirstAutoPlay);
+    if (lofiBgmState.enabled && !isBgmSoundingNow()) {
+      if (lofiBgmState.source === 'youtube') playYouTubeVideo();
+      else startTurntableLofi();
+    }
+  };
+  window.addEventListener('pointerdown', onFirstAutoPlay, { once: true });
+  window.addEventListener('keydown', onFirstAutoPlay, { once: true });
+}
+
 function getCurLofiTrack() {
   return LOFI_TRACKS.find((t) => t.id === lofiBgmState.curTrackId) || LOFI_TRACKS[0];
+}
+
+function toggleTurntableLofi(b) {
+  if (b) lofiBgmState.furniturePos = { x: b.x, y: b.y };
+  setBgmPlaying(!lofiBgmState.enabled);
 }
 
 function getTrackBar(track, barIndex) {
@@ -3257,16 +3623,7 @@ function getTrackBar(track, barIndex) {
 
 function toggleTurntableLofi(b) {
   if (b) lofiBgmState.furniturePos = { x: b.x, y: b.y };
-  if (lofiBgmState.playing) {
-    stopTurntableLofi();
-    showToast(T('🔇 턴테이블 음악을 껐습니다.', '🔇 Turntable music paused.'), '🔇');
-  } else {
-    startTurntableLofi(b);
-    const tr = getCurLofiTrack();
-    showToast(T(`🎵 ${tr.name} 로파이 코딩 비트 재생 중! 🎶`, `🎵 Playing ${tr.enName}! 🎶`), '🎵');
-  }
-  store.set('bgmAutoPlay', lofiBgmState.playing);
-  if (typeof refreshSettings === 'function') refreshSettings();
+  setBgmPlaying(!isBgmPlaying());
 }
 
 function startTurntableLofi(b) {
@@ -3786,11 +4143,14 @@ function selectLofiTrack(trackId, immediatePlay = true) {
   }
 
   if (immediatePlay) {
-    if (!lofiBgmState.playing) startTurntableLofi();
-    else {
-      if (lofiBgmState.timer) clearTimeout(lofiBgmState.timer);
-      startTurntableLofi();
+    lofiBgmState.enabled = true;
+    store.set('bgmAutoPlay', true);
+    if (lofiBgmState.source !== 'internal') {
+      lofiBgmState.source = 'internal';
+      store.set('bgmSource', 'internal');
+      pauseYouTubeVideo();
     }
+    startTurntableLofi();
     const tr = getCurLofiTrack();
     showToast(T(`▶ ${tr.name} 로 즉시 전환했습니다! 🎶`, `▶ Switched to ${tr.enName}! 🎶`), '🎵');
   }
@@ -10857,20 +11217,21 @@ const SETTINGS = [
       },
       {
         type: 'toggle',
-        name: T('🎵 로파이 코딩 BGM (OST)', '🎵 Lofi Coding BGM (OST)'),
-        desc: T('LP 턴테이블의 절차적 로파이 코딩 배경음악을 켜거나 끕니다.', 'Play or mute procedural chill lofi coding background music from the turntable.'),
-        get: () => lofiBgmState.playing,
-        set: (v) => {
-          if (v) {
-            startTurntableLofi();
-            showToast(T('🎵 턴테이블에서 로파이 코딩 비트가 흐릅니다! 🎶', '🎵 Playing lofi coding beats! 🎶'), '🎵');
-          } else {
-            stopTurntableLofi();
-            showToast(T('🔇 턴테이블 음악을 껐습니다.', '🔇 Turntable music paused.'), '🔇');
-          }
-          store.set('bgmAutoPlay', v);
-          refreshSettings();
-        }
+        name: T('🎵 코딩 BGM (내장 OST / YouTube)', '🎵 Coding BGM (Built-in / YouTube)'),
+        desc: () => (lofiBgmState.source === 'youtube'
+          ? T('현재 [YouTube 코딩음악] 모드입니다. 켜거나 끕니다.', 'Connected to [YouTube Coding Music]. Toggle on/off.')
+          : T('현재 [내장 Lo-Fi 5곡] 모드입니다. 켜거나 끕니다.', 'Connected to [Built-in Lo-Fi 5 Tracks]. Toggle on/off.')),
+        get: () => lofiBgmState.enabled,
+        set: (v) => setBgmPlaying(v)
+      },
+      {
+        type: 'toggle',
+        name: T('📻 BGM 음악 소스 (내장 5곡 ⇄ YouTube)', '📻 Music Source (Built-in ⇄ YouTube)'),
+        desc: () => (lofiBgmState.source === 'youtube'
+          ? T('📺 [YouTube 인기 코딩음악] 재생 모드입니다. 끄면 내장 5곡으로 전환됩니다.', 'Playing [YouTube Coding Music]. Turn off to switch to built-in tracks.')
+          : T('🎹 [내장 절차적 Lo-Fi 5곡] 재생 모드입니다. 켜면 YouTube 코딩음악으로 전환됩니다.', 'Playing [Built-in Lo-Fi 5 Tracks]. Turn on to switch to YouTube.')),
+        get: () => lofiBgmState.source === 'youtube',
+        set: (v) => setBgmSource(v ? 'youtube' : 'internal')
       },
       { type: 'lofi_mixer' }
     ],
@@ -10927,21 +11288,6 @@ const SETTINGS = [
       { type: 'action', name: T('효과음 미리듣기', 'Preview sound'), pcOnly: true, shown: () => !!appSettings?.notifySound,
         desc: T('승인 요청·작업 완료 시 재생되는 8비트 효과음을 들어봅니다.', 'Listen to the 8-bit sound effects for approvals and finished work.'),
         label: () => T('▶ 들어보기', '▶ Play'), run: () => playRetroSound('test', true), enabled: appReady },
-      { type: 'toggle', name: T('🎵 로파이 코딩 BGM (OST)', '🎵 Lofi Coding BGM (OST)'),
-        desc: T('LP 턴테이블에서 재생되는 감미로운 절차적 로파이(Lo-Fi) 코딩 배경음악을 켜거나 끕니다.', 'Play or mute procedural chill lofi coding background music from the turntable.'),
-        get: () => lofiBgmState.playing,
-        set: (v) => {
-          if (v) {
-            startTurntableLofi();
-            showToast(T('🎵 턴테이블에서 로파이 코딩 비트가 흐릅니다! 🎶', '🎵 Playing lofi coding beats! 🎶'), '🎵');
-          } else {
-            stopTurntableLofi();
-            showToast(T('🔇 턴테이블 음악을 껐습니다.', '🔇 Turntable music paused.'), '🔇');
-          }
-          store.set('bgmAutoPlay', v);
-          refreshSettings();
-        } },
-      { type: 'lofi_mixer' },
       { type: 'toggle', name: T('방해 금지 시간대', 'Quiet hours'), pcOnly: true,
         desc: () => (appSettings?.quietEnabled
           ? T(`${appSettings.quietStart}시부터 ${appSettings.quietEnd}시까지는 PC 알림을 띄우지 않습니다.`, `No notifications from ${appSettings.quietStart}:00 to ${appSettings.quietEnd}:00.`)
@@ -11129,45 +11475,34 @@ const RENDER = {
   lofi_mixer(it, row) {
     const wrap = elem('div', 'lofi-mixer-wrap');
 
-    // 1. 트랙 선택 및 순차 재생 바 [ 1 ] [ 2 ] [ 3 ] [ 4 ]
-    const trackSec = elem('div', 'lofi-track-sec');
-    const trackHead = elem('div', 'lofi-sec-title', T('🎶 플레이리스트 순차 재생 (번호 클릭: 켜기/끄기 또는 바로 듣기)', '🎶 Playlist Tracks (Click number to toggle / listen)'));
-    const trackBar = elem('div', 'lofi-track-bar');
+    // 0. BGM 음악 소스 전환 탭 [ 🎹 내장 Lo-Fi 5곡 ] | [ 📺 YouTube 코딩음악 3선 ]
+    const srcTabWrap = elem('div', 'bgm-source-tabs');
+    const tabInternal = elem('button', 'bgm-src-tab', '🎹 ' + T('내장 Lo-Fi (5곡)', 'Built-in Lo-Fi (5)'));
+    const tabYoutube = elem('button', 'bgm-src-tab youtube-tab', '📺 ' + T('YouTube 코딩음악 (3선)', 'YouTube Coding Music (3)'));
+    tabInternal.type = 'button';
+    tabYoutube.type = 'button';
+    tabInternal.addEventListener('click', () => setBgmSource('internal'));
+    tabYoutube.addEventListener('click', () => setBgmSource('youtube'));
+    srcTabWrap.append(tabInternal, tabYoutube);
 
-    const trackBtns = [];
-    LOFI_TRACKS.forEach((tr) => {
-      const btn = elem('button', 'lofi-track-btn');
-      btn.type = 'button';
-      btn.innerHTML = `<span class="lofi-tr-num">${tr.id}</span> <span class="lofi-tr-name">${T(tr.name, tr.enName)}</span>`;
-      btn.title = T(`클릭: [${tr.id}] 트랙 순차재생 포함/제외 (더블클릭/재생: 바로 점프)`, `Click to toggle track [${tr.id}]`);
-      btn.addEventListener('click', (e) => {
-        // 이미 켜진 상태에서 클릭 시 바로 그 곡 점프, 아니면 토글
-        if (lofiBgmState.activeTracks.includes(tr.id) && lofiBgmState.curTrackId !== tr.id) {
-          selectLofiTrack(tr.id, true);
-        } else {
-          toggleLofiActiveTrack(tr.id);
-        }
-      });
-      trackBar.append(btn);
-      trackBtns.push({ btn, trackId: tr.id });
-    });
-
+    // 1. 현재 재생 중인 상태 안내 배지
     const nowPlayingBadge = elem('div', 'lofi-now-playing-badge');
 
-    trackSec.append(trackHead, trackBar, nowPlayingBadge);
+    // ─────────────────────────────────────────────────────────
+    // [A] 내장 Lo-Fi 음악 전용 뷰 (4대 악기 스택 + 5곡 수직 리스트)
+    // ─────────────────────────────────────────────────────────
+    const internalView = elem('div', 'bgm-internal-view');
 
-    // 2. 4대 악기 스택 스위치 [코드] [멜로디] [베이스] [심벌/드럼]
+    // (A-1) 4대 악기 스택 스위치 [코드] [멜로디] [베이스] [심벌/드럼]
     const stemSec = elem('div', 'lofi-stem-sec');
-    const stemHead = elem('div', 'lofi-sec-title', T('🎛️ 악기 레이어 스택 (실시간 악기 온/오프)', '🎛️ Instrument Stems (Live Layer Toggle)'));
+    const stemHead = elem('div', 'lofi-sec-title', T('🎛️ 악기 레이어 스택 (실시간 악기 온/오프)', '🎛️ Live Instrument Stems'));
     const stemGrid = elem('div', 'lofi-stem-grid');
-
     const stemDefs = [
       { key: 'chords', icon: '🎹', name: T('코드 (화음)', 'Chords') },
       { key: 'melody', icon: '✨', name: T('멜로디 (리드)', 'Melody') },
       { key: 'bass', icon: '🎸', name: T('베이스 (저음)', 'Bass') },
       { key: 'drums', icon: '🥁', name: T('심벌 & 드럼', 'Cymbal/Drums') }
     ];
-
     const stemBtns = [];
     stemDefs.forEach((stem) => {
       const sBtn = elem('button', 'lofi-stem-btn');
@@ -11177,45 +11512,197 @@ const RENDER = {
       stemGrid.append(sBtn);
       stemBtns.push({ sBtn, key: stem.key });
     });
-
     stemSec.append(stemHead, stemGrid);
 
-    wrap.append(trackSec, stemSec);
+    // (A-2) 내장 5곡 수직 리스트 (v체크 포함)
+    const trackSec = elem('div', 'lofi-track-sec');
+    const trackHead = elem('div', 'lofi-sec-title', T('🎶 내장 플레이리스트 (✓체크: 순차 재생 포함/제외, 클릭: 바로 듣기)', '🎶 Playlist (✓: toggle repeat, Click: play now)'));
+    const trackListEl = elem('div', 'bgm-playlist-list');
+
+    const internalTrackRows = [];
+    LOFI_TRACKS.forEach((tr) => {
+      const itemEl = elem('div', 'bgm-track-item');
+      
+      // v체크 버튼 (클릭 시 순차 재생 포함 / 제외)
+      const checkBtn = elem('button', 'bgm-check-btn checked', '✓');
+      checkBtn.type = 'button';
+      checkBtn.title = T('✓ 클릭: 순차 재생에 포함 / 제외', 'Toggle include in playlist loop');
+      checkBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleLofiActiveTrack(tr.id);
+      });
+
+      // 번호 뱃지
+      const numSpan = elem('span', 'bgm-track-num', String(tr.id));
+
+      // 곡 정보 (제목, 장르 뱃지, 4분 길이)
+      const infoDiv = elem('div', 'bgm-track-info');
+      const titleDiv = elem('div', 'bgm-track-title', T(tr.name, tr.enName));
+      const subDiv = elem('div', 'bgm-track-sub');
+      const badgeSpan = elem('span', 'bgm-track-badge', tr.genre || 'Lo-Fi');
+      const durSpan = elem('span', 'bgm-track-duration', '04:00');
+      subDiv.append(badgeSpan, durSpan);
+      infoDiv.append(titleDiv, subDiv);
+
+      // 재생 상태 텍스트
+      const stateBadge = elem('div', 'bgm-track-state-badge');
+
+      itemEl.append(checkBtn, numSpan, infoDiv, stateBadge);
+
+      // 트랙 항목 클릭 시 즉시 해당 트랙 점프 재생
+      itemEl.addEventListener('click', () => {
+        selectLofiTrack(tr.id, true);
+      });
+
+      trackListEl.append(itemEl);
+      internalTrackRows.push({ itemEl, checkBtn, stateBadge, trackId: tr.id });
+    });
+
+    trackSec.append(trackHead, trackListEl);
+    internalView.append(stemSec, trackSec);
+
+    // ─────────────────────────────────────────────────────────
+    // [B] YouTube 코딩음악 전용 뷰 (재생 컨트롤 + 3선 수직 리스트)
+    // ─────────────────────────────────────────────────────────
+    const ytView = elem('div', 'bgm-youtube-view');
+
+    // (B-1) YouTube 제어 바
+    const ytControlBar = elem('div', 'bgm-yt-control-bar');
+    const ytPrevBtn = elem('button', 'bgm-yt-btn', '⏮️ ' + T('이전곡', 'Prev'));
+    const ytPlayBtn = elem('button', 'bgm-yt-btn play-btn', '▶ ' + T('재생', 'Play'));
+    const ytNextBtn = elem('button', 'bgm-yt-btn', T('다음곡', 'Next') + ' ⏭️');
+    ytPrevBtn.type = 'button'; ytPlayBtn.type = 'button'; ytNextBtn.type = 'button';
+
+    ytPrevBtn.addEventListener('click', () => {
+      const active = lofiBgmState.activeYtTracks || [1, 2, 3];
+      const curIdx = active.indexOf(lofiBgmState.curYtTrackId);
+      const prevIdx = (curIdx - 1 + active.length) % active.length;
+      selectYtTrack(active[prevIdx], true);
+    });
+    ytPlayBtn.addEventListener('click', () => {
+      setBgmPlaying(!lofiBgmState.enabled);
+    });
+    ytNextBtn.addEventListener('click', () => {
+      advanceToNextYtTrack();
+    });
+
+    ytControlBar.append(ytPrevBtn, ytPlayBtn, ytNextBtn);
+
+    // (B-2) YouTube 3선 수직 리스트
+    const ytSec = elem('div', 'lofi-track-sec');
+    const ytHead = elem('div', 'lofi-sec-title', T('📺 YouTube 인기 코딩음악 (✓체크: 순차 재생 포함/제외, 클릭: 바로 듣기)', '📺 YouTube Playlists (✓: toggle loop, Click: play now)'));
+    const ytListEl = elem('div', 'bgm-playlist-list');
+
+    const ytTrackRows = [];
+    YOUTUBE_TRACKS.forEach((yTr) => {
+      const itemEl = elem('div', 'bgm-track-item yt-item');
+
+      // v체크 버튼
+      const checkBtn = elem('button', 'bgm-check-btn checked', '✓');
+      checkBtn.type = 'button';
+      checkBtn.title = T('✓ 클릭: 순차 재생에 포함 / 제외', 'Toggle include in playlist loop');
+      checkBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleYtActiveTrack(yTr.id);
+      });
+
+      // 번호 뱃지
+      const numSpan = elem('span', 'bgm-track-num', String(yTr.id));
+
+      // 영상 정보 (제목, 채널명, 재생 시간)
+      const infoDiv = elem('div', 'bgm-track-info');
+      const titleDiv = elem('div', 'bgm-track-title', T(yTr.title, yTr.enTitle));
+      const subDiv = elem('div', 'bgm-track-sub');
+      const badgeSpan = elem('span', 'bgm-track-badge', yTr.badge || yTr.author);
+      const durSpan = elem('span', 'bgm-track-duration', yTr.duration);
+      subDiv.append(badgeSpan, durSpan);
+      infoDiv.append(titleDiv, subDiv);
+
+      // 재생 상태 텍스트
+      const stateBadge = elem('div', 'bgm-track-state-badge');
+
+      itemEl.append(checkBtn, numSpan, infoDiv, stateBadge);
+
+      // 항목 클릭 시 즉시 해당 YouTube 영상 재생
+      itemEl.addEventListener('click', () => {
+        selectYtTrack(yTr.id, true);
+      });
+
+      ytListEl.append(itemEl);
+      ytTrackRows.push({ itemEl, checkBtn, stateBadge, trackId: yTr.id });
+    });
+
+    ytSec.append(ytHead, ytListEl);
+    ytView.append(ytControlBar, ytSec);
+
+    wrap.append(srcTabWrap, nowPlayingBadge, internalView, ytView);
     row.append(wrap);
 
     const updateUi = () => {
-      // 1. 트랙 버튼 상태 갱신 (1~5번 트랙)
-      const active = lofiBgmState.activeTracks || [1, 2, 3, 4, 5];
-      trackBtns.forEach(({ btn, trackId }) => {
-        const isAct = active.includes(trackId);
-        const isPlaying = lofiBgmState.playing && lofiBgmState.curTrackId === trackId;
-        btn.classList.toggle('active', isAct);
-        btn.classList.toggle('playing', isPlaying);
-        btn.classList.toggle('disabled', !isAct);
-      });
+      const isYt = lofiBgmState.source === 'youtube';
 
-      // 2. 현재 재생 중인 배지 텍스트 (4분 타임라인 & 섹션 전개 상태 실시간 표시)
-      const curTr = getCurLofiTrack();
-      const statusIcon = lofiBgmState.playing ? '▶' : '⏸️';
-      const totalSec = Math.floor((curTr.totalBars * curTr.barDuration) / 1000);
-      const curSec = Math.min(totalSec, Math.floor((lofiBgmState.barIndex * curTr.barDuration) / 1000));
-      const curMinStr = `${Math.floor(curSec / 60)}:${String(curSec % 60).padStart(2, '0')}`;
-      const totMinStr = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
-      const barData = getTrackBar(curTr, lofiBgmState.barIndex);
-      const secName = barData && barData.secName ? barData.secName : '';
+      // 1. 소스 탭 토글
+      tabInternal.classList.toggle('active', !isYt);
+      tabYoutube.classList.toggle('active', isYt);
+      internalView.hidden = isYt;
+      ytView.hidden = !isYt;
 
-      nowPlayingBadge.textContent = lofiBgmState.playing
-        ? `${statusIcon} ${T('재생 중', 'Playing')}: [${curTr.id}] ${T(curTr.name, curTr.enName)} · ${curMinStr} / ${totMinStr} (${secName}) · ${active.length}${T('곡 순차 재생', ' tracks loop')}`
-        : `${statusIcon} ${T('정지됨 (턴테이블 꺼짐)', 'Stopped')} · [${curTr.id}] ${T(curTr.name, curTr.enName)} ${totMinStr} ${T('대기 중', 'ready')}`;
+      if (!isYt) {
+        // [내장 Lo-Fi 갱신]
+        const active = lofiBgmState.activeTracks || [1, 2, 3, 4, 5];
+        internalTrackRows.forEach(({ itemEl, checkBtn, stateBadge, trackId }) => {
+          const isAct = active.includes(trackId);
+          const isPlaying = lofiBgmState.playing && lofiBgmState.curTrackId === trackId;
+          itemEl.classList.toggle('playing', isPlaying);
+          itemEl.classList.toggle('excluded', !isAct);
+          checkBtn.classList.toggle('checked', isAct);
+          checkBtn.textContent = isAct ? '✓' : '';
+          stateBadge.textContent = isPlaying ? '▶ ' + T('재생 중', 'Playing') : '';
+        });
 
-      // 3. 스템 버튼 상태 갱신
-      stemBtns.forEach(({ sBtn, key }) => {
-        const on = !!lofiBgmState.layers[key];
-        sBtn.classList.toggle('active', on);
-      });
+        const curTr = getCurLofiTrack();
+        const isActivelyPlaying = lofiBgmState.enabled && lofiBgmState.playing;
+        const statusIcon = isActivelyPlaying ? '▶' : '⏸️';
+        const totalSec = Math.floor((curTr.totalBars * curTr.barDuration) / 1000);
+        const curSec = Math.min(totalSec, Math.floor((lofiBgmState.barIndex * curTr.barDuration) / 1000));
+        const curMinStr = `${Math.floor(curSec / 60)}:${String(curSec % 60).padStart(2, '0')}`;
+        const totMinStr = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
+        const barData = getTrackBar(curTr, lofiBgmState.barIndex);
+        const secName = barData && barData.secName ? barData.secName : '';
+
+        nowPlayingBadge.textContent = isActivelyPlaying
+          ? `${statusIcon} ${T('내장 재생 중', 'Built-in Playing')}: [${curTr.id}] ${T(curTr.name, curTr.enName)} · ${curMinStr} / ${totMinStr} (${secName}) · ${active.length}${T('곡 순차 재생', ' tracks')}`
+          : `${statusIcon} ${T('정지됨 (스위치 꺼짐)', 'Stopped')} · [${curTr.id}] ${T(curTr.name, curTr.enName)} ${totMinStr} ${T('대기 중', 'ready')}`;
+
+        stemBtns.forEach(({ sBtn, key }) => {
+          const on = !!lofiBgmState.layers[key];
+          sBtn.classList.toggle('active', on);
+        });
+      } else {
+        // [YouTube 갱신]
+        const ytActive = lofiBgmState.activeYtTracks || [1, 2, 3];
+        ytTrackRows.forEach(({ itemEl, checkBtn, stateBadge, trackId }) => {
+          const isAct = ytActive.includes(trackId);
+          const isPlaying = lofiBgmState.ytPlaying && lofiBgmState.curYtTrackId === trackId;
+          itemEl.classList.toggle('yt-playing', isPlaying);
+          itemEl.classList.toggle('excluded', !isAct);
+          checkBtn.classList.toggle('checked', isAct);
+          checkBtn.textContent = isAct ? '✓' : '';
+          stateBadge.textContent = isPlaying ? '▶ ' + T('재생 중', 'Playing') : '';
+        });
+
+        const curYt = getCurYtTrack();
+        const isYtActivelyPlaying = lofiBgmState.enabled && lofiBgmState.ytPlaying;
+        const ytStatusIcon = isYtActivelyPlaying ? '▶' : '⏸️';
+        nowPlayingBadge.textContent = isYtActivelyPlaying
+          ? `${ytStatusIcon} YouTube: [${curYt.id}] ${T(curYt.title, curYt.enTitle)} (${curYt.author} · ${curYt.duration}) · ${ytActive.length}${T('곡 순차 재생', ' tracks')}`
+          : `${ytStatusIcon} YouTube ${T('일시 정지됨 (대기)', 'Paused (Ready)')}: [${curYt.id}] ${T(curYt.title, curYt.enTitle)}`;
+
+        ytPlayBtn.textContent = isYtActivelyPlaying ? '⏸️ ' + T('일시정지', 'Pause') : '▶ ' + T('재생', 'Play');
+      }
     };
 
-    lofiUiUpdateCallbacks.push(updateUi);
+    lofiUiUpdateCallbacks = [updateUi];
     updateUi();
 
     return () => updateUi();
