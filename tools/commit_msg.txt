@@ -1,7 +1,9 @@
-1.9.17: 산책모드 미니미 크기 복원 & 좌우 쳐다보기 & 8대 다채로운 힐링 모션(커피산책/음미/바닥앉기/기지개/점프) 탑재
+1.9.18: 미니위젯/미니바 콤보박스 인터랙션 개선 & 모바일 화면 회전 시 UI 축소 왜곡 버그 해결
 
-- 산책모드 손톱 크기 축소 버그 해결 및 아담하고 또렷한 마스코트 크기(작게 2.65배, 보통 3.05배, 크게 3.45배)로 복원
-- WidgetWindow 산책모드 창 크기 최적화(너비 420px/500px/580px, 높이 105px/120px/135px)로 시원한 산책 공간 확보
-- 캔버스 수평 반전을 통해 좌/우 이동 방향을 캐릭터가 정확하게 바라보고 걷도록 문워크(뒷걸음질) 방지
-- deltaTime 기반의 여유롭고 일정한 자연스러운 보행 속도(초당 16px) 및 벽 도달 시 둘러보기(look) 후 방향 전환
-- 8대 힐링 모션 시스템 구축: 기본 걷기, 모락모락 커피잔 들고 산책(walk_coffee), 눈 감고 커피 음미(sip), 바닥에 털썩 앉아 휴식(sit), 양팔 번쩍 기지개(stretch), 깡총 점프(jump), 주변 둘러보기(look), 평온한 호흡(idle)
+- 미니바(초슬림 아일랜드) 및 미니위젯 콤보박스 클릭 씹힘/딜레이 해결:
+  - 원인: 매 1초 스냅샷마다 `replaceChildren()`으로 DOM 전체를 재생성하여 드롭다운이 취소되거나 드래그 핸들러와 충돌
+  - 조치: `islandDomBuilt` 플래그 및 `_optsKey` 캐싱을 적용하여 세션 목록이 변경될 때만 DOM을 갱신하고, 드롭다운 포커스/오픈 상태 보호(`petSelIsOpen`, `activeElement`) 및 `mousedown`/`click` `stopPropagation()` 적용
+- 모바일 가로/세로 회전 시 UI 축소 왜곡 버그 해결:
+  - 원인: 모바일 브라우저(iOS Safari/Chrome)에서 가로모드(844px) 전환 후 세로모드(390px) 복귀 시, 캔버스 인라인 스타일(`cssW`) 및 뷰포트 배율 고정 미비로 브라우저가 축소 줌 배율(~0.46)을 유지하여 `@media (max-width: 600px)`가 풀리고 설정 및 모든 UI가 축소되던 문제
+  - 조치: `index.html` 뷰포트 메타태그에 `maximum-scale=1.0, user-scalable=no`를 명시하고, `office.css`에 `html, body { width: 100%; max-width: 100vw; overflow-x: hidden; -webkit-text-size-adjust: 100%; }` 및 `canvas#office { max-width: 100%; }` 적용
+  - `office.js`에 `orientationchange` 및 `visualViewport` 이벤트 리스너를 추가하여 기기 회전 애니메이션 완료 후(120ms, 300ms) 뷰포트 및 상단 HUD 높이(`--hud-h`), 서랍 동기화(`syncDrawers()`)를 정확하게 재계산하도록 안정화

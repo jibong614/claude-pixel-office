@@ -2,6 +2,39 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.18 — 2026-11-12
+- **📱 모바일 세로/가로 화면 회전 시 UI 축소 왜곡 버그 해결**:
+  - **원인 분석**:
+    - 모바일 브라우저(iOS Safari / Chrome)에서 세로(390px) -> 가로(844px) -> 세로(390px)로 회전 시, 캔버스 인라인 폭(style.width = cssW) 및 뷰포트 배율 고정 미비로 브라우저가 가로 폭에 맞춘 축소 배율(~0.46)을 유지
+    - 이로 인해 CSS 뷰포트 너비가 여전히 844px로 인식되어 @media (max-width: 600px) 모바일 전용 스타일이 해제되고, 설정 모달 및 HUD가 미니어처 크기로 쪼그라들어 터치하기 어렵던 현상 발생
+  - **해결 조치**:
+    - index.html: 뷰포트 메타태그에 maximum-scale=1.0, user-scalable=no, viewport-fit=cover를 명시하여 화면 회전 시 브라우저가 임의로 축소 배율을 유지하지 못하도록 고정
+    - office.css: html, body에 width: 100%; max-width: 100vw; overflow-x: hidden; -webkit-text-size-adjust: 100%;를 적용하고 canvas#office에 max-width: 100%;를 부여하여 화면 너비를 초과하는 요소에 의한 축소 왜곡 원천 차단
+    - office.js: orientationchange 및 isualViewport 이벤트 리스너를 연동하고, 회전 애니메이션 완료 후(120ms, 300ms) 뷰포트 레이아웃(layoutKey = ''), 상단 HUD 높이(--hud-h), 서랍 동기화(syncDrawers())를 정확하게 갱신하도록 안정화
+- **🎯 미니위젯 및 미니바 세션 콤보박스 클릭 씹힘 & 지연 현상 완전 해결**:
+  - **원인 분석**:
+    - 매 1초 스냅샷 갱신마다 
+eplaceChildren()을 무조건 실행하여 옵션 DOM 트리를 통째로 파괴/재생성함
+    - 콤보박스 클릭 시 Chromium 네이티브 드롭다운 팝업 생성 과정에서 포커스가 일시 전환되는 순간 백그라운드 스냅샷 타이머가 옵션을 파괴하여 클릭이 씹히거나 드롭다운이 즉시 닫히던 문제
+    - select 요소에 이벤트 전파 방지(stopPropagation())가 없어 상위 드래그 리스너와 간섭
+  - **해결 조치**:
+    - _optsKey 옵션 캐싱 도입: 세션 목록, 직원 이름, 아이콘 등이 실제 변경되었을 때만 비교 갱신하여 평상시 1초마다 발생하던 불필요한 DOM 파괴를 완전히 제거
+    - 드롭다운 포커스/오픈 상태 보호(petSelIsOpen, document.activeElement 체크): 사용자가 드롭다운을 조작하는 중에는 옵션 재작성을 엄격히 건너뜀
+    - mousedown 및 click 이벤트에 stopPropagation()을 적용하여 창 드래그(startDrag)와의 충돌 차단
+- **🏝️ 미니바(초슬림 아일랜드) 콤보박스 및 버튼 인터랙션 먹통 현상 완전 해결**:
+  - **DOM 인스턴스 지속성(Persistence) 보장 & 무한 재생성(replaceChildren) 제거**:
+    - 매 1초 스냅샷 또는 데이터 갱신마다 `petIslandEl.replaceChildren()`으로 DOM 트리 전체를 삭제/재생성하던 구조를 전면 개편
+    - `islandDomBuilt` 플래그 및 캐싱 구조를 도입하여 콤보박스(`island-sel`), 직원 알림/상태 문구, 액션 버튼군(`jump`, `stop`, `pin`, `mode`, `close`)을 최초 1회만 생성하고 상태 및 속성만 인플레이스 업데이트하도록 안정화
+  - **세션 콤보박스 드롭다운 보호 (`document.activeElement`)**:
+    - 사용자가 콤보박스를 클릭하여 대표 직원 드롭다운 목록을 고르고 있는 도중에는 백그라운드 스냅샷 업데이트에 의해 옵션이 강제 재작성되지 않도록 안전 보호 로직 적용
+    - 옵션 내용이 실제 변경되었을 때만 비교 갱신하여 드롭다운 팝업이 즉시 닫히거나 튕기는 현상 원천 차단
+  - **버튼 클릭 및 마우스 이벤트 격리 & 윈도우 드래그 오인 방지**:
+    - 미니바의 5대 버튼 및 콤보박스에 `mousedown` 및 `click` 이벤트 전파 차단(`stopPropagation()`)을 적용하여 창 드래그 핸들러(`startDrag`)와의 충돌 방지
+    - 드래그 제외 타겟 셀렉터에 `.island-actions`, `.island-btn`, `.island-sel`을 등록하여 버튼 클릭 시 창 드래그(`pet-drag` / `WM_NCLBUTTONDOWN`)로 가로채지 않도록 완벽 차단
+  - **CSS 인터랙션 및 히트박스 강화**:
+    - `.island-btn`의 `all: unset` 스타일에 `display: inline-flex !important`, `align-items: center`, `justify-content: center`, `box-sizing: border-box`, `user-select: none`, `pointer-events: auto !important`를 명시하여 클릭 타깃 박스 및 마우스 반응성 확보
+    - `.island-actions` 및 `.island-sel`의 포인터 이벤트 우선순위 및 커서 명시
+
 ## 1.9.17 — 2026-11-12
 - **🐾 🚶 산책 모드(시메지) 전면 리뉴얼: 미니미 크기 정상화 & 좌우 쳐다보기 & 8대 다채로운 힐링 모션 시스템**:
   - **손톱 크기 축소 버그 해결 & 아담하고 귀여운 마스코트 스케일(2.65 ~ 3.45배) 복원**:

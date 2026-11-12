@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.17';
+const PAGE_VERSION = '1.9.18';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -6850,12 +6850,15 @@ function applyPetState() {
   }
 }
 
-let petDomBuilt = false;
+let petDomBuilt = false, petSelIsOpen = false;
 let petSelEl = null, petBgBtn = null, petFoldBtn = null, petPinBtn = null, petModeBtn = null, petStopBtn = null, petAlertEl = null, petAlertTargetId = '';
 let petModeMenuEl = null;
 let petStageEl = null, petCanvasEl = null, petCtx = null;
 let petBarNm = null, petBarSt = null, petAsksEl = null, petFeedEl = null, petFeedHd = null, petFeedTx = null;
 let petCmdWrap = null, petInputEl = null, petSendBtn = null, petNoteEl = null, petCancelBtn = null, petWakeBtn = null, petGuideBtn = null, petEmptyEl = null, petIslandEl = null;
+let islandDomBuilt = false;
+let islandAvatarEl = null, islandInfoEl = null, islandSelEl = null, islandDotEl = null, islandTextEl = null;
+let islandActionsEl = null, islandJumpBtn = null, islandStopBtn = null, islandPinBtn = null, islandModeBtn = null, islandCloseBtn = null;
 const petArt = document.createElement('canvas');
 const petAskEls = new Map();
 const petAnswered = new Map();
@@ -6915,20 +6918,41 @@ function ensurePetDom() {
     ? T('항상 위 고정됨 (클릭 시 고정 해제하여 다른 창 뒤에 숨김)', 'Always on top (click to unpin and allow hiding behind windows)')
     : T('항상 위 고정 해제됨 (클릭 시 항상 위로 고정)', 'Not on top (click to pin always on top)');
   petPinBtn.classList.toggle('pinned', petTopmostOn());
+  petPinBtn.addEventListener('mousedown', (e) => e.stopPropagation());
   petPinBtn.addEventListener('click', () => setPetTopmost(!petTopmostOn()));
 
   petSelEl = elem('select', 'pet-sel');
   petSelEl.title = T('대표 직원 선택(바탕화면 미니위젯에 표시할 세션)', 'Choose representative employee');
-  petSelEl.addEventListener('change', () => setPetSession(petSelEl.value));
+  petSelEl.addEventListener('change', () => {
+    setPetSession(petSelEl.value);
+    petSelEl.blur();
+  });
+  petSelEl.addEventListener('mousedown', (e) => {
+    e.stopPropagation();
+    petSelIsOpen = true;
+  });
+  petSelEl.addEventListener('pointerdown', (e) => e.stopPropagation());
+  petSelEl.addEventListener('click', (e) => e.stopPropagation());
+  petSelEl.addEventListener('focus', () => { petSelIsOpen = true; });
+  petSelEl.addEventListener('blur', () => { petSelIsOpen = false; });
+  petSelEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      petSelIsOpen = false;
+      petSelEl.blur();
+    }
+  });
 
   petBgBtn = elem('button', 'pet-ibtn btn-pet-bg', '🖼️');
+  petBgBtn.addEventListener('mousedown', (e) => e.stopPropagation());
   petBgBtn.addEventListener('click', () => setPetNoBg(!petNoBgOn()));
 
   petFoldBtn = elem('button', 'pet-ibtn btn-pet-fold', '💬');
+  petFoldBtn.addEventListener('mousedown', (e) => e.stopPropagation());
   petFoldBtn.addEventListener('click', () => setPetCompact(!petCompactOn()));
 
   petStopBtn = elem('button', 'pet-ibtn btn-stop btn-pet-stop', '🛑');
   petStopBtn.title = T('현재 세션에 긴급 중단(Ctrl+C) 신호를 보냅니다', 'Send emergency stop (Ctrl+C) to this session');
+  petStopBtn.addEventListener('mousedown', (e) => e.stopPropagation());
   petStopBtn.addEventListener('click', () => {
     const s = resolvePetSession();
     if (s) {
@@ -6942,6 +6966,7 @@ function ensurePetDom() {
 
   const focusBtn = elem('button', 'pet-ibtn', '🖥️');
   focusBtn.title = T('이 세션이 열려 있는 작업 창(VS Code · Claude 데스크톱 · 터미널)으로 이동', "Bring this session's working window (VS Code · Claude Desktop · Terminal) to the front");
+  focusBtn.addEventListener('mousedown', (e) => e.stopPropagation());
   focusBtn.addEventListener('click', () => {
     const s = resolvePetSession();
     if (s) jumpToConsole(s.id, s);
@@ -6949,6 +6974,7 @@ function ensurePetDom() {
 
   const officeBtn = elem('button', 'pet-ibtn', '🏢');
   officeBtn.title = T('메인 사무실 창에서 이 직원 열기', 'Open this employee in the main office window');
+  officeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
   officeBtn.addEventListener('click', () => {
     const s = resolvePetSession();
     if (WIDGET_WINDOW) send({ cmd: 'pet-open-office', id: s?.id || '' });
@@ -6957,6 +6983,7 @@ function ensurePetDom() {
 
   petModeBtn = elem('button', 'pet-ibtn btn-pet-mode', '🔄');
   petModeBtn.title = T('화면 모드 변경 (미니위젯 · 미니바 · 산책 모드)', 'Change View Mode (MiniWidget · Mini-bar · Walk Mode)');
+  petModeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
   petModeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     togglePetModeMenu(petModeBtn);
@@ -6964,10 +6991,12 @@ function ensurePetDom() {
 
   const petMemeBtn = elem('button', 'pet-ibtn btn-pet-meme', '💡');
   petMemeBtn.title = T('개발자 유머 & 명언 보기 (설정에서 1시간마다 자동 띄우기 가능)', 'Developer Memes & Quotes (auto icebreaker configurable in settings)');
+  petMemeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
   petMemeBtn.addEventListener('click', () => triggerDevMeme());
 
   const closeBtn = elem('button', 'pet-ibtn btn-pet-close', '✕');
   closeBtn.title = T('바탕화면 미니위젯 닫기', 'Close Desktop MiniWidget');
+  closeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
   closeBtn.addEventListener('click', () => setPet(false));
 
   head.append(petPinBtn, petSelEl, petBgBtn, petFoldBtn, petModeBtn, petMemeBtn, petStopBtn, focusBtn, officeBtn, closeBtn);
@@ -7003,7 +7032,7 @@ function ensurePetDom() {
   // 위젯/미니바의 빈 공간을 잡고 끌면 창 이동 (선택창·버튼·입력창 등 인터랙티브 요소는 제외)
   const startDrag = (e) => {
     if (e.button !== 0) return;
-    if (e.target instanceof Element && e.target.closest('select, button, input, textarea, a, option, .pet-bar, .pet-ask-card, .pet-feed, .pet-cmd, .pet-empty, .voice-btn, .reply-btn, .pet-resize-handle')) return;
+    if (e.target instanceof Element && e.target.closest('select, button, input, textarea, a, option, .island-actions, .island-btn, .island-sel, .pet-bar, .pet-ask-card, .pet-feed, .pet-cmd, .pet-empty, .voice-btn, .reply-btn, .pet-resize-handle')) return;
     if (WIDGET_WINDOW) send({ cmd: 'pet-drag' });
   };
   head.addEventListener('mousedown', startDrag);
@@ -7261,7 +7290,7 @@ function setPetDisplayMode(mode, fromHost = false) {
 
   if (petIslandEl && petMode !== 'island') {
     petIslandEl.hidden = true;
-    petIslandEl.replaceChildren();
+
   }
   petEl.classList.toggle('pet-island', petMode === 'island');
   petEl.classList.toggle('pet-shimeji', petMode === 'shimeji');
@@ -7383,23 +7412,104 @@ function renderPetIsland(s) {
     petEl.append(petIslandEl);
   }
   petIslandEl.hidden = false;
-  petIslandEl.replaceChildren();
 
+  if (!islandDomBuilt) {
+    islandAvatarEl = elem('span', 'island-avatar', '🏝️');
+    islandInfoEl = elem('div', 'island-info');
+
+    islandSelEl = elem('select', 'island-sel');
+    islandSelEl.title = T('대표 직원 선택', 'Choose representative employee');
+    islandSelEl.addEventListener('change', (e) => {
+      e.stopPropagation();
+      setPetSession(islandSelEl.value);
+    });
+    islandSelEl.addEventListener('mousedown', (e) => e.stopPropagation());
+    islandSelEl.addEventListener('click', (e) => e.stopPropagation());
+
+    islandDotEl = elem('span', 'island-dot');
+    islandTextEl = elem('span', 'island-text');
+    islandInfoEl.append(islandAvatarEl, islandSelEl, islandDotEl, islandTextEl);
+
+    islandActionsEl = elem('div', 'island-actions');
+    islandActionsEl.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    islandJumpBtn = elem('button', 'island-btn btn-jump', '⚡');
+    islandJumpBtn.title = T('작업 창(VS Code · Claude 데스크톱 · 터미널)으로 점프', 'Jump to working window (VS Code · Claude Desktop · Terminal)');
+    islandJumpBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = resolvePetSession();
+      if (cur) jumpToConsole(cur.id, cur);
+    });
+    islandJumpBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    islandStopBtn = elem('button', 'island-btn btn-stop', '🛑');
+    islandStopBtn.title = T('긴급 중단', 'Emergency Stop');
+    islandStopBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = resolvePetSession();
+      if (cur) stopSession(cur.id);
+    });
+    islandStopBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    islandPinBtn = elem('button', 'island-btn btn-pin', '📌');
+    islandPinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setPetTopmost(!petTopmostOn());
+    });
+    islandPinBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    islandModeBtn = elem('button', 'island-btn btn-pet-mode', '🔄');
+    islandModeBtn.title = T('화면 모드 변경 (미니위젯 · 미니바 · 산책 모드)', 'Change View Mode (MiniWidget · Mini-bar · Walk Mode)');
+    islandModeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePetModeMenu(islandModeBtn);
+    });
+    islandModeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    islandCloseBtn = elem('button', 'island-btn btn-close', '✕');
+    islandCloseBtn.title = T('미니바 닫기', 'Close mini-bar');
+    islandCloseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setPet(false);
+    });
+    islandCloseBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    islandActionsEl.append(islandJumpBtn, islandStopBtn, islandPinBtn, islandModeBtn, islandCloseBtn);
+    petIslandEl.replaceChildren(islandInfoEl, islandActionsEl);
+
+    petIslandEl.oncontextmenu = (e) => {
+      if (e.target instanceof Element && e.target.closest('select, input, textarea, button')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openPetModeMenu(islandModeBtn, e.clientX, e.clientY);
+    };
+
+    islandDomBuilt = true;
+  }
+
+  // Update State in-place without rebuilding DOM
   const isWait = !!s && !!actOf(s).wait;
   const isNotice = !!(islandToastText && performance.now() < islandToastText.until);
-  const icon = isNotice ? islandToastText.icon : (s?.icon || '🏝️');
-  const avatar = elem('span', 'island-avatar', icon);
-  const info = elem('div', 'island-info');
 
   if (isNotice) {
-    // 💡 아이스브레이킹 또는 멘트가 뜰 때: 버튼 영역을 제외한 바 전체 영역에 멘트 노출
-    const noticeTx = elem('span', 'island-notice-full', islandToastText.text);
-    noticeTx.title = islandToastText.text;
-    info.append(noticeTx);
+    setPixelContent(islandAvatarEl, islandToastText.icon || '🏝️');
+    islandAvatarEl.hidden = false;
+    islandDotEl.hidden = true;
+    islandTextEl.className = 'island-text island-notice';
+    islandTextEl.textContent = islandToastText.text;
+    islandTextEl.title = islandToastText.text;
   } else {
-    // 콤보박스: 세션을 직접 선택해 바꿀 수 있게 지원
-    const sel = elem('select', 'island-sel');
-    sel.title = T('대표 직원 선택', 'Choose representative employee');
+    islandAvatarEl.hidden = true;
+    islandDotEl.hidden = false;
+    islandDotEl.className = 'island-dot' + (isWait ? ' waiting' : '');
+    const statusText = s ? (s.text || T('대기 중', 'Standing by')) : T('직원 대기 중', 'Standing by');
+    islandTextEl.className = 'island-text';
+    islandTextEl.textContent = statusText;
+    islandTextEl.title = statusText;
+  }
+
+  // Update Combobox options and value only when not focused by user
+  if (document.activeElement !== islandSelEl) {
     const pref = petSessionPref();
     const autoLabel = s && !pref
       ? T(`🌟 자동 · ${displayName(s)}`, `🌟 Auto · ${displayName(s)}`)
@@ -7409,67 +7519,26 @@ function renderPetIsland(s) {
       const listening = remoteOf(item.id)?.listen;
       opts.push(new Option(`${item.icon} ${displayName(item)}${listening ? ' · 📡' : ''}`, item.id));
     }
-    sel.replaceChildren(...opts);
-    sel.value = pref && data.sessions.some((x) => x.id === pref) ? pref : '';
-    sel.onchange = (e) => {
-      e.stopPropagation();
-      setPetSession(sel.value);
-    };
-
-    const dot = elem('span', `island-dot ${isWait ? 'waiting' : ''}`);
-    const statusText = s ? (s.text || T('대기 중', 'Standing by')) : T('직원 대기 중', 'Standing by');
-    const tx = elem('span', 'island-text', statusText);
-    tx.title = statusText;
-    info.append(sel, dot, tx);
+    const optsKey = opts.map((o) => o.value + ':' + o.text).join('|');
+    if (islandSelEl._optsKey !== optsKey) {
+      islandSelEl.replaceChildren(...opts);
+      islandSelEl._optsKey = optsKey;
+    }
+    const targetVal = pref && data.sessions.some((x) => x.id === pref) ? pref : '';
+    if (islandSelEl.value !== targetVal) {
+      islandSelEl.value = targetVal;
+    }
   }
 
-  const actions = elem('div', 'island-actions');
-  if (s) {
-    const jumpBtn = elem('button', 'island-btn btn-jump', '⚡');
-    jumpBtn.title = T('작업 창(VS Code · Claude 데스크톱 · 터미널)으로 점프', 'Jump to working window (VS Code · Claude Desktop · Terminal)');
-    jumpBtn.onclick = (e) => { e.stopPropagation(); jumpToConsole(s.id, s); };
+  // Update button visibility and state
+  islandJumpBtn.style.display = s ? 'inline-flex' : 'none';
+  islandStopBtn.style.display = s ? 'inline-flex' : 'none';
 
-    const stopBtn = elem('button', 'island-btn btn-stop', '🛑');
-    stopBtn.title = T('긴급 중단', 'Emergency Stop');
-    stopBtn.onclick = (e) => { e.stopPropagation(); stopSession(s.id); };
-    actions.append(jumpBtn, stopBtn);
-  }
-
-  // 항상 위 고정(옷핀) 버튼
   const isPinned = petTopmostOn();
-  const islandPinBtn = elem('button', `island-btn btn-pin ${isPinned ? 'pinned' : ''}`, '📌');
+  islandPinBtn.className = `island-btn btn-pin ${isPinned ? 'pinned' : ''}`;
   islandPinBtn.title = isPinned
     ? T('항상 위 고정됨 (클릭 시 고정 해제하여 다른 창 뒤에 숨김)', 'Always on top (click to unpin and allow hiding behind windows)')
     : T('항상 위 고정 해제됨 (클릭 시 항상 위로 고정)', 'Not on top (click to pin always on top)');
-  islandPinBtn.onclick = (e) => {
-    e.stopPropagation();
-    setPetTopmost(!petTopmostOn());
-  };
-  actions.append(islandPinBtn);
-
-  // 모드 변경 버튼 (미니위젯 / 미니바 / 산책 모드)
-  const islandModeBtn = elem('button', 'island-btn btn-pet-mode', '🔄');
-  islandModeBtn.title = T('화면 모드 변경 (미니위젯 · 미니바 · 산책 모드)', 'Change View Mode (MiniWidget · Mini-bar · Walk Mode)');
-  islandModeBtn.onclick = (e) => {
-    e.stopPropagation();
-    togglePetModeMenu(islandModeBtn);
-  };
-  actions.append(islandModeBtn);
-
-  // 미니바 닫기 (✕ 버튼 - 최우측)
-  const closeBtn = elem('button', 'island-btn btn-close', '✕');
-  closeBtn.title = T('미니바 닫기', 'Close mini-bar');
-  closeBtn.onclick = (e) => { e.stopPropagation(); setPet(false); };
-  actions.append(closeBtn);
-  if (isNotice) petIslandEl.append(avatar, info, actions);
-  else petIslandEl.append(info, actions);
-
-  petIslandEl.oncontextmenu = (e) => {
-    if (e.target instanceof Element && e.target.closest('select, input, textarea, button')) return;
-    e.preventDefault();
-    e.stopPropagation();
-    openPetModeMenu(islandModeBtn, e.clientX, e.clientY);
-  };
 }
 
 function drawShimejiPerson(x, y, L, vx, t, s, state) {
@@ -10469,17 +10538,25 @@ function renderPet() {
   const noBg = (appMode === 'office') ? false : petNoBgOn();
 
   // 세션 선택 드롭다운 갱신: 바 안에는 깔끔하게 직원 이름만 넣고, 상태는 하단 상태 바에 표시
-  if (document.activeElement !== petSelEl) {
+  // 드롭다운 포커스/열림 중이거나 목록 변경이 없을 때는 DOM을 보존하여 클릭 씹힘 및 딜레이 방지
+  if (!petSelIsOpen && document.activeElement !== petSelEl) {
     const autoLabel = s && !pref
       ? T(`🌟 자동 · ${displayName(s)}`, `🌟 Auto · ${displayName(s)}`)
       : T('🌟 자동 (확인 필요·최근 순)', '🌟 Auto (waiting / recent)');
-    const opts = [new Option(autoLabel, '')];
-    for (const item of data.sessions) {
-      const listening = remoteOf(item.id)?.listen;
-      opts.push(new Option(`${item.icon} ${displayName(item)}${listening ? ' · 📡' : ''}`, item.id));
+    const targetVal = pref && data.sessions.some((x) => x.id === pref) ? pref : '';
+    const optsKey = [autoLabel, targetVal, ...data.sessions.map((x) => `${x.id}:${x.icon}:${displayName(x)}:${remoteOf(x.id)?.listen ? 1 : 0}`)].join(';');
+    if (petSelEl._optsKey !== optsKey) {
+      const opts = [new Option(autoLabel, '')];
+      for (const item of data.sessions) {
+        const listening = remoteOf(item.id)?.listen;
+        opts.push(new Option(`${item.icon} ${displayName(item)}${listening ? ' · 📡' : ''}`, item.id));
+      }
+      petSelEl.replaceChildren(...opts);
+      petSelEl._optsKey = optsKey;
     }
-    petSelEl.replaceChildren(...opts);
-    petSelEl.value = pref && data.sessions.some((x) => x.id === pref) ? pref : '';
+    if (petSelEl.value !== targetVal) {
+      petSelEl.value = targetVal;
+    }
   }
 
   petBgBtn.classList.toggle('on', !noBg);
@@ -10506,7 +10583,7 @@ function renderPet() {
   petEl.classList.remove('pet-island');
   if (petIslandEl) {
     petIslandEl.hidden = true;
-    petIslandEl.replaceChildren();
+
   }
   petEl.classList.toggle('pet-shimeji', petMode === 'shimeji');
 
@@ -14089,7 +14166,21 @@ if (SETTINGS_WINDOW) {
 }
 else if (selectedId === 'settings') setSettingsOpen(true, params.get('tab'));   // 화면 점검용: ?select=settings&tab=phone
 if (selectedId === 'pet') selectedId = null;   // ?select=pet 은 바탕화면 미니위젯 미리보기를 켠다
-window.addEventListener('resize', () => { layoutKey = ''; });
+function onViewportChange() {
+  layoutKey = '';
+  refreshHud();
+  syncDrawers();
+}
+window.addEventListener('resize', onViewportChange);
+window.addEventListener('orientationchange', () => {
+  window.scrollTo(0, 0);
+  onViewportChange();
+  setTimeout(() => { window.scrollTo(0, 0); onViewportChange(); }, 120);
+  setTimeout(() => { window.scrollTo(0, 0); onViewportChange(); }, 300);
+});
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', onViewportChange);
+}
 
 if (REMOTE) {
   // 휴대폰 보기: PC 전용 조작(항상 위·훅)은 숨기고, 별명·메모는 PC에서 정한 것을 보여 주기만 한다
