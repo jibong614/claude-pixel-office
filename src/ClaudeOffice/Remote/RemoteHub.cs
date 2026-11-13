@@ -114,7 +114,7 @@ internal sealed class RemoteHub
         {
             _stopFlags.Remove(h.Sid);
             if (h.Event == "Stop" && !string.IsNullOrWhiteSpace(h.LastMessage))
-                _replies[h.Sid] = new Said(ToolCatalog.Clip(h.LastMessage.Trim(), MaxReply), DateTime.UtcNow, "reply");
+                _replies[h.Sid] = new Said(ToolCatalog.ClipMultiline(h.LastMessage.Trim(), MaxReply), DateTime.UtcNow, "reply");
 
             // 이 세션에 못 건넨 지시가 있으면 기다리지 않고 바로 — 일하는 중에 보낸 것은 일을 마치는 순간 이어서 받는다
             if (_queued.Remove(h.Sid, out var waiting) && waiting.Count > 0)

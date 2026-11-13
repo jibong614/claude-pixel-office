@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.22';
+const PAGE_VERSION = '1.9.23';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -14374,7 +14374,10 @@ function renderPanel() {
   if ($('pReplyWrap')) {
     const showFallbackReply = $('pRemote').hidden && !!s.reply;
     $('pReplyWrap').hidden = !showFallbackReply;
-    if (showFallbackReply) $('pReply').textContent = s.reply;
+    if (showFallbackReply) {
+      const formatted = (s.reply || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      if ($('pReply').textContent !== formatted) $('pReply').textContent = formatted;
+    }
   }
 
   let todoCard = $('pWhiteboardCard');
@@ -14654,7 +14657,8 @@ function renderRemote(s) {
   $('rReplyWrap').hidden = !replyObj;
   if (replyObj) {
     $('rReplyHead').textContent = T(`💬 마지막 답 · ${fmtTime(replyObj.t)}`, `💬 Last answer · ${fmtTime(replyObj.t)}`);
-    if ($('rReply').textContent !== replyObj.text) $('rReply').textContent = replyObj.text;   // 같으면 그대로(읽던 위치가 튀지 않게)
+    const formatted = (replyObj.text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if ($('rReply').textContent !== formatted) $('rReply').textContent = formatted;   // 같으면 그대로(읽던 위치가 튀지 않게)
   }
 }
 

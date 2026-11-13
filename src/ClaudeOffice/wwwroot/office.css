@@ -403,7 +403,15 @@ body.remote #pOpenDir, body.remote #pFocusWin, body.remote .seat, body.remote #p
 #panel .rbtn.no { background: rgba(255, 110, 110, 0.22); border-color: rgba(255, 110, 110, 0.6); }
 #rSay { margin-top: 4px; }
 #rReplyWrap { margin-top: 8px; }
-.prompt.reply { max-height: 220px; overflow: auto; margin-top: 3px; }
+.prompt.reply {
+  max-height: 260px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-top: 3px;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  line-height: 1.6;
+}
 
 
 /* Claude 생각 엿보기 아코디언 */

@@ -186,7 +186,7 @@ internal static partial class TranscriptParser
                         if (Str(b, "text") is { } ansTxt && !string.IsNullOrWhiteSpace(ansTxt))
                         {
                             s.SetBase(Activity.Talking, "💬", L.T("답변 쓰는 중", "Writing an answer"), ts);
-                            s.LastReply = ToolCatalog.Clip(Spaces().Replace(ansTxt.Trim(), " "), 240);
+                            s.LastReply = ToolCatalog.ClipMultiline(ansTxt.Trim(), 1200);
                             CheckSecret(s, ansTxt);
                         }
                         break;

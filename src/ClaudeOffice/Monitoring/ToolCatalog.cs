@@ -282,7 +282,15 @@ internal static partial class ToolCatalog
         return s.Length <= max ? s : s[..(max - 1)] + "…";
     }
 
-    /// <summary>파일 이름을 모를 때 대신 쓰는 말.</summary>
+    /// <summary>엔터/줄바꿈(Enter/Newline)을 유지하면서 최대 글자 수로 자른다 (상세 패널 답변 등).</summary>
+    public static string ClipMultiline(string? s, int max)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        s = s.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
+        return s.Length <= max ? s : s[..(max - 1)] + "…";
+    }
+
+        /// <summary>파일 이름을 모를 때 대신 쓰는 말.</summary>
     private static string FileWord => L.T("파일", "file");
 
     private static string FileOf(JsonElement input, string name)

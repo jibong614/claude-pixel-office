@@ -2,6 +2,12 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.23 — 2026-11-13
+- **💬 직원 상세 패널 마지막 답(Last Answer) 엔터/줄바꿈(Newline) 적용**:
+  - **백엔드 줄바꿈 보존 (`ClipMultiline`)**: C# 파서 및 훅 서버에서 답변 텍스트의 엔터(`\n`)를 공백으로 치환하던 `ToolCatalog.Clip` 대신 원본 단락과 줄바꿈을 보존하는 `ToolCatalog.ClipMultiline` 신설 및 적용
+  - **Stop 훅 & 대화 기록 파싱 연동**: `RemoteHub.cs`, `TranscriptParser.cs`, `SnapshotBuilder.cs` 전반에서 Claude의 마지막 답변 텍스트의 줄바꿈 구조 온전히 유지
+  - **프런트엔드 CSS/JS 서식 지원**: `.prompt.reply` 클래스에 `white-space: pre-wrap !important; word-break: break-word !important; line-height: 1.6;`를 적용하여 상세 패널의 마지막 답이 가독성 높은 다중 행 형태로 자연스럽게 개행되도록 개선
+
 ## 1.9.22 — 2026-11-13
 - **⚙️ 설정 창 대표 고양이 선택 시 깜빡임 버그 수정 & 3열 그리드 UI 개선**:
   - **무한 IPC 에코 핑퐁 루프 원천 차단**: 설정창에서 대표 고양이 변경 시 C# 호스트를 거쳐 설정창으로 역전송된 `share` 메시지가 `onSavedShare`의 레거시 반사 코드(`if (!WIDGET_WINDOW) shareToApp();`)로 인해 초당 수십 회 무한 순환하며 화면을 깜빡이던 현상 완전 해결

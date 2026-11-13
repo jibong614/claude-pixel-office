@@ -129,7 +129,7 @@ internal static class SnapshotBuilder
             Last: Ms(s.LastActivityUtc),
             Started: Ms(s.StartedUtc),
             Prompt: s.LastPrompt != null ? ToolCatalog.Clip(s.LastPrompt, 300) : null,
-            Reply: s.LastReply != null ? ToolCatalog.Clip(s.LastReply, 240) : null,
+            Reply: s.LastReply != null ? ToolCatalog.ClipMultiline(s.LastReply, 1200) : null,
             Ctx: s.Today.LastContextTokens > 0 ? s.Today.LastContextTokens : null,
             Recent: s.Recent.AsEnumerable().Reverse().Take(RecentToSend)
                      .Select(x => new LogDto(Ms(x.Utc), x.Icon, x.Text)).ToList(),
