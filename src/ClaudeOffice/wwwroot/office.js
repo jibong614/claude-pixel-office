@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.27';
+const PAGE_VERSION = '1.9.28';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -9012,6 +9012,43 @@ function closeConnectGuide() {
   }
 }
 
+// ❓ 세션이 안 보여요 Q&A 모달 제어
+const sessionFaqModalEl = $('sessionFaqModal');
+const btnSessionFaqHead = $('btnSessionFaqHead');
+const faqCloseBtn = $('faqClose');
+const faqCloseBottomBtn = $('faqCloseBottom');
+const faqOpenMcpGuideBtn = $('faqOpenMcpGuide');
+
+function openSessionFaqModal() {
+  if (!sessionFaqModalEl) return;
+  sessionFaqModalEl.hidden = false;
+  if (WIDGET_WINDOW) syncPetHeight();
+}
+
+function closeSessionFaqModal() {
+  if (!sessionFaqModalEl) return;
+  sessionFaqModalEl.hidden = true;
+  if (WIDGET_WINDOW) {
+    if (petMode === 'island') syncPetHeight();
+    else send({ cmd: 'pet-restore-height' });
+  }
+}
+
+if (btnSessionFaqHead) btnSessionFaqHead.addEventListener('click', openSessionFaqModal);
+if (faqCloseBtn) faqCloseBtn.addEventListener('click', closeSessionFaqModal);
+if (faqCloseBottomBtn) faqCloseBottomBtn.addEventListener('click', closeSessionFaqModal);
+if (sessionFaqModalEl) {
+  sessionFaqModalEl.addEventListener('click', (e) => {
+    if (e.target === sessionFaqModalEl) closeSessionFaqModal();
+  });
+}
+if (faqOpenMcpGuideBtn) {
+  faqOpenMcpGuideBtn.addEventListener('click', () => {
+    closeSessionFaqModal();
+    send({ cmd: 'open-mcp-guide' });
+  });
+}
+
 function applyConnectGuideLang() {
   if (!connectGuideEl) return;
   const t = (id, ko, en) => { const el = $(id); if (el) el.textContent = T(ko, en); };
@@ -12510,6 +12547,11 @@ const SETTINGS = [
   {
     tab: 'staff',
     items: [
+      { type: 'action', name: T('❓ 세션이 안 보여요 (도움말/Q&A)', '❓ Session not appearing? (FAQ)'), pcOnly: false,
+        desc: T('Claude 데스크톱(MCP), Claude Code 터미널 세션이 사무실에 나타나지 않거나 사라졌을 때 점검 사항을 확인합니다.',
+                'Troubleshooting checklist and Q&A when Claude Desktop (MCP) or Claude Code sessions do not appear in the office.'),
+        label: () => T('Q&A 보기', 'View FAQ'),
+        run: openSessionFaqModal },
       { type: 'choice', name: T('표시 기간', 'Display period'), pcOnly: true,
         desc: () => T(`마지막 대화가 ${windowLabel()} 안에 있는 세션만 사무실에 들입니다(파일 수정 시각이 아니라 실제 대화 시각 기준). 3시간 넘게 조용하면 퇴근(🚪)으로 보입니다.`,
           `Only sessions whose last message is within ${windowLabel()} come to the office (by actual message time, not file edit time). After 3 quiet hours they go home (🚪).`),
@@ -12705,6 +12747,11 @@ All current session employee genders and looks will be reset.`
       label: () => T('연동 삭제', 'Delete Integration'),
       run: () => { send({ cmd: 'uninstall-mcp' }); }
     },
+    { type: 'action', name: T('❓ 세션이 안 보여요 (문제 해결 & Q&A)', '❓ Session missing? (Troubleshoot & FAQ)'), pcOnly: false,
+      desc: T('Claude 데스크톱 MCP 도구 출근 확인, Claude Code 첫 질문 전송, 표시 기간 설정 등 세션이 보이지 않는 원인별 해결책을 안내합니다.',
+              'Guide to resolve missing sessions: Claude Desktop MCP tool reporting, first prompt requirement, display window settings, etc.'),
+      label: () => T('Q&A 보기', 'View FAQ'),
+      run: openSessionFaqModal },
     { type: 'action', name: T('Claude Code 연결', 'Connect to Claude Code'), pcOnly: true,
         desc: T('Claude가 승인을 기다리거나 질문하면 직원이 즉시 손을 들고, 세션을 닫으면 바로 퇴근합니다. 휴대폰 지시·승인도 이 연결을 통해 동작합니다. Claude Code 설정(~/.claude/settings.json)에 연결 줄을 추가하므로 확인 창이 먼저 뜹니다(끊으면 추가한 줄만 제거).',
           'Employees raise a hand the moment Claude waits for an approval or asks a question, and go home as soon as a session closes. Phone instructions and approvals come through this too. It adds a few lines to the Claude Code settings file, so you confirm first (disconnecting removes only those lines).'),
@@ -13942,6 +13989,7 @@ if (hudSearchEl) {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const msModal = modeSelectModal;
+    if (sessionFaqModalEl && !sessionFaqModalEl.hidden) { closeSessionFaqModal(); return; }
     if (petModeMenuEl && !petModeMenuEl.hidden) { closePetModeMenu(); return; }
     if (msModal && !msModal.hidden) { msModal.hidden = true; return; }
     if (connectGuideEl && !connectGuideEl.hidden) { closeConnectGuide(); return; }

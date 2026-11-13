@@ -165,7 +165,12 @@
   <div id="settings" class="modal" hidden>
     <div class="mbox" role="dialog" aria-modal="true" aria-labelledby="sTitle">
       <div class="mhead">
-        <h2 id="sTitle"><span class="px-icon px-gear"></span> <span data-en="Settings">설정</span></h2>
+        <div class="shead-row">
+          <h2 id="sTitle" style="margin: 0;"><span class="px-icon px-gear"></span> <span data-en="Settings">설정</span></h2>
+          <button type="button" id="btnSessionFaqHead" class="btn-faq-pill" title="세션이 보이지 않을 때 해결 방법" data-en-title="Troubleshooting missing sessions">
+            <span class="faq-icon">❓</span> <span data-en="Session missing?">세션이 안 보여요</span>
+          </button>
+        </div>
         <div id="sVer"></div>
         <button id="sClose" class="close" title="닫기" data-en-title="Close">✕</button>
       </div>
@@ -174,7 +179,115 @@
         <div id="sBody"></div>
       </div>
     </div>
-  </div>
+  </div
+
+  <!-- ❓ 세션이 안 보여요 Q&A 및 문제 해결 모달 -->
+  <div id="sessionFaqModal" class="modal" hidden>
+    <div class="mbox faq-box" role="dialog" aria-modal="true" aria-labelledby="faqTitle">
+      <div class="mhead faq-head">
+        <div class="faq-head-info">
+          <h2 id="faqTitle">
+            <span class="faq-icon-title">❓</span>
+            <span data-en="Why is my session missing? (Q&A)">세션이 안 보여요 — 원인 &amp; 해결 Q&amp;A</span>
+          </h2>
+          <span class="faq-sub" data-en="Common questions &amp; fixes when Claude Desktop or Claude Code sessions don't appear in the office">
+            Claude 데스크톱(MCP) 또는 Claude Code(터미널) 세션이 사무실에 나타나지 않을 때 확인해 보세요.
+          </span>
+        </div>
+        <button id="faqClose" class="close" title="닫기" data-en-title="Close">✕</button>
+      </div>
+      <div class="faq-body" id="faqBody">
+        <!-- Q1: Claude 데스크톱 (MCP 연동) -->
+        <div class="faq-card">
+          <div class="faq-q">
+            <span class="faq-badge badge-mcp">Claude 데스크톱 (MCP)</span>
+            <span class="faq-q-txt" data-en="Q. Working in Claude Desktop app (chat/projects), but employee doesn't appear?">Q. Claude 데스크톱 앱에서 작업 중인데 직원이 출근하지 않아요</span>
+          </div>
+          <div class="faq-a">
+            <p data-en="Claude Desktop integrates with the office via Model Context Protocol (MCP). Check these 3 steps:">
+              Claude 데스크톱은 <strong>MCP(Model Context Protocol)</strong>를 통해 Pixel Office에 상태를 보고합니다. 아래 3가지를 확인해 주세요:
+            </p>
+            <ul class="faq-list">
+              <li>
+                <strong>1. 프로젝트 지침(Instructions) 등록 필수:</strong><br>
+                <span data-en="Open Project Settings in Claude Desktop, click [Edit Instructions], and paste the Pixel Office prompt.">Claude 데스크톱의 프로젝트 설정에서 <strong>[지침(Instructions)]</strong> 편집창에 가이드의 연동 지침 프롬프트를 붙여넣으셔야 Claude가 상태를 보고합니다.</span>
+              </li>
+              <li>
+                <strong>2. 첫 호출 시 [항상 허용(Always allow)] 선택:</strong><br>
+                <span data-en="When Claude Desktop asks to allow the office_report_status tool, click [Always allow].">채팅방에서 첫 질문 후 <code>office_report_status</code> 도구 권한 팝업이 뜰 때 반드시 <strong>[항상 허용]</strong>을 눌러주셔야 매번 멈추지 않고 자동으로 출근합니다.</span>
+              </li>
+              <li>
+                <strong>3. Claude 데스크톱 완전 재시작:</strong><br>
+                <span data-en="Quit Claude from the system tray and reopen it to load MCP server configurations.">설정 적용 후 작업표시줄 오른쪽 트레이(▲)에서 Claude 아이콘을 우클릭하고 <strong>[Quit]</strong> 후 다시 켜야 연동이 활성화됩니다.</span>
+              </li>
+            </ul>
+            <div class="faq-action-box">
+              <span style="font-size: 12px; color: #d8b4fe;" data-en="Need step-by-step screenshots &amp; instruction copy?">화면 캡처와 지침 복사가 필요하신가요?</span>
+              <button type="button" class="btn-faq-action btn-mcp-guide" id="faqOpenMcpGuide">
+                <span>🤖 Claude 데스크톱 연동 가이드 열기</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q2: Claude Code 터미널 -->
+        <div class="faq-card">
+          <div class="faq-q">
+            <span class="faq-badge badge-code">Claude Code (터미널)</span>
+            <span class="faq-q-txt" data-en="Q. Opened Claude Code in terminal or VS Code, but nobody in the office?">Q. 터미널이나 VS Code에서 Claude Code를 켰는데 직원이 안 나와요</span>
+          </div>
+          <div class="faq-a">
+            <ul class="faq-list">
+              <li>
+                <strong>첫 질문(프롬프트)을 전송했나요?</strong><br>
+                <span data-en="Running the claude command only doesn't create session logs. Send at least one prompt to spawn the session.">터미널에서 <code>claude</code> 명령을 켜기만 한 상태에서는 세션 기록 파일이 생성되지 않습니다. <strong>아무 질문이나 첫 프롬프트를 1회 전송</strong>해야 비로소 출근합니다.</span>
+              </li>
+              <li>
+                <strong>표시 기간 설정 확인:</strong><br>
+                <span data-en="Check Settings → Staff &amp; Teams → Display period. Sessions older than the set window are hidden."><code>⚙️ 설정</code> → <code>직원 &amp; 팀</code> → <code>표시 기간</code>을 확인하세요. 기본 설정 시간(예: 24시간)보다 오래된 세션은 자동으로 퇴근합니다. 기간을 '전체(7일)'로 늘려보세요.</span>
+              </li>
+              <li>
+                <strong>Claude Code 연결(Hooks) 확인:</strong><br>
+                <span data-en="Check Settings → System &amp; Integration → Claude Code Connection is connected."><code>⚙️ 설정</code> → <code>시스템 &amp; 연동</code> 탭에서 <strong>[Claude Code 연결]</strong>이 켜져 있는지 확인하세요.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Q3: 자동 퇴근 -->
+        <div class="faq-card">
+          <div class="faq-q">
+            <span class="faq-badge badge-info">자동 퇴근 안내</span>
+            <span class="faq-q-txt" data-en="Q. An active employee suddenly packed up and left (disappeared)?">Q. 일하던 직원이 갑자기 자리에서 사라졌어요 (퇴근)</span>
+          </div>
+          <div class="faq-a">
+            <p data-en="If a session has no conversation for 3 hours, the employee naturally goes home (🚪) to rest.">
+              대화 세션에서 <strong>3시간 이상 추가 질문이나 작업이 없으면</strong> 직원은 편안히 휴식하기 위해 <strong>자동 퇴근(🚪)</strong> 처리됩니다.
+            </p>
+            <p data-en="Simply send another message in that terminal or Claude Desktop project, and the employee will instantly return to their desk!">
+              💡 해당 터미널이나 Claude 데스크톱 프로젝트에서 <strong>다시 질문이나 지시를 보내면 즉시 출근</strong>하여 책상에 앉습니다!
+            </p>
+          </div>
+        </div>
+
+        <!-- Q4: 자리 부족 / 오피스 모드 -->
+        <div class="faq-card">
+          <div class="faq-q">
+            <span class="faq-badge badge-view">화면 모드</span>
+            <span class="faq-q-txt" data-en="Q. Have many sessions running, but only some are visible in the room?">Q. 여러 세션을 실행 중인데 사무실에 일부만 보여요</span>
+          </div>
+          <div class="faq-a">
+            <p data-en="If office desks are fully occupied or off-screen, click [🏢 Office Mode] at the top to view all active employees in a clean business dashboard.">
+              사무실 책상 자리가 가득 차거나 창 크기에 따라 일부 직원이 보이지 않을 수 있습니다. 상단 바의 <strong>[🏢 오피스 모드]</strong> 버튼을 누르면 대시보드 리스트 형태로 전체 세션을 한눈에 확인하고 제어할 수 있습니다.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="faq-foot">
+        <button type="button" class="btn-faq-close" id="faqCloseBottom" data-en="Close">닫기</button>
+      </div>
+    </div>
+  </div>>
 
   <!-- 세션 최초 1회 터미널 연결 안내 팝업 -->
   <div id="connectGuide" class="modal" hidden>
