@@ -127,6 +127,7 @@ internal sealed class UpdateChecker : IDisposable
             var payload = JsonSerializer.Serialize(new
             {
                 v = App.Version,
+                p = "desktop",
                 t = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             });
 

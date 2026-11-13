@@ -3,7 +3,29 @@
 #   irm https://jibong614.github.io/claude-pixel-office/install.ps1 | iex
 #   or: powershell -ExecutionPolicy Bypass -File install.ps1
 
+# Windows PowerShell 5.1의 Invoke-RestMethod(irm)는 HTTP 응답 헤더에 charset이 없는 스트림을
+# Latin-1(ISO-8859-1)로 잘못 디코딩하여 한글 및 이모지가 깨지는 버그가 있습니다.
+# 이를 감지하여 UTF-8로 자동 재수행(Self-Healing)합니다.
+if (-not $env:__CPO_INSTALL_UTF8) {
+    $rawMarker = "원클릭"
+    if ($rawMarker.Length -ne 3 -or [int][char]$rawMarker[0] -lt 0xAC00) {
+        $env:__CPO_INSTALL_UTF8 = "1"
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            $wc = New-Object System.Net.WebClient
+            $wc.Encoding = [System.Text.Encoding]::UTF8
+            $wc.Headers.Add("User-Agent", "ClaudePixelOffice-Installer")
+            $script = $wc.DownloadString('https://jibong614.github.io/claude-pixel-office/install.ps1')
+            Invoke-Expression $script
+            return
+        } finally {
+            Remove-Item env:__CPO_INSTALL_UTF8 -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = 'Stop'
 
 Write-Host ""
@@ -47,7 +69,7 @@ try {
 }
 
 if (-not $zipUrl) {
-    $zipUrl = "https://github.com/$repo/releases/download/v1.9.21/ClaudePixelOffice-v1.9.21-win-x64.zip"
+    $zipUrl = "https://github.com/$repo/releases/download/v1.9.25/ClaudePixelOffice-v1.9.25-win-x64.zip"
 }
 
 Write-Host "다운로드 버전: $ver" -ForegroundColor Green
@@ -98,37 +120,38 @@ if (!(Test-Path $exePath)) {
 }
 
 # 5. 바탕화면 및 시작메뉴 바로가기 생성
-Write-Host "바탕화면 및 시작 메뉴에 바로가기 아이콘을 생성합니다..." -ForegroundColor Cyan
-$wsh = New-Object -ComObject WScript.Shell
+$desktopDir = [Environment]::GetFolderPath("Desktop")
+$startMenuDir = [Environment]::GetFolderPath("Programs")
+$shortcutName = "Claude Pixel Office.lnk"
+
+$wshShell = New-Object -ComObject WScript.Shell
 
 # 바탕화면 바로가기
-$desktopDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)
-$desktopLnk = Join-Path $desktopDir "Claude Pixel Office.lnk"
-$sc = $wsh.CreateShortcut($desktopLnk)
-$sc.TargetPath = $exePath
-$sc.WorkingDirectory = $installDir
-$sc.Description = "Claude Pixel Office - Claude Code 레트로 픽셀 모니터"
-$sc.IconLocation = "$exePath,0"
-$sc.Save()
+try {
+    $desktopShortcut = $wshShell.CreateShortcut((Join-Path $desktopDir $shortcutName))
+    $desktopShortcut.TargetPath = $exePath
+    $desktopShortcut.WorkingDirectory = $installDir
+    $desktopShortcut.Description = "Claude Pixel Office - Desktop Companion for Claude Code"
+    $desktopShortcut.Save()
+} catch {}
 
 # 시작 메뉴 바로가기
-$programsDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-$startLnk = Join-Path $programsDir "Claude Pixel Office.lnk"
-$scStart = $wsh.CreateShortcut($startLnk)
-$scStart.TargetPath = $exePath
-$scStart.WorkingDirectory = $installDir
-$scStart.Description = "Claude Pixel Office - Claude Code 레트로 픽셀 모니터"
-$scStart.IconLocation = "$exePath,0"
-$scStart.Save()
+try {
+    $startShortcut = $wshShell.CreateShortcut((Join-Path $startMenuDir $shortcutName))
+    $startShortcut.TargetPath = $exePath
+    $startShortcut.WorkingDirectory = $installDir
+    $startShortcut.Description = "Claude Pixel Office - Desktop Companion for Claude Code"
+    $startShortcut.Save()
+} catch {}
 
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "   🎉 Claude Pixel Office 설치가 완료되었습니다!" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
-Write-Host "• 바탕화면: $desktopLnk" -ForegroundColor Yellow
-Write-Host "• 시작 메뉴: 검색창에 'Claude Pixel Office'를 입력하세요" -ForegroundColor Yellow
+Write-Host "• 바로가기: $(Join-Path $desktopDir $shortcutName)" -ForegroundColor Gray
+Write-Host "• 시작 메뉴: 검색창에 'Claude Pixel Office'를 입력해 실행" -ForegroundColor Gray
 Write-Host ""
-Write-Host "앱을 즉시 실행합니다..." -ForegroundColor Cyan
-
+Write-Host "지금 바로 실행합니다..." -ForegroundColor Cyan
 Start-Process -FilePath $exePath -WorkingDirectory $installDir
+
 Write-Host "완료! 창을 닫으셔도 좋습니다." -ForegroundColor Green

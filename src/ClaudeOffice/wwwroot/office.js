@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.25';
+const PAGE_VERSION = '1.9.26';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -14937,6 +14937,34 @@ function followPcLanguage(lang) {
   return true;
 }
 
+// 📱 모바일 일일 익명 하트비트 전송 (하루 1회만, 당일 중복 시 건너뜀)
+function sendMobileHeartbeat(dbUrl) {
+  try {
+    if (!dbUrl || typeof fetch === 'undefined') return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (localStorage.getItem('co_m_hb') === today) return;
+
+    let anonId = localStorage.getItem('co_m_aid');
+    if (!anonId) {
+      anonId = 'm_' + (typeof crypto.randomUUID === 'function' ? crypto.randomUUID().replace(/-/g, '') : Math.random().toString(36).slice(2) + Date.now().toString(36));
+      localStorage.setItem('co_m_aid', anonId);
+    }
+
+    const hbUrl = `${dbUrl.replace(/\/+$/, '')}/heartbeat/${today}/${encodeURIComponent(anonId)}.json`;
+    fetch(hbUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        v: PAGE_VERSION,
+        p: 'mobile',
+        t: Math.floor(Date.now() / 1000)
+      })
+    }).then((res) => {
+      if (res.ok) localStorage.setItem('co_m_hb', today);
+    }).catch(() => {});
+  } catch {}
+}
+
 async function startRemote() {
   if (!remoteLink) {
     remoteError = T('이 기기에 연결 정보가 없어요 — PC의 Claude Office ⚙️ → 📱 휴대폰 → QR 보기를 찍어 주세요',
@@ -14953,8 +14981,12 @@ async function startRemote() {
     refreshHud();
     return;
   }
+  // 📱 모바일 일일 익명 하트비트 전송 (하루 1회만, 당일 중복 시 건너뜀)
+  sendMobileHeartbeat(remoteLink.db);
+
   const url = `${remoteLink.db.replace(/\/+$/, '')}/offices/${encodeURIComponent(remoteLink.u)}.json`;
   const es = new EventSource(url);   // Firebase REST 스트리밍: put·patch·keep-alive·cancel 이벤트
+
 
   const apply = async (type, raw) => {
     const { path, data: value } = JSON.parse(raw);
