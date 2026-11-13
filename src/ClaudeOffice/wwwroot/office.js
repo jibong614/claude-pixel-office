@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.23';
+const PAGE_VERSION = '1.9.24';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -473,6 +473,58 @@ function setWidgetSize(size, fromSync = false) {
   if (typeof renderPet === 'function') renderPet();
 }
 
+// 📺 레트로 CRT 스캔라인 오버레이
+function getScanlineEnabled() {
+  return store.get('scanline_enabled', false);
+}
+
+function getScanlineStyle() {
+  const s = store.get('scanline_style', 'soft');
+  return ['soft', 'arcade', 'phosphor', 'heavy'].includes(s) ? s : 'soft';
+}
+
+function applyScanline() {
+  const enabled = getScanlineEnabled() && getAppMode() !== 'office' && !SETTINGS_WINDOW;
+  const style = getScanlineStyle();
+  document.body.classList.toggle('scanline-on', !!enabled);
+  document.body.classList.remove('scanline-soft', 'scanline-arcade', 'scanline-phosphor', 'scanline-heavy');
+  if (enabled) {
+    document.body.classList.add(`scanline-${style}`);
+  }
+}
+
+const scanlineBroadcast = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('co_scanline') : null;
+if (scanlineBroadcast) {
+  scanlineBroadcast.onmessage = (e) => {
+    if (e.data && typeof e.data.enabled !== 'undefined') {
+      store.set('scanline_enabled', !!e.data.enabled);
+      if (e.data.style) store.set('scanline_style', e.data.style);
+      applyScanline();
+      if (typeof refreshSettings === 'function') refreshSettings();
+    }
+  };
+}
+window.addEventListener('storage', (e) => {
+  if (e.key === STORE_PREFIX + 'scanline_enabled' || e.key === STORE_PREFIX + 'scanline_style') {
+    applyScanline();
+    if (typeof refreshSettings === 'function') refreshSettings();
+  }
+});
+
+function setScanline(enabled, style, fromSync = false) {
+  store.set('scanline_enabled', !!enabled);
+  if (style) store.set('scanline_style', style);
+  applyScanline();
+  const st = style || getScanlineStyle();
+  if (!fromSync) {
+    if (scanlineBroadcast) {
+      try { scanlineBroadcast.postMessage({ enabled: !!enabled, style: st }); } catch { /* ignore */ }
+    }
+    send({ cmd: 'scanline-setting', enabled: !!enabled, style: st });
+  }
+  if (typeof refreshSettings === 'function') refreshSettings();
+}
+
 function applyWidgetSize() {
   document.body.classList.toggle('widget-size-large', widgetSize === 'large');
   document.body.classList.toggle('widget-size-medium', widgetSize === 'medium');
@@ -514,6 +566,7 @@ function setAppMode(mode, fromSync = false) {
 function applyAppMode() {
   const isOffice = appMode === 'office';
   document.body.classList.toggle('mode-office', isOffice);
+  applyScanline();
   document.body.classList.toggle('mode-basic', !isOffice);
   const cleanView = $('officeCleanView');
   const canvas = $('office');
@@ -12314,6 +12367,26 @@ const SETTINGS = [
         ],
         get: () => store.get('light_mode', 'auto'),
         set: (v) => { store.set('light_mode', v); refreshSettings(); } },
+      { type: 'toggle',
+        name: T('📺 레트로 CRT 스캔라인', '📺 Retro CRT Scanlines'),
+        shown: () => getAppMode() !== 'office',
+        desc: T('픽셀 그래픽 화면 위에 고전 브라운관(CRT) 모니터의 주사선 질감을 입힙니다. (GPU 가속 CSS 오버레이로 성능 부하 0%)',
+          'Applies retro CRT monitor scanline texture over pixel graphics. (Zero performance cost via GPU-accelerated CSS)'),
+        get: () => getScanlineEnabled(),
+        set: (v) => { setScanline(v); } },
+      { type: 'choice',
+        name: T('스캔라인 스타일', 'Scanline Style'),
+        shown: () => getAppMode() !== 'office' && getScanlineEnabled(),
+        desc: T('원하는 감성의 레트로 브라운관 주사선 질감과 농도를 선택합니다.',
+          'Choose the desired retro CRT scanline pitch, glow and depth.'),
+        options: [
+          ['soft', T('은은한 CRT (2px, 추천)', 'Soft CRT (2px, Recommended)')],
+          ['arcade', T('아케이드 레트로 (3px)', 'Arcade Retro (3px)')],
+          ['phosphor', T('RGB 형광 글로우', 'Phosphor RGB Glow')],
+          ['heavy', T('딥 레트로 (4px)', 'Deep Retro (4px)')],
+        ],
+        get: () => getScanlineStyle(),
+        set: (v) => { setScanline(true, v); } },
       { type: 'toggle', name: T('작게 보기(목록)', 'Compact view (list)'),
         desc: () => (REMOTE ? T('사무실 그림 대신 직원·상태를 한 줄씩 보여 줍니다. 상단 📋 버튼과 같습니다.', 'Shows one line per employee instead of the office picture. Same as the 📋 button.')
           : T('창을 작게 줄이고 직원·상태만 한 줄씩 보여 줍니다(맨 위에 떠 있음). 상단 📋 버튼과 같고, 크기·위치는 보통 창과 따로 기억합니다.',
@@ -15059,6 +15132,7 @@ initAchieveModal();
 refreshButtons();
 applyPetState();
 applyAppMode();
+applyScanline();
 applyWidgetSize();
 if (typeof send === 'function') {
   send({ cmd: 'app-mode', mode: appMode, initial: true });
@@ -15131,6 +15205,12 @@ if (REMOTE) {
       if (m.size && m.size !== widgetSize) {
         setWidgetSize(m.size, true);
       }
+    }
+    else if (m?.type === 'scanline-setting') {
+      store.set('scanline_enabled', !!m.enabled);
+      if (m.style) store.set('scanline_style', m.style);
+      applyScanline();
+      if (typeof refreshSettings === 'function') refreshSettings();
     }
     else if (m?.type === 'pet-mode') {
       if (m.mode && m.mode !== petMode) {

@@ -456,7 +456,7 @@ footer {
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 520px) {
   .nav .wrap {
     width: min(1180px, 100% - 16px);
     gap: 6px;
