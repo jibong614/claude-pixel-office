@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.19';
+const PAGE_VERSION = '1.9.20';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1688,6 +1688,7 @@ function loadOfficeCatState() {
         names: {},
         adoptDates: {},
         growthBonus: {},
+        primaryCat: 'cheese',
       }, obj);
       if (!Array.isArray(loaded.disabledCats)) {
         loaded.disabledCats = [];
@@ -1700,6 +1701,9 @@ function loadOfficeCatState() {
       }
       if (typeof loaded.foodPortions !== 'number') {
         loaded.foodPortions = loaded.foodEmpty ? 0 : 10;
+      }
+      if (!loaded.primaryCat) {
+        loaded.primaryCat = 'cheese';
       }
       return loaded;
     }
@@ -1718,6 +1722,7 @@ function loadOfficeCatState() {
     names: {},
     adoptDates: {},
     growthBonus: {},
+    primaryCat: 'cheese',
   };
 }
 
@@ -1727,6 +1732,32 @@ function saveOfficeCatState() {
   try {
     localStorage.setItem(OFFICE_CAT_KEY, JSON.stringify(officeCatState));
   } catch {}
+}
+
+function getPrimaryCatType() {
+  const state = (remoteShare?.cat) ? remoteShare.cat : officeCatState;
+  if (state.primaryCat) return state.primaryCat;
+  const adopted = getAdoptedCatTypes();
+  if (adopted.length > 0 && CAT_BREEDS[adopted[0]]) return adopted[0];
+  return 'cheese';
+}
+
+function setPrimaryCatType(type) {
+  officeCatState.primaryCat = type;
+  saveOfficeCatState();
+  if (!REMOTE) shareToApp();
+}
+
+function isCompanionCatEnabled() {
+  const state = (remoteShare?.cat) ? remoteShare.cat : officeCatState;
+  return state.primaryCat !== 'none';
+}
+
+function getCatName(type) {
+  const breed = CAT_BREEDS[type];
+  if (!breed) return type;
+  const state = (remoteShare?.cat) ? remoteShare.cat : officeCatState;
+  return state.names?.[type] || breed.defaultName;
 }
 
 function getAdoptedCatTypes() {
@@ -7229,6 +7260,59 @@ function ensurePetDom() {
     e.stopPropagation();
     openPetModeMenu(petModeBtn, e.clientX, e.clientY);
   });
+  petCanvasEl.addEventListener('mousemove', (e) => {
+    const rect = petCanvasEl.getBoundingClientRect();
+    const isShimeji = petMode === 'shimeji';
+    const cssWidth = Math.max(160, petStageEl.clientWidth || (petEl ? petEl.clientWidth : 300));
+    const PW = isShimeji ? Math.max(90, Math.round(cssWidth / (typeof getWidgetSize === 'function' && getWidgetSize() === 'small' ? 2.65 : typeof getWidgetSize === 'function' && getWidgetSize() === 'medium' ? 3.05 : 3.45))) : 94;
+    const scale = cssWidth / PW;
+    petMouseX = (e.clientX - rect.left) / scale;
+    petMouseY = (e.clientY - rect.top) / scale;
+    petMouseActive = true;
+    petMouseLastMove = performance.now();
+  });
+  petCanvasEl.addEventListener('mouseleave', () => {
+    petMouseActive = false;
+  });
+  petCanvasEl.addEventListener('click', (e) => {
+    if (!isCompanionCatEnabled()) return;
+    const breedId = getPrimaryCatType();
+    if (breedId === 'none') return;
+    const rect = petCanvasEl.getBoundingClientRect();
+    const isShimeji = petMode === 'shimeji';
+    const cssWidth = Math.max(160, petStageEl.clientWidth || (petEl ? petEl.clientWidth : 300));
+    const PW = isShimeji ? Math.max(90, Math.round(cssWidth / (typeof getWidgetSize === 'function' && getWidgetSize() === 'small' ? 2.65 : typeof getWidgetSize === 'function' && getWidgetSize() === 'medium' ? 3.05 : 3.45))) : 94;
+    const scale = cssWidth / PW;
+    const mx = (e.clientX - rect.left) / scale;
+    const my = (e.clientY - rect.top) / scale;
+
+    let hit = false;
+    let heartX = mx, heartY = my;
+    if (isShimeji) {
+      const catBaseY = Math.max(4, (petArt.height - 25)) + 17;
+      if (Math.abs(mx - (shimejiCatX + 4)) < 14 && Math.abs(my - catBaseY) < 14) {
+        hit = true;
+        heartX = shimejiCatX + 5;
+        heartY = catBaseY - 4;
+      }
+    } else {
+      const deskX = petNoBgOn() ? 14 : 20;
+      const deskY = petNoBgOn() ? 6 : 8;
+      const monX = deskX + 36, monY = deskY + 18;
+      if (mx >= monX - 3 && mx <= monX + 21 && my >= monY - 8 && my <= monY + 8) {
+        hit = true;
+        heartX = monX + 8;
+        heartY = monY - 6;
+      }
+    }
+    if (hit) {
+      e.stopPropagation();
+      playRetroSound(Math.random() < 0.5 ? 'cat' : 'purr');
+      spawnPetCompanionHearts(heartX, heartY);
+      const catName = getCatName(breedId);
+      showToast(T(`💕 대표 고양이 「${catName}」이(가) 골골송을 부릅니다!`, `💕 Companion Cat "${catName}" purrs happily!`), '🐱');
+    }
+  });
   petStageEl.append(petCanvasEl, bar);
 
   // 위젯/미니바의 빈 공간을 잡고 끌면 창 이동 (선택창·버튼·입력창 등 인터랙티브 요소는 제외)
@@ -7449,6 +7533,416 @@ let petMode = (params.has('island') && params.get('island') === '1')
   ? 'shimeji'
   : store.get('petMode', 'normal'); // 'normal' | 'shimeji' | 'island'
 let shimejiX = 24, shimejiVx = 1, shimejiState = 'walk', shimejiNextSwitch = 0, shimejiVy = 0, shimejiY = 0, shimejiLastTs = 0;
+// 🐾 대표 고양이 (미니위젯 모니터 위 & 산책 모드 동반) 상태 변수
+let petCatState = 'loaf', petCatNextSwitch = 0, petCatLastTs = 0;
+let petMouseX = -100, petMouseY = -100, petMouseActive = false, petMouseLastMove = 0;
+let shimejiCatX = 10, shimejiCatY = 0, shimejiCatVy = 0, shimejiCatVx = 1, shimejiCatState = 'follow', shimejiCatNextSwitch = 0;
+let petCompanionHearts = [];
+
+function spawnPetCompanionHearts(px, py) {
+  for (let i = 0; i < 3; i++) {
+    petCompanionHearts.push({
+      x: px + (Math.random() * 6 - 3),
+      y: py,
+      birth: performance.now(),
+    });
+  }
+}
+
+function drawPetCompanionHearts(c, scale, t) {
+  if (petCompanionHearts.length === 0) return;
+  const now = performance.now();
+  petCompanionHearts = petCompanionHearts.filter((h) => now - h.birth < 1200);
+  for (const h of petCompanionHearts) {
+    const elapsed = (now - h.birth) / 1200;
+    const x = (h.x + Math.sin(elapsed * 6) * 2) * scale;
+    const y = (h.y - elapsed * 14) * scale;
+    c.save();
+    c.globalAlpha = Math.max(0, 1 - elapsed);
+    c.font = '10px sans-serif';
+    c.textAlign = 'center';
+    c.fillText('💕', x, y);
+    c.restore();
+  }
+}
+
+// 🐱 미니위젯 모니터 위 대표 고양이 픽셀아트 렌더러
+function drawMonitorCatPixels(cx, cy, pal, breedId, state, t, mouseRelX) {
+  const dir = mouseRelX < 0 ? -1 : 1;
+  const isCheese = breedId === 'cheese';
+  const isCalico = breedId === 'calico';
+  const eyeR = pal.eyeR || pal.eye;
+
+  if (state === 'loaf') {
+    // 1. 식빵 굽기: 모니터 위에 앞발을 쏙 넣고 단정하게 앉아 가벼운 숨쉬기
+    const breath = tick(t, 900) ? 1 : 0;
+    R(cx + 1, cy - 3 - breath, 8, 3, pal.base);
+    R(cx + 2, cy - 1 - breath, 6, 1, pal.white);
+    if (isCheese) {
+      P(cx + 3, cy - 3 - breath, pal.dark);
+      P(cx + 5, cy - 3 - breath, pal.dark);
+    } else if (isCalico) {
+      P(cx + 3, cy - 3 - breath, pal.dark);
+      P(cx + 5, cy - 2 - breath, pal.black || '#1f2937');
+    }
+    R(cx + 6, cy - 4 - breath, 4, 3, pal.base);
+    P(cx + 6, cy - 5 - breath, pal.ear || pal.dark);
+    P(cx + 8, cy - 5 - breath, pal.ear || pal.dark);
+    const blink = tick(t, 2200, 20) === 0;
+    if (blink) {
+      P(cx + 7, cy - 3 - breath, pal.dark);
+      P(cx + 9, cy - 3 - breath, pal.dark);
+    } else {
+      P(cx + 7, cy - 3 - breath, pal.eye);
+      P(cx + 9, cy - 3 - breath, eyeR);
+    }
+    P(cx + 8, cy - 2 - breath, pal.nose);
+    const tailWag = tick(t, 350) ? 1 : 0;
+    P(cx, cy - 2 - breath, pal.dark);
+    P(cx, cy - 1 - breath, pal.dark);
+    P(cx - tailWag, cy - breath, pal.base);
+  } else if (state === 'belly_look_down') {
+    // 2. 배 깔고 모니터 내려다보기: 턱과 솜방망이 앞발을 베젤에 걸치고 화면 응시
+    const breath = tick(t, 1100) ? 1 : 0;
+    R(cx + 1, cy - 2 - breath, 9, 2, pal.base);
+    if (isCheese) {
+      P(cx + 3, cy - 2 - breath, pal.dark);
+      P(cx + 6, cy - 2 - breath, pal.dark);
+    } else if (isCalico) {
+      P(cx + 3, cy - 2 - breath, pal.dark);
+      P(cx + 5, cy - 2 - breath, pal.black || '#1f2937');
+    }
+    R(cx + 5, cy - 2, 4, 2, pal.base);
+    P(cx + 5, cy - 3, pal.ear || pal.dark);
+    P(cx + 8, cy - 3, pal.ear || pal.dark);
+    P(cx + 6, cy - 1, pal.eye);
+    P(cx + 8, cy - 1, eyeR);
+    P(cx + 7, cy, pal.nose);
+    // 베젤 아래로 삐져나온 솜방망이 앞발 2개
+    P(cx + 5, cy + 1, pal.white);
+    P(cx + 9, cy + 1, pal.white);
+    const tailSwing = tick(t, 400) ? 1 : 0;
+    P(cx, cy - 2, pal.dark);
+    P(cx - 1, cy - 1 + tailSwing, pal.base);
+  } else if (state === 'paw_swipe') {
+    // 3. 앞발 뻗기 / 마우스 잡기: 몸을 기울이고 한쪽 앞발을 화면으로 뻗어 휘젓기
+    const step = tick(t, 150, 4);
+    R(cx + 1, cy - 3, 8, 3, pal.base);
+    R(cx + 2, cy - 1, 6, 1, pal.white);
+    R(cx + 5, cy - 3, 4, 3, pal.base);
+    P(cx + 5, cy - 4, pal.ear || pal.dark);
+    P(cx + 8, cy - 4, pal.ear || pal.dark);
+    P(cx + 6, cy - 2, pal.eye);
+    P(cx + 8, cy - 2, eyeR);
+    P(cx + 7, cy - 1, pal.nose);
+    P(cx + 4, cy, pal.white);
+    if (step === 0) {
+      P(cx + 8, cy + 1, pal.base);
+      P(cx + 8, cy + 2, pal.white);
+    } else if (step === 1) {
+      P(cx + 8, cy + 1, pal.base);
+      P(cx + 7, cy + 3, pal.white);
+      P(cx + 6, cy + 3, '#fef08a');
+    } else if (step === 2) {
+      P(cx + 8, cy + 1, pal.base);
+      P(cx + 9, cy + 3, pal.white);
+      P(cx + 10, cy + 3, '#fef08a');
+    } else {
+      P(cx + 8, cy + 1, pal.white);
+    }
+    const tw = tick(t, 120) ? 1 : 0;
+    P(cx, cy - 2, pal.dark);
+    P(cx - tw, cy - 3, pal.dark);
+    P(cx - tw, cy - 4, pal.base);
+  } else if (state === 'groom') {
+    // 4. 세수 / 그루밍: 솜방망이 앞발로 뺨과 귀를 슥슥
+    const swipe = tick(t, 200, 2);
+    R(cx + 1, cy - 3, 8, 3, pal.base);
+    R(cx + 2, cy - 1, 6, 1, pal.white);
+    R(cx + 6, cy - 4, 4, 3, pal.base);
+    P(cx + 6, cy - 5, pal.ear || pal.dark);
+    P(cx + 8, cy - 5, pal.ear || pal.dark);
+    P(cx + 7, cy - 3, pal.eye);
+    P(cx + 9, cy - 3, eyeR);
+    P(cx + 8, cy - 2, pal.nose);
+    P(cx + 9, cy - 3 - swipe, pal.white);
+    P(cx + 8, cy - 2 - swipe, pal.white);
+    P(cx, cy - 2, pal.dark);
+    P(cx, cy - 1, pal.base);
+  } else if (state === 'stretch') {
+    // 5. 기지개: 앞발은 쭉 뻗고 엉덩이는 살짝 들기
+    R(cx + 2, cy - 4, 6, 3, pal.base);
+    P(cx + 1, cy - 4, pal.dark);
+    R(cx + 6, cy - 2, 4, 2, pal.base);
+    P(cx + 7, cy - 3, pal.ear || pal.dark);
+    P(cx + 9, cy - 3, pal.ear || pal.dark);
+    P(cx + 8, cy - 1, pal.eye);
+    P(cx + 9, cy - 1, pal.nose);
+    P(cx + 9, cy, pal.white);
+    P(cx + 10, cy, pal.white);
+    P(cx + 1, cy - 5, pal.dark);
+    P(cx + 2, cy - 6, pal.base);
+  } else {
+    // 6. sleep: 웅크리고 잠자기
+    const breath = tick(t, 1200) ? 1 : 0;
+    R(cx + 2, cy - 3 - breath, 7, 3, pal.base);
+    R(cx + 3, cy - 1 - breath, 5, 1, pal.white);
+    P(cx + 6, cy - 4 - breath, pal.ear || pal.dark);
+    P(cx + 8, cy - 4 - breath, pal.ear || pal.dark);
+    P(cx + 7, cy - 2 - breath, pal.dark);
+    P(cx + 8, cy - 2 - breath, pal.nose);
+    P(cx + 1, cy - 2 - breath, pal.dark);
+    P(cx + 1, cy - 1 - breath, pal.base);
+    if (tick(t, 2400) && tick(t, 1200)) {
+      P(cx + 9, cy - 5, '#f472b6');
+    }
+  }
+}
+
+function drawMiniWidgetMonitorCat(mx, my, breedId, ts) {
+  const breed = CAT_BREEDS[breedId] || CAT_BREEDS.cheese;
+  const pal = breed.palette;
+
+  const mouseNearMonitor = petMouseActive && (performance.now() - petMouseLastMove < 2500) &&
+    (petMouseX >= mx - 4 && petMouseX <= mx + 22 && petMouseY >= my - 6 && petMouseY <= my + 20);
+
+  if (mouseNearMonitor) {
+    petCatState = 'paw_swipe';
+    petCatNextSwitch = ts + 2000;
+  } else if (ts > petCatNextSwitch) {
+    const rnd = Math.random();
+    if (rnd < 0.35) {
+      petCatState = 'loaf';
+      petCatNextSwitch = ts + 5000 + Math.random() * 5000;
+    } else if (rnd < 0.65) {
+      petCatState = 'belly_look_down';
+      petCatNextSwitch = ts + 6000 + Math.random() * 4000;
+    } else if (rnd < 0.80) {
+      petCatState = 'paw_swipe';
+      petCatNextSwitch = ts + 3000 + Math.random() * 2500;
+    } else if (rnd < 0.90) {
+      petCatState = 'groom';
+      petCatNextSwitch = ts + 4000 + Math.random() * 2000;
+    } else if (rnd < 0.95) {
+      petCatState = 'stretch';
+      petCatNextSwitch = ts + 3000 + Math.random() * 1500;
+    } else {
+      petCatState = 'sleep';
+      petCatNextSwitch = ts + 7000 + Math.random() * 5000;
+    }
+  }
+
+  const cx = mx + 3;
+  const cy = my;
+  const mouseRelX = petMouseActive ? (petMouseX - (mx + 8)) : 1;
+  drawMonitorCatPixels(cx, cy, pal, breedId, petCatState, ts, mouseRelX);
+}
+
+// 🐾 산책 모드 대표 고양이 픽셀아트 렌더러
+function drawShimejiCatPixels(x, y, pal, breedId, state, dir, t) {
+  const isCheese = breedId === 'cheese';
+  const isCalico = breedId === 'calico';
+  const eyeR = pal.eyeR || pal.eye;
+  const bboxW = 12;
+
+  const cP = (dx, dy, c) => {
+    const rx = dir === 1 ? x + dx : x + (bboxW - 1 - dx);
+    P(rx, y + dy, c);
+  };
+  const cR = (dx, dy, w, h, c) => {
+    const rx = dir === 1 ? x + dx : x + (bboxW - dx - w);
+    R(rx, y + dy, w, h, c);
+  };
+
+  if (state === 'follow' || state === 'curious') {
+    const step = tick(t, 130, 4);
+    const bob = (step === 1 || step === 3) ? 1 : 0;
+
+    cR(2, 1 - bob, 7, 3, pal.base);
+    if (isCheese) {
+      cP(4, 1 - bob, pal.dark);
+      cP(6, 1 - bob, pal.dark);
+    } else if (isCalico) {
+      cP(4, 1 - bob, pal.dark);
+      cP(5, 2 - bob, pal.black || '#1f2937');
+    }
+    cR(3, 3 - bob, 5, 1, pal.white);
+
+    cR(7, -1 - bob, 4, 3, pal.base);
+    cP(8, -2 - bob, pal.ear || pal.dark);
+    cP(10, -2 - bob, pal.ear || pal.dark);
+    cP(9, 0 - bob, pal.eye);
+    cP(10, 0 - bob, eyeR);
+    cP(10, 1 - bob, pal.nose);
+
+    const tw = tick(t, 180) ? 1 : 0;
+    cP(1, 1 - bob, pal.dark);
+    cP(0, 0 - bob, pal.dark);
+    cP(0 - tw, -1 - bob, pal.base);
+
+    const fstep = (step === 0 ? 1 : step === 2 ? -1 : 0);
+    const bstep = (step === 1 ? 1 : step === 3 ? -1 : 0);
+    cP(7 + fstep, 4, pal.base);
+    cP(7 + fstep, 5, pal.white);
+    cP(3 + bstep, 4, pal.base);
+    cP(3 + bstep, 5, pal.white);
+  } else if (state === 'sit') {
+    const breath = tick(t, 1000) ? 1 : 0;
+    cR(3, 1 - breath, 5, 4, pal.base);
+    cR(4, 2 - breath, 3, 3, pal.white);
+    if (isCheese) {
+      cP(4, 1 - breath, pal.dark);
+      cP(6, 2 - breath, pal.dark);
+    }
+    cR(5, -2 - breath, 4, 3, pal.base);
+    cP(6, -3 - breath, pal.ear || pal.dark);
+    cP(8, -3 - breath, pal.ear || pal.dark);
+    cP(7, -1 - breath, pal.eye);
+    cP(8, -1 - breath, eyeR);
+    cP(8, 0 - breath, pal.nose);
+
+    cP(7, 5, pal.white);
+    cP(5, 5, pal.white);
+
+    const tw = tick(t, 400) ? 1 : 0;
+    cP(2, 3, pal.dark);
+    cP(2 + tw, 4, pal.dark);
+    cP(3 + tw, 5, pal.base);
+  } else if (state === 'loaf') {
+    const breath = tick(t, 1200) ? 1 : 0;
+    cR(2, 2 - breath, 8, 3, pal.base);
+    cR(3, 4 - breath, 6, 1, pal.white);
+    if (isCheese) {
+      cP(4, 2 - breath, pal.dark);
+      cP(6, 2 - breath, pal.dark);
+    }
+    cR(7, 1 - breath, 4, 3, pal.base);
+    cP(7, 0 - breath, pal.ear || pal.dark);
+    cP(9, 0 - breath, pal.ear || pal.dark);
+    cP(8, 2 - breath, pal.dark);
+    cP(10, 2 - breath, pal.dark);
+    cP(9, 3 - breath, pal.nose);
+
+    const tw = tick(t, 350) ? 1 : 0;
+    cP(1, 3, pal.dark);
+    cP(0, 2 - tw, pal.base);
+  } else if (state === 'groom') {
+    const swipe = tick(t, 180, 2);
+    cR(3, 1, 5, 4, pal.base);
+    cR(4, 2, 3, 3, pal.white);
+    cR(5, -2, 4, 3, pal.base);
+    cP(6, -3, pal.ear || pal.dark);
+    cP(8, -3, pal.ear || pal.dark);
+    cP(7, -1, pal.eye);
+    cP(8, 0, pal.nose);
+    cP(8, -1 - swipe, pal.white);
+    cP(7, 0 - swipe, pal.white);
+    cP(5, 5, pal.white);
+    cP(2, 4, pal.dark);
+  } else if (state === 'stretch') {
+    cR(2, 0, 5, 3, pal.base);
+    cR(6, 2, 4, 2, pal.base);
+    cP(7, 1, pal.ear || pal.dark);
+    cP(9, 1, pal.ear || pal.dark);
+    cP(8, 3, pal.eye);
+    cP(9, 3, pal.nose);
+    cP(9, 4, pal.white);
+    cP(10, 4, pal.white);
+    cP(1, -1, pal.dark);
+    cP(2, -2, pal.base);
+  } else {
+    cR(2, 0, 7, 3, pal.base);
+    cR(7, -1, 4, 3, pal.base);
+    cP(8, -2, pal.ear || pal.dark);
+    cP(10, -2, pal.ear || pal.dark);
+    cP(9, 0, pal.eye);
+    cP(10, 0, eyeR);
+    cP(10, 1, pal.nose);
+    cP(9, 3, pal.white);
+    cP(10, 3, pal.white);
+    cP(1, 3, pal.white);
+    cP(0, 2, pal.base);
+    cP(0, 0, pal.dark);
+    cP(-1, -1, pal.base);
+  }
+}
+
+function drawShimejiCompanionCat(ts, dt, PW, PH, sy, minimeX, minimeVx, minimeState, breedId) {
+  const breed = CAT_BREEDS[breedId] || CAT_BREEDS.cheese;
+  const pal = breed.palette;
+
+  const catFloorY = sy + 24 - 7;
+  const targetFollowX = minimeX - minimeVx * 17;
+
+  if (minimeState === 'jump' && shimejiCatState !== 'jump') {
+    shimejiCatState = 'jump';
+    shimejiCatVy = -2.8;
+    shimejiCatNextSwitch = ts + 1500;
+  }
+
+  if (shimejiCatState === 'jump' || shimejiCatState === 'pounce') {
+    shimejiCatY += shimejiCatVy;
+    shimejiCatVy += 0.28;
+    if (shimejiCatY >= 0) {
+      shimejiCatY = 0;
+      shimejiCatVy = 0;
+      shimejiCatState = 'follow';
+      shimejiCatNextSwitch = ts + 2000;
+    }
+  } else if (minimeState === 'walk' || minimeState === 'walk_coffee') {
+    const distToTarget = targetFollowX - shimejiCatX;
+    if (Math.abs(distToTarget) > 3) {
+      shimejiCatState = 'follow';
+      shimejiCatVx = distToTarget > 0 ? 1 : -1;
+      const catSpeed = 19.5;
+      shimejiCatX += shimejiCatVx * catSpeed * dt;
+    } else {
+      shimejiCatVx = minimeVx;
+    }
+  } else {
+    const distToMinime = minimeX - shimejiCatX;
+    if (Math.abs(distToMinime) > 24) {
+      shimejiCatState = 'follow';
+      shimejiCatVx = distToMinime > 0 ? 1 : -1;
+      shimejiCatX += shimejiCatVx * 18.0 * dt;
+    } else if (shimejiCatState === 'curious') {
+      shimejiCatX += shimejiCatVx * 10.0 * dt;
+      if (ts > shimejiCatNextSwitch) {
+        if (Math.random() < 0.5) {
+          shimejiCatState = 'pounce';
+          shimejiCatVy = -2.0;
+        } else {
+          shimejiCatState = 'follow';
+        }
+        shimejiCatNextSwitch = ts + 3000;
+      }
+    } else {
+      if (shimejiCatState === 'follow') {
+        const rnd = Math.random();
+        if (rnd < 0.45) shimejiCatState = 'sit';
+        else if (rnd < 0.80) shimejiCatState = 'loaf';
+        else if (rnd < 0.90) shimejiCatState = 'groom';
+        else shimejiCatState = 'stretch';
+        shimejiCatNextSwitch = ts + 4000 + Math.random() * 3000;
+      } else if (ts > shimejiCatNextSwitch) {
+        if (Math.random() < 0.3) {
+          shimejiCatState = 'curious';
+          shimejiCatVx = Math.random() < 0.5 ? 1 : -1;
+          shimejiCatNextSwitch = ts + 2500 + Math.random() * 1500;
+        } else {
+          shimejiCatState = Math.random() < 0.5 ? 'sit' : 'loaf';
+          shimejiCatNextSwitch = ts + 4000 + Math.random() * 3000;
+        }
+      }
+    }
+  }
+
+  shimejiCatX = Math.max(3, Math.min(PW - 16, shimejiCatX));
+  const drawX = Math.round(shimejiCatX);
+  const drawY = Math.round(catFloorY + shimejiCatY);
+
+  drawShimejiCatPixels(drawX, drawY, pal, breedId, shimejiCatState, shimejiCatVx, ts);
+}
 let islandToastTimer = null;
 let islandToastText = null;
 
@@ -7759,40 +8253,60 @@ function drawShimejiPerson(x, y, L, vx, t, s, state) {
   const isSipping = state === 'sip';
   const isCoffee = state === 'walk_coffee' || isSipping;
 
-  // 1. 다리
+  // 1. 몸통 및 다리
   if (isSitting) {
-    // 바닥에 다리를 앞으로 살짝 모아 뻗고 앉은 포즈
-    R(x + 1, y + 17, 8, 3, L.pants);
-    R(x + 7, y + 16, 3, 4, PAL.shoe);
-  } else if (isWalking) {
-    // 4-단계 자연스러운 워크 사이클 (앞다리, 중립, 뒷다리, 중립)
-    let leg1Off = 0, leg2Off = 0;
-    if (step === 0) { leg1Off = -2; leg2Off = 1; }
-    else if (step === 2) { leg1Off = 1; leg2Off = -2; }
-    const leg1Y = y + 17 + leg1Off;
-    const leg2Y = y + 17 + leg2Off;
-    R(x + 1, leg1Y, 3, 6, L.pants);
-    R(x + 6, leg2Y, 3, 6, L.pants);
-    R(x + 1, leg1Y + 5, 4, 2, PAL.shoe);
-    R(x + 6, leg2Y + 5, 4, 2, PAL.shoe);
+    // 바닥 착석 자세: 엉덩이를 바닥에 대고 다리를 앞으로 모아 뻗은 자연스러운 포즈
+    const torsoY = y + 11;
+    R(x + 1, torsoY, 8, 7, L.shirt);
+    R(x + 1, torsoY, 8, 1, shade(L.shirt, 1.18));
+    R(x + 5, torsoY + 1, 1, 6, shade(L.shirt, 0.82));
+
+    // 바닥에 닿는 엉덩이/골반 바지
+    R(x + 1, y + 18, 7, 5, L.pants);
+    P(x + 1, y + 22, shade(L.pants, 0.78));
+
+    // 위로 솟은 무릎 & 앞으로 뻗은 정강이/다리
+    R(x + 6, y + 16, 4, 7, L.pants);
+    P(x + 6, y + 17, shade(L.pants, 0.85));
+    R(x + 8, y + 19, 5, 4, L.pants);
+    R(x + 8, y + 19, 4, 1, shade(L.pants, 1.15));
+
+    // 바닥에 단정하게 놓인 신발
+    R(x + 12, y + 19, 4, 4, PAL.shoe);
+    R(x + 12, y + 19, 4, 1, shade(PAL.shoe, 1.25));
+    R(x + 12, y + 22, 4, 1, '#111827');
   } else {
-    // 서 있는 기본 다리 (idle, sip, stretch, jump, look)
-    R(x + 1, y + 17, 3, 6, L.pants);
-    R(x + 6, y + 17, 3, 6, L.pants);
-    R(x + 1, y + 22, 4, 2, PAL.shoe);
-    R(x + 6, y + 22, 4, 2, PAL.shoe);
+    // 서 있거나 걷는 다리
+    if (isWalking) {
+      // 4-단계 자연스러운 워크 사이클 (앞다리, 중립, 뒷다리, 중립)
+      let leg1Off = 0, leg2Off = 0;
+      if (step === 0) { leg1Off = -2; leg2Off = 1; }
+      else if (step === 2) { leg1Off = 1; leg2Off = -2; }
+      const leg1Y = y + 17 + leg1Off;
+      const leg2Y = y + 17 + leg2Off;
+      R(x + 1, leg1Y, 3, 6, L.pants);
+      R(x + 6, leg2Y, 3, 6, L.pants);
+      R(x + 1, leg1Y + 5, 4, 2, PAL.shoe);
+      R(x + 6, leg2Y + 5, 4, 2, PAL.shoe);
+    } else {
+      // 서 있는 기본 다리 (idle, sip, stretch, jump, look)
+      R(x + 1, y + 17, 3, 6, L.pants);
+      R(x + 6, y + 17, 3, 6, L.pants);
+      R(x + 1, y + 22, 4, 2, PAL.shoe);
+      R(x + 6, y + 22, 4, 2, PAL.shoe);
+    }
+
+    // 직립 몸통
+    const torsoY = y + 8;
+    R(x + 1, torsoY, 9, 10, L.shirt);
+    R(x + 1, torsoY, 9, 1, shade(L.shirt, 1.18));
+    R(x + 6, torsoY + 1, 1, 9, shade(L.shirt, 0.82));
   }
 
-  // 2. 몸통
-  const torsoY = isSitting ? (y + 9) : (y + 8);
-  R(x + 1, torsoY, 9, 10, L.shirt);
-  R(x + 1, torsoY, 9, 1, shade(L.shirt, 1.18));
-  R(x + 6, torsoY + 1, 1, 9, shade(L.shirt, 0.82));
-
-  // 3. 머리
+  // 2. 머리
   let headBob = 0;
   if (isWalking) headBob = (step % 2 === 0 ? 0 : 1);
-  else if (isSitting) headBob = 2;
+  else if (isSitting) headBob = 3;
   const hx = x + 1, hy = y + headBob - 1;
 
   if (isStretching) {
@@ -7827,10 +8341,12 @@ function drawShimejiPerson(x, y, L, vx, t, s, state) {
     P(x + 8, y + 5 - steamY, 'rgba(255,255,255,0.5)');
     R(x - 1, y + 10, 2, 5, L.skin);    // 뒷팔
   } else if (isSitting) {
-    // 무릎 위에 얹은 손 & 바닥 옆 머그잔
-    R(x + 3, y + 11, 4, 2, L.skin);
-    R(x + 9, y + 14, 3, 4, '#ffffff');
-    R(x + 10, y + 15, 1, 2, '#78350f');
+    // 무릎 위에 얹은 손 & 바닥 옆 머그잔과 김
+    R(x + 6, y + 15, 3, 2, L.skin);
+    R(x - 2, y + 19, 3, 4, '#ffffff');
+    R(x - 1, y + 20, 1, 2, '#78350f');
+    const steamY = tick(t, 450, 3);
+    P(x - 1, y + 18 - steamY, 'rgba(255,255,255,0.7)');
   } else if (state === 'jump') {
     // 깡총 뛸 때 양팔 살짝 벌리기
     R(x - 2, y + 7, 2, 5, L.skin);
@@ -10231,7 +10747,35 @@ function renderShopModal() {
       });
     }
 
-    foot.append(price, btn);
+    if (isCat && isAdopted) {
+      const currentPrimary = getPrimaryCatType();
+      const isPrimary = (currentPrimary === item.catType) && isCompanionCatEnabled();
+      const btnPrimary = elem('button', `shop-action-btn btn-primary-cat ${isPrimary ? 'active' : ''}`);
+      btnPrimary.type = 'button';
+      if (isPrimary) {
+        setPixelContent(btnPrimary, T('⭐ 대표 고양이 (적용 중)', '⭐ Companion (Active)'));
+        btnPrimary.title = T('현재 미니위젯과 산책 모드에 함께하는 대표 고양이입니다', 'Currently set as primary companion cat');
+        btnPrimary.disabled = true;
+      } else {
+        setPixelContent(btnPrimary, T('☆ 대표 지정', '☆ Set Companion'));
+        btnPrimary.title = T('이 고양이를 미니위젯과 산책 모드의 대표 고양이로 지정합니다', 'Set this cat as companion cat for MiniWidget & Walk');
+        btnPrimary.disabled = false;
+        btnPrimary.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setPrimaryCatType(item.catType);
+          const cName = getCatName(item.catType);
+          showToast(T(`⭐ 「${cName}」이(가) 대표 고양이로 지정되었습니다! 미니위젯과 산책 모드에 함께합니다.`, `⭐ "${cName}" set as companion cat for MiniWidget & Walk!`), '⭐');
+          playRetroSound('cat');
+          renderShopModal();
+          refreshSettings();
+        });
+      }
+      const btnGroup = elem('div', 'shop-btn-group');
+      btnGroup.append(btnPrimary, btn);
+      foot.append(price, btnGroup);
+    } else {
+      foot.append(price, btn);
+    }
     card.append(top, foot);
     shopGridEl.append(card);
   }
@@ -10999,22 +11543,28 @@ function drawPetFrame(ts) {
       }
 
       if (ts > shimejiNextSwitch) {
-        // 걷기를 마치고 다양한 힐링 행동으로 자연스럽게 전환
+        // 걷기를 마치고 다양한 정지 행동으로 자연스럽게 전환
+        const hasCompanion = isCompanionCatEnabled() && getPrimaryCatType() !== 'none';
         const rnd = Math.random();
-        if (rnd < 0.35) {
-          shimejiState = 'look'; // 35%: 호기심 어린 주변 둘러보기
+        if (hasCompanion && rnd < 0.22) {
+          // 22%: 가던 길 멈추고 고양이 쪽으로 몸을 돌려 다정하게 쓰다듬어주기
+          shimejiState = 'pet_cat';
+          shimejiVx = (shimejiCatX >= shimejiX) ? 1 : -1;
+          shimejiNextSwitch = ts + 4200 + Math.random() * 2000;
+        } else if (rnd < 0.45) {
+          shimejiState = 'look'; // 23%: 호기심 어린 주변 둘러보기
           shimejiNextSwitch = ts + 3000 + Math.random() * 2500;
-        } else if (rnd < 0.60) {
-          shimejiState = 'sip';  // 25%: 서서 눈 감고 따뜻한 커피 음미
+        } else if (rnd < 0.65) {
+          shimejiState = 'sip';  // 20%: 서서 눈 감고 따뜻한 커피 홀짝
           shimejiNextSwitch = ts + 4500 + Math.random() * 2500;
-        } else if (rnd < 0.80) {
-          shimejiState = 'sit';  // 20%: 바닥에 털썩 앉아 휴식
+        } else if (rnd < 0.82) {
+          shimejiState = 'sit';  // 17%: 바닥에 털썩 앉아 휴식
           shimejiNextSwitch = ts + 6000 + Math.random() * 3000;
-        } else if (rnd < 0.90) {
+        } else if (rnd < 0.92) {
           shimejiState = 'stretch'; // 10%: 시원하게 기지개 켜기
           shimejiNextSwitch = ts + 3000 + Math.random() * 1500;
         } else {
-          shimejiState = 'jump';    // 10%: 기분 좋아 깡총 점프
+          shimejiState = 'jump';    // 8%: 기분 좋아 깡총 점프
           shimejiVy = -3.0;
           shimejiNextSwitch = ts + 2000;
         }
@@ -11028,20 +11578,35 @@ function drawPetFrame(ts) {
         shimejiState = 'idle';
         shimejiNextSwitch = ts + 2500 + Math.random() * 2000;
       }
-    } else { // stationary: idle, look, sip, sit, stretch
+    } else { // stationary: idle, look, sip, sit, stretch, pet_cat
       if (ts > shimejiNextSwitch) {
-        // 정지 행동 후 다시 산책 시작 (일반 산책 60% vs 커피 산책 40%)
-        shimejiState = Math.random() < 0.4 ? 'walk_coffee' : 'walk';
-        if (shimejiX < 20) shimejiVx = 1;
-        else if (shimejiX > PW - 30) shimejiVx = -1;
-        else if (Math.random() < 0.45) shimejiVx = -shimejiVx;
-        shimejiNextSwitch = ts + 7000 + Math.random() * 6000;
+        const hasCompanion = isCompanionCatEnabled() && getPrimaryCatType() !== 'none';
+        if (hasCompanion && Math.random() < 0.22 && shimejiState !== 'pet_cat') {
+          // 정지 상태에서도 간혹 고양이에게 다가가 쓰다듬기
+          shimejiState = 'pet_cat';
+          shimejiVx = (shimejiCatX >= shimejiX) ? 1 : -1;
+          shimejiNextSwitch = ts + 4200 + Math.random() * 2000;
+        } else {
+          // 정지 행동 후 다시 산책 시작 (일반 산책 60% vs 커피 산책 40%)
+          shimejiState = Math.random() < 0.4 ? 'walk_coffee' : 'walk';
+          if (shimejiX < 20) shimejiVx = 1;
+          else if (shimejiX > PW - 30) shimejiVx = -1;
+          else if (Math.random() < 0.45) shimejiVx = -shimejiVx;
+          shimejiNextSwitch = ts + 7000 + Math.random() * 6000;
+        }
       }
     }
 
     const L = looks(s.id);
     const sy = Math.max(4, (PH - 25) + Math.round(shimejiY));
     drawShimejiPerson(Math.round(shimejiX), sy, L, shimejiVx, ts, s, shimejiState);
+
+    if (isCompanionCatEnabled()) {
+      const primaryCat = getPrimaryCatType();
+      if (primaryCat !== 'none' && CAT_BREEDS[primaryCat]) {
+        drawShimejiCompanionCat(ts, dt, PW, PH, sy, shimejiX, shimejiVx, shimejiState, primaryCat);
+      }
+    }
 
     petCtx.setTransform(1, 0, 0, 1, 0, 0);
     petCtx.imageSmoothingEnabled = false;
@@ -11106,11 +11671,21 @@ function drawPetFrame(ts) {
     drawDesk(deskObj, ts);
   }
 
+  // 🐱 대표 고양이: 모니터 위 식빵 굽기, 배 깔고 내려다보기, 마우스 앞발 잡기 등
+  if (isCompanionCatEnabled()) {
+    const primaryCat = getPrimaryCatType();
+    if (primaryCat !== 'none' && CAT_BREEDS[primaryCat]) {
+      drawMiniWidgetMonitorCat(deskObj.x + 36, deskObj.y + 18, primaryCat, ts);
+    }
+  }
+
   // 메인 캔버스(petCanvasEl)로 정수 배율 복사
   petCtx.setTransform(1, 0, 0, 1, 0, 0);
   petCtx.imageSmoothingEnabled = false;
   petCtx.clearRect(0, 0, petCanvasEl.width, petCanvasEl.height);
   petCtx.drawImage(art, 0, 0, PW, PH, 0, 0, PW * k, PH * k);
+
+  drawPetCompanionHearts(petCtx, scale, ts);
 
   // 말풍선(선명한 해상도로 위에 그리기, 꼬리가 직원 머리를 가리키도록)
   const a = actOf(s);
@@ -11808,6 +12383,21 @@ All current session employee genders and looks will be reset.`
         desc: T('입양한 고양이들을 사무실에 표시합니다. 끄면 고양이들이 방에서 휴식을 취하며 사무실을 비웁니다.', 'Shows adopted cats in the office. Turn off to let all cats rest and clear the office.'),
         get: isCatsEnabledGlobal,
         set: (v) => { store.set('showCats', v); refreshSettings(); } },
+      { type: 'choice', name: T('⭐ 대표 고양이 (미니위젯 & 산책)', '⭐ Primary Cat (MiniWidget & Walk)'),
+        shown: () => getAppMode() !== 'office',
+        desc: T('미니위젯의 모니터 위와 바닥 산책 모드에 함께 동반할 대표 고양이를 지정합니다. (모니터 위 식빵 굽기, 배 깔고 내려다보기, 마우스 사냥 앞발질, 미니미 쫓아다니기)',
+          'Select the primary cat to appear on top of the MiniWidget monitor and accompany in Walk Mode. (Loafing, belly look-down, mouse paw swipe, and following minime)'),
+        options: [
+          ['cheese', T('🧀 치즈태비 「나비」', '🧀 Cheese Tabby "Nabi"')],
+          ['tuxedo', T('🎩 턱시도 「까망이」', '🎩 Tuxedo "Kkamang"')],
+          ['calico', T('🌸 삼색이 「미미」', '🌸 Calico "Mimi"')],
+          ['white', T('☁️ 터키시앙고라 「구름이」', '☁️ Turkish Angora "Gureum"')],
+          ['mackerel', T('🐟 고등어태비 「호야」', '🐟 Mackerel Tabby "Hoya"')],
+          ['russian_blue', T('💎 러시안블루 「라떼」', '💎 Russian Blue "Latte"')],
+          ['none', T('❌ 동반 안 함 (끄기)', '❌ None (Turn off)')],
+        ],
+        get: getPrimaryCatType,
+        set: (v) => { setPrimaryCatType(v); refreshSettings(); if (petOn()) drawPetFrame(performance.now()); } },
       { type: 'toggle', name: T('🛋️ 인테리어 가구 배치', 'Place Furniture'),
         shown: () => getAppMode() !== 'office',
         desc: T('구매한 인테리어 가구와 소품을 사무실에 배치합니다. 끄면 모든 가구를 보관함에 넣어 미니멀한 사무실로 만듭니다.', 'Places purchased furniture in the office. Turn off to store all furniture for a minimal office.'),

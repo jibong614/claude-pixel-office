@@ -60,8 +60,8 @@
 ### 🪟 Desktop MiniWidget
 | 🪟 Desktop MiniWidget (3-Tier Responsive) | 🏝️ Ultra-Slim Dynamic Island (MiniBar) |
 | :---: | :---: |
-| <img src="docs/screenshots/widget.png" width="460" alt="Desktop MiniWidget"> | <img src="docs/screenshots/minibar.png" width="460" alt="Ultra-Slim Dynamic Island"> |
-| *Large/Medium/Small scaling + developer meme thought bubbles* | *Floating 44px pill capsule; hover for jump, stop, and widget restore* |
+| <img src="docs/screenshots/widget.png" width="460" alt="Desktop MiniWidget"> | <img src="docs/screenshots/walk.png" width="460" alt="Shimeji Walk Mode"> |
+| *Desktop MiniWidget with loafing/cursor-swiping 🐱 Companion Cat + 3-tier scaling* | *Walk Mode with companion cat following & minime crouching to gently pet (hearts)* |
 
 ### 📱 Mobile Remote Monitoring & Approvals
 | 📱 Real-Time Mobile Office | 🔍 Pre-Approval Git Diff Review |
@@ -102,7 +102,12 @@
 - **Always-on-Top Floating Companion**: Monitor your primary agent in the corner of your screen even when editors or browsers are full-screen.
 - **3-Tier Responsive Scaling (Large 360px · Medium 300px · Small 260px)**: Fonts and buttons scale proportionally with an optimized, snappy combo switcher.
 - **Ultra-Slim Dynamic Island (MiniBar)**: Floats at the top as a 44px capsule that expands on hover with one-click terminal jump, emergency stop, and widget restore (`🪟` / `💼`) buttons.
-- **🐾 Shimeji Wide Walk Mode**: Agents step away from their desks to freely roam the bottom of your screen with natural gait (looking left/right, swinging arms, sipping coffee, sitting down, stretching, jumping).
+- **🐾 Shimeji Wide Walk Mode & 🐱⭐ Companion Cat System**:
+  - Agents step away from their desks to freely roam the bottom of your screen (looking around, sipping coffee, resting sitting down, stretching, synchronized jumping).
+  - **Designate Companion Cat**: Pick any adopted cat in the Shop (`☆ Set Companion` button) or Settings tab to accompany you on top of the MiniWidget monitor and in Walk Mode.
+  - **Monitor Top Companion Cat**: Loafs on top of the monitor, lies belly-down gazing into the screen, swipes with its paw following your mouse cursor, grooms, sleeps, and purrs when clicked!
+  - **Walk Mode Petting Interaction (`pet_cat`)**: Minime occasionally pauses, crouches down, and **gently pets the purring cat** with happy squinting eyes, rosy blushing cheeks, and floating hearts (`💕`). Clicking on the walking cat also immediately triggers petting!
+  - **Toolbar Headroom Optimization**: Window headroom expanded by +25px and toolbar refined into a sleek 28px pill capsule, ensuring the toolbar never obstructs minime's head.
 - **💡 25 Developer Memes Easter Egg**: Click to trigger humorous developer quotes wrapped into 2-line thought bubbles.
 
 ### 5. 📱 Mobile Remote Control — Keep Work Moving While Away

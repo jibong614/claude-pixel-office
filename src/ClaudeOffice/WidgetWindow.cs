@@ -50,9 +50,9 @@ internal sealed class WidgetWindow : Window
     public const double WalkWidthLarge = 580;
     public const double WalkWidthMedium = 500;
     public const double WalkWidthSmall = 420;
-    public const double WalkHeightLarge = 135;
-    public const double WalkHeightMedium = 120;
-    public const double WalkHeightSmall = 105;
+    public const double WalkHeightLarge = 160;
+    public const double WalkHeightMedium = 145;
+    public const double WalkHeightSmall = 125;
     private const double MinPetHeight = 40, MaxPetHeight = 840;
 
     private readonly WebView2 _web = new();

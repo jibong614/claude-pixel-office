@@ -3450,35 +3450,57 @@ canvas#office {
 }
 body.pet-float #pet.pet-shimeji {
   width: 440px !important;
+  height: 160px !important;
   max-width: calc(100vw - 28px) !important;
 }
 body.widget-size-medium.pet-float #pet.pet-shimeji,
 body.pet-float #pet.pet-shimeji.size-medium {
   width: 380px !important;
+  height: 145px !important;
 }
 body.widget-size-small.pet-float #pet.pet-shimeji,
 body.pet-float #pet.pet-shimeji.size-small {
   width: 320px !important;
+  height: 125px !important;
 }
 #pet.pet-shimeji .pet-head {
   position: absolute !important;
   top: 4px;
-  left: 6px;
-  right: 6px;
+  left: 8px;
+  right: 8px;
   z-index: 10;
-  padding: 3px 5px;
-  border-radius: 8px;
-  background: rgba(23, 20, 42, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  padding: 2px 8px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 9999px;
+  background: rgba(18, 15, 34, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  transform: translateY(-2px);
 }
 #pet.pet-shimeji:hover .pet-head,
 #pet.pet-shimeji:focus-within .pet-head {
   opacity: 1;
   pointer-events: auto;
+  transform: translateY(0);
+}
+#pet.pet-shimeji .pet-head .pet-sel {
+  height: 22px;
+  line-height: 20px;
+  font-size: 11px;
+  padding: 1px 4px;
+}
+#pet.pet-shimeji .pet-head .pet-ibtn {
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+  font-size: 11px;
 }
 #pet.pet-shimeji .pet-alert,
 #pet.pet-shimeji .pet-bar,
@@ -6337,4 +6359,38 @@ body.settings-window .scanline-overlay {
   font-size: 11px;
   color: #94a3b8;
   line-height: 1.35;
+}
+
+/* 🐾 대표 고양이 버튼 및 상점 버튼 그룹 (v1.9.20) */
+.shop-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-primary-cat {
+  all: unset;
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font: 700 11px var(--font);
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fde68a;
+  transition: all 0.15s ease;
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-primary-cat:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.3);
+  border-color: rgba(245, 158, 11, 0.8);
+  transform: translateY(-1px);
+}
+.btn-primary-cat.active {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.35), rgba(217, 119, 6, 0.45));
+  border: 1px solid #f59e0b;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
+  cursor: default;
 }
