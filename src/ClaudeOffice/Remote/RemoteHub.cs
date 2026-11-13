@@ -194,6 +194,40 @@ internal sealed class RemoteHub
         if (changed) Notify();
     }
 
+    /// <summary>세션 ID 또는 프로젝트명/세션명에 대해 대기 중인 지시를 꺼내 간다 (Claude 데스크톱 MCP 도구 반환값용).</summary>
+    public string? PopPendingInstruction(string sid, string? projectName = null, string? sessionName = null)
+    {
+        lock (_lock)
+        {
+            if (_queued.TryGetValue(sid, out var list) && list.Count > 0)
+            {
+                var text = string.Join("\n", list.Select(x => x.Text));
+                _queued.Remove(sid);
+                _said[sid] = new Said(text, DateTime.UtcNow, "delivered");
+                Log("mcp-deliver", sid, text);
+                Notify();
+                return text;
+            }
+
+            foreach (var kvp in _queued)
+            {
+                var qSid = kvp.Key;
+                bool match = (sessionName != null && qSid.Contains(sessionName, StringComparison.OrdinalIgnoreCase))
+                          || (projectName != null && qSid.Contains(projectName, StringComparison.OrdinalIgnoreCase));
+                if (match && kvp.Value.Count > 0)
+                {
+                    var text = string.Join("\n", kvp.Value.Select(x => x.Text));
+                    _queued.Remove(qSid);
+                    _said[qSid] = new Said(text, DateTime.UtcNow, "delivered");
+                    Log("mcp-deliver", qSid, text);
+                    Notify();
+                    return text;
+                }
+            }
+            return null;
+        }
+    }
+
     /// <summary>아직 세션에 전달되지 않고 대기열(_queued)에 있는 지시를 취소한다.</summary>
     public void CancelQueued(string sid)
     {

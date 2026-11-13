@@ -187,6 +187,13 @@ internal static class SnapshotBuilder
         if (act is Activity.Asking or Activity.Waiting)
             return (act, icon, text, since);   // 사람을 기다리는 중이면 오래돼도 그대로
 
+        // 완료/대기 보고 후 8초가 지나면 현재 상태 문구를 '대기 중'으로 전환하여 말풍선이 계속 화면에 고정되지 않게 한다
+        if (act == Activity.Idle && now - since > TimeSpan.FromSeconds(8))
+        {
+            icon = "☕";
+            text = L.T("대기 중", "Standing by");
+        }
+
         if (act == Activity.Idle && quiet > IdleToSleep)
             return (Activity.Sleeping, "💤", "zzz", s.LastActivityUtc + IdleToSleep);
 

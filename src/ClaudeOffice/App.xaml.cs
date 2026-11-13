@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
@@ -74,6 +74,12 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         bool Has(string flag) => e.Args.Any(a => a.Equals(flag, StringComparison.OrdinalIgnoreCase));
+        if (Has("--mcp"))
+        {
+            Mcp.McpServer.Run();
+            Environment.Exit(0);
+            return;
+        }
         DemoMode = Has("--demo");
         DemoSelect = e.Args.FirstOrDefault(a => a.StartsWith("--select=", StringComparison.OrdinalIgnoreCase))?["--select=".Length..];
         Offscreen = Has("--offscreen");

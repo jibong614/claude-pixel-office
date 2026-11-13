@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.26';
+const PAGE_VERSION = '1.9.27';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -6672,37 +6672,50 @@ function drawDeskBubble(d, t) {
   let text = `${s.icon} ${s.text}`;
   if (currentDevMeme && t < devMemeExpires && s.id === (resolvePetSession()?.id || visibleSessions()[0]?.id)) {
     text = `💡 ${currentDevMeme}`;
-  } else if (a.bubble === 'thought') text += '.'.repeat(1 + tick(t, 450, 3));
-  else if (s.act === 'idle' && (!s.text || s.text.trim() === '')) {
-    if (s.ctx && (s.ctx / MAX_CTX_TOKENS) >= 0.85) {
-      const cCycle = ((t + hash(s.id) * 311) % 18000) / 1000;
-      if (cCycle < 6) {
-        text = T('💭 😵 뇌 용량 포화! /compact 필요', '💭 😵 Context full! /compact needed');
+  } else if (a.bubble === 'thought') {
+    text += '.'.repeat(1 + tick(t, 450, 3));
+  } else if (s.act === 'idle') {
+    // 대기/완료 상태:
+    // 1) 직전 보고 내용이 있으면 8초 동안만 말풍선을 띄워 사용자에게 전달
+    // 2) 8초가 지나면 말풍선을 닫고 편안히 휴식(커피/기지개 등), 30초마다 7초간만 가벼운 생각 말풍선 표시
+    const elapsed = now() - (s.since || s.last || 0);
+    const hasCustomMsg = s.text && s.text.trim() !== '' && s.text !== T('대기 중', 'Standing by') && s.text !== '대기 중' && s.text !== T('대기', 'Idle');
+    if (hasCustomMsg && elapsed < 8000) {
+      text = `${s.icon} ${s.text}`;
+    } else {
+      if (s.ctx && (s.ctx / MAX_CTX_TOKENS) >= 0.85) {
+        const cCycle = ((t + hash(s.id) * 311) % 18000) / 1000;
+        if (cCycle < 6) {
+          text = T('💭 😵 뇌 용량 포화! /compact 필요', '💭 😵 Context full! /compact needed');
+          drawBubble(cx, ay, text, BUBBLE.thought, t, CELL_W * U - 6);
+          return;
+        }
       }
-    }
-    // 대기 중 랜덤 유머/생각 말풍선 (30초마다 7초간 등장)
-    const thoughts = [
-      '커피 한잔의 여유 ☕',
-      '기지개 쭉- 으라차! ✨',
-      '버그 없는 세상에서 살고 싶다 🌟',
-      '다음 지시를 기다리는 중 🚀',
-      '테스트 코드 통과했을까? 🧪',
-      '이번 주말엔 뭐 하지? 🎮',
-      '코드 리팩토링 각이다 🧹',
-      '세미콜론 다 찍었나? 🧐',
-      '퇴근하고 치킨 각 🍗',
-      '누가 메인에 직접 푸시했지? 😱',
-      '고양이 쓰다듬고 싶다 🐾',
-      '스택오버플로우 선생님 감사합니다 🙏',
-      '커피 한 잔 더 마실까... ☕',
-      '이 버그만 잡고 진짜 잔다 🛌',
-      '클로드야 다음 프롬프트 줘 🤖',
-    ];
-    const hashVal = hash(s.id);
-    const cycle = ((t + hashVal * 251) % 30000) / 1000;
-    if (cycle < 7) {
-      const idx = Math.floor((t + hashVal * 251) / 30000) % thoughts.length;
-      text = `💭 ${thoughts[idx]}`;
+      const hashVal = hash(s.id);
+      const cycle = ((t + hashVal * 251) % 30000) / 1000;
+      if (cycle < 7) {
+        const thoughts = [
+          '커피 한잔의 여유 ☕',
+          '기지개 쭉- 으라차! ✨',
+          '버그 없는 세상에서 살고 싶다 🌟',
+          '다음 지시를 기다리는 중 🚀',
+          '테스트 코드 통과했을까? 🧪',
+          '이번 주말엔 뭐 하지? 🎮',
+          '코드 리팩토링 각이다 🧹',
+          '세미콜론 다 찍었나? 🧐',
+          '퇴근하고 치킨 각 🍗',
+          '누가 메인에 직접 푸시했지? 😱',
+          '고양이 쓰다듬고 싶다 🐾',
+          '스택오버플로우 선생님 감사합니다 🙏',
+          '커피 한 잔 더 마실까... ☕',
+          '이 버그만 잡고 진짜 잔다 🛌',
+          '클로드야 다음 프롬프트 줘 🤖',
+        ];
+        const idx = Math.floor((t + hashVal * 251) / 30000) % thoughts.length;
+        text = `💭 ${thoughts[idx]}`;
+        drawBubble(cx, ay, text, BUBBLE.thought, t, CELL_W * U - 6);
+      }
+      return; // 8초 경과 후 생각 주기 외에는 말풍선 닫기
     }
   }
   drawBubble(cx, ay, text, BUBBLE[a.bubble] || BUBBLE.normal, t, CELL_W * U - 6);
@@ -11787,9 +11800,15 @@ function drawPetFrame(ts) {
       const a = actOf(s);
       // 산책 중에는 졸음(zzz) 말풍선을 숨겨 활기차게 걷는 모습 유지
       if (a.bubble !== 'none' && a.bubble !== 'zzz') {
-        let text = `${s.icon} ${s.text}`;
-        if (a.bubble === 'thought') text += '.'.repeat(1 + tick(ts, 450, 3));
-        drawPetBubble(petCtx, cx, ay, text, BUBBLE[a.bubble] || BUBBLE.normal, ts, cssWidth);
+        const elapsed = now() - (s.since || s.last || 0);
+        const hasCustomMsg = s.text && s.text.trim() !== '' && s.text !== T('대기 중', 'Standing by') && s.text !== '대기 중' && s.text !== T('대기', 'Idle');
+        if (s.act === 'idle' && (!hasCustomMsg || elapsed >= 8000)) {
+          // 대기 8초 경과 후 말풍선 닫기
+        } else {
+          let text = `${s.icon} ${s.text}`;
+          if (a.bubble === 'thought') text += '.'.repeat(1 + tick(ts, 450, 3));
+          drawPetBubble(petCtx, cx, ay, text, BUBBLE[a.bubble] || BUBBLE.normal, ts, cssWidth);
+        }
       }
     }
     return;
@@ -11867,9 +11886,15 @@ function drawPetFrame(ts) {
       drawPetZzz(petCtx, cx, ay, ts);
       petCtx.globalAlpha = 1;
     } else {
-      let text = `${s.icon} ${s.text}`;
-      if (a.bubble === 'thought') text += '.'.repeat(1 + tick(ts, 450, 3));
-      drawPetBubble(petCtx, cx, ay, text, BUBBLE[a.bubble] || BUBBLE.normal, ts, cssWidth);
+      const elapsed = now() - (s.since || s.last || 0);
+      const hasCustomMsg = s.text && s.text.trim() !== '' && s.text !== T('대기 중', 'Standing by') && s.text !== '대기 중' && s.text !== T('대기', 'Idle');
+      if (s.act === 'idle' && (!hasCustomMsg || elapsed >= 8000)) {
+        // 대기 8초 경과 후 말풍선 닫기
+      } else {
+        let text = `${s.icon} ${s.text}`;
+        if (a.bubble === 'thought') text += '.'.repeat(1 + tick(ts, 450, 3));
+        drawPetBubble(petCtx, cx, ay, text, BUBBLE[a.bubble] || BUBBLE.normal, ts, cssWidth);
+      }
     }
   }
 }
@@ -12668,7 +12693,19 @@ All current session employee genders and looks will be reset.`
   {
     tab: 'system', title: T('Claude Code 연동', 'Claude Code Connection'),
     items: [
-      { type: 'action', name: T('Claude Code 연결', 'Connect to Claude Code'), pcOnly: true,
+      { type: 'action', name: T('클로드(채팅 및 프로젝트) 연동하기', 'Connect Claude (Chat & Projects)'), pcOnly: true,
+      desc: T('Claude 데스크톱 앱의 일반 채팅 및 프로젝트(Project) 세션을 사무실 화면에 출근시키고, PC 및 모바일에서 실시간 양방향 지시를 내리는 상세 연동 가이드 창을 엽니다.',
+              'Open the step-by-step guide window to connect Claude Desktop chats and Projects to Pixel Office with bidirectional instructions.'),
+      label: () => T('연동 가이드 열기', 'Open Guide'),
+      run: () => { send({ cmd: 'open-mcp-guide' }); }
+    },
+    { type: 'action', name: T('Claude MCP 연동 해제 (설정 삭제)', 'Remove Claude MCP Integration'), pcOnly: true,
+      desc: T('Claude 데스크톱 앱 설정(claude_desktop_config.json)에서 Pixel Office MCP 서버 등록을 삭제합니다. 삭제 후 Claude 프로젝트의 [지침]에 넣었던 문구도 함께 지워주시고 Claude를 재시작해 주세요.',
+              'Remove Pixel Office MCP server registration from Claude Desktop config. Restart Claude to complete removal.'),
+      label: () => T('연동 삭제', 'Delete Integration'),
+      run: () => { send({ cmd: 'uninstall-mcp' }); }
+    },
+    { type: 'action', name: T('Claude Code 연결', 'Connect to Claude Code'), pcOnly: true,
         desc: T('Claude가 승인을 기다리거나 질문하면 직원이 즉시 손을 들고, 세션을 닫으면 바로 퇴근합니다. 휴대폰 지시·승인도 이 연결을 통해 동작합니다. Claude Code 설정(~/.claude/settings.json)에 연결 줄을 추가하므로 확인 창이 먼저 뜹니다(끊으면 추가한 줄만 제거).',
           'Employees raise a hand the moment Claude waits for an approval or asks a question, and go home as soon as a session closes. Phone instructions and approvals come through this too. It adds a few lines to the Claude Code settings file, so you confirm first (disconnecting removes only those lines).'),
         label: () => (claudeConnected() ? T('연결 끊기', 'Disconnect') : data.hooks && data.hooks.state !== 'off' ? T('다시 연결', 'Reconnect') : T('연결하기', 'Connect')),

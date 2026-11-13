@@ -20,7 +20,7 @@ internal sealed class TrayIcon : IDisposable
     private readonly Icon _waitingIcon;
     public enum PetTrayMode { None, Normal, Island, Walk }
 
-    private readonly Forms.ToolStripItem _openItem, _reportItem, _settingsItem, _exitItem;
+    private readonly Forms.ToolStripItem _openItem, _reportItem, _settingsItem, _exitItem, _mcpItem;
     private readonly Forms.ToolStripMenuItem _waitItem;
     // 메인 창 보기 스위치 (크게보기 vs 작게보기)
     private readonly Forms.ToolStripMenuItem _largeItem, _compactItem;
@@ -41,7 +41,8 @@ internal sealed class TrayIcon : IDisposable
         Action turnOnPetIsland,
         Action turnOnPetWalk,
         Action openSettings,
-        Action exit)
+        Action exit,
+        Action? showMcp = null)
     {
         _normalIcon = LoadIcon();
         _waitingIcon = MakeWaitingIcon(_normalIcon);
@@ -77,6 +78,7 @@ internal sealed class TrayIcon : IDisposable
 
         // ── 설정 및 종료 ──
         menu.Items.Add(new Forms.ToolStripSeparator());
+        _mcpItem = menu.Items.Add("", null, (_, _) => (showMcp ?? openSettings)());
         _settingsItem = menu.Items.Add("", null, (_, _) => openSettings());
         _exitItem = menu.Items.Add("", null, (_, _) => exit());
         ApplyLanguage();
@@ -106,6 +108,7 @@ internal sealed class TrayIcon : IDisposable
         _petIslandItem.Text = L.T("🏝️ 미니바 켜기", "🏝️ Turn on Mini-bar");
         _petWalkItem.Text = L.T("🐾 산책모드 켜기", "🐾 Turn on Walk Mode");
 
+        _mcpItem.Text = L.T("🤖 Claude 데스크톱 연동 (MCP)", "🤖 Claude Desktop Link (MCP)");
         _settingsItem.Text = L.T("⚙️ 설정", "⚙️ Settings");
         _exitItem.Text = L.T("끝내기", "Exit");
         RefreshWaitingLabel();

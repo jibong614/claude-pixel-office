@@ -80,7 +80,8 @@ public partial class MainWindow : Window
                 TurnOnPetIsland,
                 TurnOnPetWalk,
                 () => OpenSettingsWindow(),
-                ExitApp);
+                ExitApp,
+                () => ShowMcpGuideWindow());
             _tray.SetText(Title);
             _tray.SetViewMode(App.Settings.Widget);
             _tray.SetPetMode(!App.Settings.Pet ? TrayIcon.PetTrayMode.None
@@ -175,6 +176,9 @@ public partial class MainWindow : Window
                     HookSetup.InstallRemote();
                 else
                     HookSetup.UpgradeRemote();
+
+                if (Mcp.McpSetup.IsClaudeDesktopInstalled() && !Mcp.McpSetup.IsInstalled())
+                    Mcp.McpSetup.Install();
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException) { }
         }
@@ -1412,6 +1416,8 @@ public partial class MainWindow : Window
                     // 작게 보기 중에는 늘 맨 위(나오면 화면이 이 설정을 다시 보낸다)
                     Topmost = App.Settings.Widget || (root.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.True);
                     break;
+                case "open-mcp-guide": ShowMcpGuideWindow(); break;
+                case "uninstall-mcp": UninstallMcpFromSettings(); break;
                 case "hooks":   // Claude Code 연결·해제(상태 알림과 휴대폰 지시·승인을 한 번에)
                     if (!App.DemoMode) ToggleHooks();
                     break;
@@ -1814,5 +1820,55 @@ public partial class MainWindow : Window
         }
 #endif
         return Path.Combine(baseDir, "wwwroot");
+    }
+
+    private Mcp.McpGuideWindow? _mcpGuideWindow;
+
+    public void ShowMcpGuideWindow()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (_mcpGuideWindow != null && _mcpGuideWindow.IsLoaded)
+            {
+                if (_mcpGuideWindow.WindowState == WindowState.Minimized)
+                    _mcpGuideWindow.WindowState = WindowState.Normal;
+                _mcpGuideWindow.Activate();
+                return;
+            }
+            var owner = IsVisible ? this : null;
+            _mcpGuideWindow = new Mcp.McpGuideWindow(owner);
+            _mcpGuideWindow.Closed += (_, _) => _mcpGuideWindow = null;
+            _mcpGuideWindow.Show();
+        });
+    }
+
+    public void ShowMcpDialog() => ShowMcpGuideWindow();
+    private void UninstallMcpFromSettings()
+    {
+        var res = MessageBox.Show(this,
+            L.T("Claude 데스크톱 앱에서 Pixel Office MCP 연동 설정을 삭제(해제)하시겠습니까?\n\n※ 삭제 후 Claude 데스크톱 앱을 완전히 종료 후 다시 시작하시면 도구 연결이 해제됩니다.",
+                "Do you want to remove the Pixel Office MCP integration from Claude Desktop?\n\n※ Restart Claude Desktop completely to apply changes."),
+            L.T("MCP 연동 해제", "Remove MCP Integration"),
+            MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (res != MessageBoxResult.Yes) return;
+
+        bool ok = Mcp.McpSetup.Uninstall();
+        if (ok)
+        {
+            MessageBox.Show(this,
+                L.T("MCP 연동 설정이 성공적으로 삭제되었습니다!\n\n[중요 뒷정리 안내]\n1. Claude 프로젝트 화면 우측의 [지침] [편집]을 눌러 연동 문구도 함께 삭제해 주세요.\n2. Claude 데스크톱 앱을 트레이 아이콘 우클릭 -> Quit으로 완전히 껐다 켜주세요.",
+                    "MCP configuration removed successfully!\n\n[Important Cleanup Steps]\n1. Please also remove the prompt text from your Claude Project [Instructions].\n2. Quit Claude Desktop completely from tray and restart it."),
+                L.T("MCP 연동 해제", "Remove MCP Integration"),
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else
+        {
+            MessageBox.Show(this,
+                L.T("삭제할 MCP 설정이 없거나 이미 삭제되어 있습니다.\n\n※ Claude 프로젝트의 [지침]에 넣으셨던 연동 문구도 [편집]을 눌러 함께 삭제해 주세요.",
+                    "No MCP configuration found or already removed.\n\n※ Please also clear the prompt text from your Claude Project Instructions."),
+                L.T("MCP 연동 해제", "Remove MCP Integration"),
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
     }
 }

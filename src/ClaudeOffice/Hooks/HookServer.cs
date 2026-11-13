@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using ClaudeOffice.Monitoring;
 
 namespace ClaudeOffice.Hooks;
@@ -43,6 +44,12 @@ internal sealed class HookServer : IDisposable
 
     /// <summary>이벤트를 받을 때마다 수신 스레드에서 호출된다.</summary>
     public event Action<HookEvent>? Received;
+
+    /// <summary>Claude 데스크톱 앱 MCP 도구(office_report_status)로 상태가 전달되었을 때 호출된다.</summary>
+    public event Action<McpUpdateEvent>? McpUpdated;
+
+    /// <summary>MCP office_get_status 도구 요청 시 돌려줄 현재 사무실 상태 요약 JSON 제공자.</summary>
+    public Func<string>? OfficeSummaryProvider { get; set; }
 
     /// <summary>자리 비움 원격(/remote/...). 없으면 원격 요청에 바로 빈 답.</summary>
     public Remote.RemoteHub? Remote { get; set; }
@@ -121,15 +128,19 @@ internal sealed class HookServer : IDisposable
 
             var lines = Encoding.ASCII.GetString(buf, 0, headEnd).Split("\r\n");
             var request = lines[0].Split(' ');
+            var method = request.Length >= 1 ? request[0] : "";
             var path = request.Length >= 2 ? request[1] : "";
             string? remote = path switch { "/remote/listen" => "listen", "/remote/approve" => "approve", "/remote/pretool" => "pretool", _ => null };
-            if (request.Length < 2 || request[0] != "POST" || (remote is null && path != "/hook"))
+            bool isMcpUpdate = method == "POST" && path == "/mcp/update";
+            bool isMcpStatus = (method == "GET" || method == "POST") && path == "/mcp/status";
+            bool isMcpInstruction = (method == "GET" || method == "POST") && (path == "/mcp/instruction" || path.StartsWith("/mcp/instruction?"));
+            if (request.Length < 2 || (method != "POST" && !isMcpStatus && !isMcpInstruction) || (remote is null && path != "/hook" && !isMcpUpdate && !isMcpStatus && !isMcpInstruction))
             {
                 await stream.WriteAsync(NotFound, token);
                 return;
             }
 
-            // curl --data-binary 는 본문을 다 읽은 뒤 보내므로 항상 Content-Length 가 붙는다(chunked 는 오지 않음)
+            // curl --data-binary
             int length = -1;
             bool expectContinue = false, fromBrowser = false, json = false;
             string? hookToken = null;
@@ -147,12 +158,23 @@ internal sealed class HookServer : IDisposable
                 else if (name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)) json = value.StartsWith("application/json", StringComparison.OrdinalIgnoreCase);
                 else if (name.Equals("X-ClaudeOffice-Token", StringComparison.OrdinalIgnoreCase)) hookToken = value;
             }
-            // 웹 페이지(Origin·Sec-Fetch-*)나 잘못된 토큰은 거부한다. 토큰 헤더가 아예 없는 경우(토큰 도입 전 이미 열려 있던 Claude Code 세션의 훅)는 JSON 본문일 때 허용한다.
-            if (fromBrowser || (hookToken != null && !HookSetup.ValidToken(hookToken)) || !json)
+            //
+            if (fromBrowser || (hookToken != null && !HookSetup.ValidToken(hookToken)) || (!isMcpStatus && !isMcpInstruction && !json))
             {
                 if (remote != "listen") await stream.WriteAsync(NotFound, token);
                 return;
             }
+
+            if (isMcpStatus)
+            {
+                var summary = OfficeSummaryProvider?.Invoke() ?? "{}";
+                var respBytes = Encoding.UTF8.GetBytes(summary);
+                var header = $"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {respBytes.Length}\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(header), token);
+                await stream.WriteAsync(respBytes, token);
+                return;
+            }
+
             if (length < 0 || length > MaxBodyBytes)
             {
                 await stream.WriteAsync(TooLarge, token);
@@ -165,8 +187,71 @@ internal sealed class HookServer : IDisposable
             Array.Copy(buf, bodyStart, body, 0, have);
             if (have < length)
             {
-                if (expectContinue) await stream.WriteAsync(Continue, token);   // 본문이 크면 curl이 먼저 물어본다
+                if (expectContinue) await stream.WriteAsync(Continue, token);
                 await stream.ReadExactlyAsync(body.AsMemory(have), token);
+            }
+
+            if (isMcpUpdate)
+            {
+                string? instruction = null;
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    var r = doc.RootElement;
+                    var proj = ToolCatalog.Str(r, "project_name") ?? ToolCatalog.Str(r, "projectName");
+                    var sess = ToolCatalog.Str(r, "session_name") ?? ToolCatalog.Str(r, "sessionName");
+                    var st = ToolCatalog.Str(r, "status");
+                    var msg = ToolCatalog.Str(r, "message");
+                    var detail = ToolCatalog.Str(r, "detail");
+                    McpUpdated?.Invoke(new McpUpdateEvent(proj, sess, st, msg, detail, DateTime.UtcNow));
+
+                    var projClean = !string.IsNullOrWhiteSpace(proj) ? proj.Trim() : "Claude Desktop";
+                    var sessClean = !string.IsNullOrWhiteSpace(sess) ? sess.Trim() : "프로젝트";
+                    var key = "virtual:mcp:" + projClean.ToLowerInvariant() + ":" + sessClean.ToLowerInvariant();
+                    var sid = "mcp_" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..8].ToLowerInvariant();
+                    instruction = Remote?.PopPendingInstruction(sid, proj, sess);
+                }
+                catch { }
+
+                var respJson = instruction != null
+                    ? $"{{\"ok\":true,\"instruction\":{JsonSerializer.Serialize(instruction)}}}"
+                    : "{\"ok\":true}";
+                var respBytes = Encoding.UTF8.GetBytes(respJson);
+                var header = $"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {respBytes.Length}\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(header), token);
+                await stream.WriteAsync(respBytes, token);
+                return;
+            }
+
+            if (isMcpInstruction)
+            {
+                string? proj = null;
+                string? sess = null;
+                if (length > 0)
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(body);
+                        var r = doc.RootElement;
+                        proj = ToolCatalog.Str(r, "project_name") ?? ToolCatalog.Str(r, "projectName");
+                        sess = ToolCatalog.Str(r, "session_name") ?? ToolCatalog.Str(r, "sessionName");
+                    }
+                    catch { }
+                }
+                var projClean = !string.IsNullOrWhiteSpace(proj) ? proj.Trim() : "Claude Desktop";
+                var sessClean = !string.IsNullOrWhiteSpace(sess) ? sess.Trim() : "프로젝트";
+                var key = "virtual:mcp:" + projClean.ToLowerInvariant() + ":" + sessClean.ToLowerInvariant();
+                var sid = "mcp_" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..8].ToLowerInvariant();
+                var instruction = Remote?.PopPendingInstruction(sid, proj, sess);
+
+                var respJson = instruction != null
+                    ? $"{{\"ok\":true,\"instruction\":{JsonSerializer.Serialize(instruction)}}}"
+                    : "{\"ok\":true,\"instruction\":null}";
+                var respBytes = Encoding.UTF8.GetBytes(respJson);
+                var header = $"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {respBytes.Length}\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(header), token);
+                await stream.WriteAsync(respBytes, token);
+                return;
             }
 
             if (remote != null)
@@ -241,3 +326,12 @@ internal sealed class HookServer : IDisposable
         }
     }
 }
+
+/// <summary>Claude 데스크톱 앱 MCP 도구(office_report_status)로 수신한 프로젝트 세션 갱신 정보.</summary>
+internal sealed record McpUpdateEvent(
+    string? ProjectName,
+    string? SessionName,
+    string? Status,
+    string? Message,
+    string? Detail,
+    DateTime Utc);

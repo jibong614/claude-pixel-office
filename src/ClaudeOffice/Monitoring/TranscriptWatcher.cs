@@ -38,6 +38,7 @@ public sealed class TranscriptWatcher : IDisposable
     private readonly string _root;
     private readonly Dictionary<string, TranscriptState> _states = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentQueue<HookEvent> _hookQueue = new();
+    private readonly ConcurrentQueue<McpUpdateEvent> _mcpQueue = new();
     private readonly List<HookEvent> _hookBacklog = new();
     private HookServer? _hookServer;
     private bool _hooksInstalled;
@@ -73,6 +74,8 @@ public sealed class TranscriptWatcher : IDisposable
     {
         _hookServer = server;
         server.Received += _hookQueue.Enqueue;
+        server.McpUpdated += _mcpQueue.Enqueue;
+        server.OfficeSummaryProvider = () => _lastSnapshot ?? "{}";
     }
 
     /// <summary>훅을 넣거나 뺀 직후 설치 상태를 바로 다시 읽게 한다.</summary>
@@ -130,6 +133,7 @@ public sealed class TranscriptWatcher : IDisposable
                 Poll();
                 var now = DateTime.UtcNow;
                 ApplyHooks(now);   // 기록 파일을 읽은 뒤에 해야 승인 요청을 그 도구 호출과 짝지을 수 있다
+                ApplyMcpUpdates(now); // Claude 데스크톱 앱 MCP 도구로 들어온 상태 반영
 
                 var json = SnapshotBuilder.Build(_states.Values, now, Window, HookStatus());
                 var comma = json.IndexOf(',');
@@ -183,6 +187,60 @@ public sealed class TranscriptWatcher : IDisposable
         return true;
     }
 
+    private void ApplyMcpUpdates(DateTime now)
+    {
+        while (_mcpQueue.TryDequeue(out var ev))
+        {
+            var proj = !string.IsNullOrWhiteSpace(ev.ProjectName) ? ev.ProjectName.Trim() : "Claude Desktop";
+            var sess = !string.IsNullOrWhiteSpace(ev.SessionName) ? ev.SessionName.Trim() : "프로젝트";
+            var key = "virtual:mcp:" + proj.ToLowerInvariant() + ":" + sess.ToLowerInvariant();
+            var id = "mcp_" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..8].ToLowerInvariant();
+
+            if (!_states.TryGetValue(key, out var s))
+            {
+                s = new TranscriptState(key, id, null)
+                {
+                    IsVirtual = true,
+                    StartedUtc = ev.Utc,
+                    Seen = true,
+                    Entrypoint = "claude-desktop",
+                    Cwd = proj,
+                    CustomTitle = sess,
+                };
+                _states[key] = s;
+            }
+
+            s.FileWriteUtc = ev.Utc;
+            s.LastEventUtc = ev.Utc;
+            s.CustomTitle = sess;
+            s.Cwd = proj;
+
+            var actStr = ev.Status?.Trim().ToLowerInvariant() ?? "working";
+            var (act, icon) = actStr switch
+            {
+                "thinking" => (Activity.Thinking, "🧠"),
+                "idle" => (Activity.Idle, "☕"),
+                "done" or "completed" => (Activity.Idle, "✅"),
+                _ => (Activity.Working, "💻"),
+            };
+
+            s.BaseActivity = act;
+            s.BaseIcon = icon;
+            var text = !string.IsNullOrWhiteSpace(ev.Message)
+                ? ev.Message.Trim()
+                : (act == Activity.Working ? L.T("작업 중", "Working") : L.T("대기 중", "Standing by"));
+            s.BaseText = text;
+            s.BaseSinceUtc = ev.Utc;
+
+            if (!string.IsNullOrWhiteSpace(ev.Message))
+            {
+                s.AiTitle = ev.Message.Trim();
+                s.Recent.Add(new LogItem(ev.Utc, icon, ev.Message.Trim()));
+                while (s.Recent.Count > TranscriptState.RecentMax) s.Recent.RemoveAt(0);
+            }
+        }
+    }
+
     private HooksDto? HookStatus()
     {
         if (_hookServer is null) return null;   // 훅을 쓰지 않는 실행(점검 도구 등)
@@ -211,10 +269,10 @@ public sealed class TranscriptWatcher : IDisposable
                 Track(fi, s.Id, cutoff);
         }
 
-        // 지워졌거나 오래된 파일, 소속 세션이 사라진 인턴은 정리
+        // 지워졌거나 오래된 파일, 소속 세션이 사라진 인턴은 정리 (가상 세션은 파일 검사 제외)
         var sessionIds = _states.Values.Where(x => x.ParentId == null).Select(x => x.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var stale = _states
-            .Where(kv => !File.Exists(kv.Key)
+            .Where(kv => (!kv.Value.IsVirtual && !File.Exists(kv.Key))
                          || kv.Value.FileWriteUtc < cutoff
                          || (kv.Value.ParentId != null && !sessionIds.Contains(kv.Value.ParentId)))
             .Select(kv => kv.Key)
@@ -249,6 +307,7 @@ public sealed class TranscriptWatcher : IDisposable
     {
         foreach (var (file, old) in _states.ToList())
         {
+            if (old.IsVirtual) continue;
             _states[file] = new TranscriptState(old.FilePath, old.Id, old.ParentId)
             {
                 StartedUtc = old.StartedUtc,

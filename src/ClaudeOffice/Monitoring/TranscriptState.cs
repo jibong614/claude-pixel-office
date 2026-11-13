@@ -55,6 +55,7 @@ internal sealed class TranscriptState
     // 읽기 위치
     public long Offset;
     public bool Initialized;
+    public bool IsVirtual;
 
     /// <summary>대화 메시지를 한 번이라도 읽었는지. 메타데이터만 있는 파일에는 책상을 만들지 않는다.</summary>
     public bool Seen;
