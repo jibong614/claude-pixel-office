@@ -8249,6 +8249,10 @@ function drawShimejiPerson(x, y, L, vx, t, s, state) {
   const isWalking = state === 'walk' || state === 'walk_coffee';
   const step = isWalking ? tick(t, 460, 4) : 0;
   const isSitting = state === 'sit';
+  const isPetting = state === 'pet_cat';
+  const isWaving = state === 'wave';
+  const isThinking = state === 'think';
+  const isHumming = state === 'hum';
   const isStretching = state === 'stretch';
   const isSipping = state === 'sip';
   const isCoffee = state === 'walk_coffee' || isSipping;
@@ -8265,7 +8269,7 @@ function drawShimejiPerson(x, y, L, vx, t, s, state) {
     R(x + 1, y + 18, 7, 5, L.pants);
     P(x + 1, y + 22, shade(L.pants, 0.78));
 
-    // 위로 솟은 무릎 & 앞으로 뻗은 정강이/다리
+    // 위로 세운 무릎 & 앞으로 뻗은 정강이/다리
     R(x + 6, y + 16, 4, 7, L.pants);
     P(x + 6, y + 17, shade(L.pants, 0.85));
     R(x + 8, y + 19, 5, 4, L.pants);
@@ -8275,6 +8279,19 @@ function drawShimejiPerson(x, y, L, vx, t, s, state) {
     R(x + 12, y + 19, 4, 4, PAL.shoe);
     R(x + 12, y + 19, 4, 1, shade(PAL.shoe, 1.25));
     R(x + 12, y + 22, 4, 1, '#111827');
+  } else if (isPetting) {
+    // 고양이 쓰다듬기: 무릎을 굽혀 다정하게 쪼그려 앉은 자세
+    const torsoY = y + 10;
+    R(x + 1, torsoY, 8, 7, L.shirt);
+    R(x + 1, torsoY, 8, 1, shade(L.shirt, 1.18));
+    R(x + 5, torsoY + 1, 1, 6, shade(L.shirt, 0.82));
+
+    // 굽힌 바지 & 무릎
+    R(x + 1, y + 17, 5, 5, L.pants);
+    R(x + 5, y + 18, 4, 4, L.pants);
+    // 신발
+    R(x + 1, y + 22, 4, 2, PAL.shoe);
+    R(x + 6, y + 22, 4, 2, PAL.shoe);
   } else {
     // 서 있거나 걷는 다리
     if (isWalking) {
@@ -8289,7 +8306,7 @@ function drawShimejiPerson(x, y, L, vx, t, s, state) {
       R(x + 1, leg1Y + 5, 4, 2, PAL.shoe);
       R(x + 6, leg2Y + 5, 4, 2, PAL.shoe);
     } else {
-      // 서 있는 기본 다리 (idle, sip, stretch, jump, look)
+      // 서 있는 기본 다리 (idle, sip, stretch, jump, look, wave, think, hum)
       R(x + 1, y + 17, 3, 6, L.pants);
       R(x + 6, y + 17, 3, 6, L.pants);
       R(x + 1, y + 22, 4, 2, PAL.shoe);
@@ -8307,16 +8324,34 @@ function drawShimejiPerson(x, y, L, vx, t, s, state) {
   let headBob = 0;
   if (isWalking) headBob = (step % 2 === 0 ? 0 : 1);
   else if (isSitting) headBob = 3;
+  else if (isPetting) headBob = 2;
+  else if (isHumming) headBob = tick(t, 360, 2);
   const hx = x + 1, hy = y + headBob - 1;
 
   if (isStretching) {
     drawHead(hx, hy, L, 'idle', t, true, s);
   } else if (isSipping) {
-    // 커피 음미: 눈 감고 호로록 (^ ^ 표정)
+    // 커피 홀짝: 눈 감고 흐뭇하게 (^ ^ 표정)
     drawHead(hx, hy, L, 'sleep', t, false, s);
-    // 볼터치 핑크 온기
     P(hx + 5, hy + 5, '#fda4af');
     P(hx + 6, hy + 5, '#f43f5e');
+  } else if (isPetting) {
+    // 고양이를 내려다보며 흐뭇한 눈웃음 (^ ^) & 발그레한 볼
+    drawHead(hx + 1, hy, L, 'sleep', t, false, s);
+    P(hx + 5, hy + 5, '#fda4af');
+    P(hx + 6, hy + 5, '#f43f5e');
+  } else if (isHumming) {
+    // 콧노래: 눈 감고 음악을 음미하는 편안한 표정
+    drawHead(hx, hy, L, 'sleep', t, false, s);
+    P(hx + 5, hy + 5, '#fda4af');
+  } else if (isWaving) {
+    // 손 흔들기: 밝은 눈망울과 방긋 미소 & 볼터치
+    drawHead(hx, hy, L, 'idle', t, false, s);
+    P(hx + 4, hy + 5, '#fda4af');
+    P(hx + 6, hy + 5, '#fda4af');
+  } else if (isThinking) {
+    // 생각하기: 살짝 고개를 갸웃
+    drawHead(hx, hy - 1, L, 'idle', t, false, s);
   } else if (state === 'look') {
     // 둘러보기: 맑은 눈망울
     drawHead(hx, hy, L, 'idle', t, false, s);
@@ -8324,18 +8359,52 @@ function drawShimejiPerson(x, y, L, vx, t, s, state) {
     drawHead(hx, hy, L, isWalking ? 'run' : 'idle', t, false, s);
   }
 
-  // 4. 팔 및 소품 (커피 머그잔, 기지개, 스윙 등)
-  if (isStretching) {
+  // 4. 팔 및 소품 (커피 머그컵, 기지개, 쓰다듬기, 손흔들기, 생각하기, 콧노래 등)
+  if (isPetting) {
+    // 다정하게 손을 뻗어 고양이 머리 쓰다듬기 (부드러운 패팅 모션)
+    R(x - 1, y + 11, 2, 5, L.skin); // 뒷팔 무릎 지탱
+    const stroke = tick(t, 320, 2); // 부드러운 패팅 모션
+    R(x + 5, y + 12, 3, 2, L.skin); // 뻗은 앞팔
+    R(x + 7, y + 13 + stroke, 4, 2, L.skin); // 고양이 머리를 쓰다듬는 손
+    P(x + 10, y + 14 + stroke, shade(L.skin, 0.88));
+  } else if (isWaving) {
+    // 사용자에게 반갑게 손 흔들기
+    R(x - 1, y + 10, 2, 5, L.skin);
+    const waveTick = tick(t, 240, 2);
+    R(x + 7, y + 4, 2, 4, L.skin);
+    R(x + 6 + waveTick * 2, y + 2, 3, 3, L.skin);
+    P(x + 7 + waveTick * 2, y + 1, '#fde047'); // 반짝임
+  } else if (isThinking) {
+    // 턱 괴고 궁리하기
+    R(x - 1, y + 10, 2, 5, L.skin);
+    R(x + 5, y + 11, 2, 4, L.skin);
+    R(x + 6, y + 8, 3, 3, L.skin);
+    // 머리 위 떠오르는 전구 (아이디어 💡)
+    const bulbBob = tick(t, 500, 2);
+    P(hx + 4, hy - 6 - bulbBob, '#fde047');
+    P(hx + 5, hy - 5 - bulbBob, '#fde047');
+    P(hx + 3, hy - 5 - bulbBob, '#fde047');
+    P(hx + 4, hy - 4 - bulbBob, '#eab308');
+  } else if (isHumming) {
+    // 음악 리듬 타며 콧노래 (음표 🎵)
+    const humArm = tick(t, 360, 2);
+    R(x - 1, y + 10 + humArm, 2, 5, L.skin);
+    R(x + 8, y + 10 - humArm, 2, 5, L.skin);
+    const noteY = tick(t, 600, 3);
+    P(hx + 7, hy - 4 - noteY, '#a78bfa');
+    P(hx + 8, hy - 5 - noteY, '#a78bfa');
+    P(hx + 8, hy - 4 - noteY, '#c084fc');
+    P(hx + 6, hy - 3 - noteY, '#a78bfa');
+  } else if (isStretching) {
     // 양팔을 하늘 높이 번쩍!
     R(x - 2, y + 2, 2, 8, L.skin);
     R(x + 9, y + 2, 2, 8, L.skin);
   } else if (isCoffee) {
-    // 양손으로 가슴 앞에 따뜻한 머그잔 받쳐 들기
+    // 양손으로 가슴 앞에 따뜻한 머그컵 받쳐 들기
     R(x + 3, y + 10, 4, 3, L.skin);
-    R(x + 6, y + 8, 4, 5, '#ffffff'); // 머그잔 본체
+    R(x + 6, y + 8, 4, 5, '#ffffff'); // 머그컵 본체
     P(x + 10, y + 9, '#ffffff');      // 머그 손잡이
     R(x + 7, y + 9, 2, 3, '#78350f'); // 따뜻한 커피
-    // 모락모락 김 (Steam)
     const steamY = tick(t, 450, 3);
     P(x + 7, y + 6 - steamY, 'rgba(255,255,255,0.75)');
     P(x + 8, y + 5 - steamY, 'rgba(255,255,255,0.5)');
@@ -8351,16 +8420,15 @@ function drawShimejiPerson(x, y, L, vx, t, s, state) {
     // 깡총 뛸 때 양팔 살짝 벌리기
     R(x - 2, y + 7, 2, 5, L.skin);
     R(x + 9, y + 7, 2, 5, L.skin);
-    // 점프 중 반짝이
     P(hx + 9, hy - 2, '#fde047');
     P(hx + 10, hy - 3, '#fde047');
   } else if (isWalking) {
-    // 단일 앞팔 자연스러운 스윙
+    // 걸을 때 자연스러운 팔 스윙
     const armSwing = (step === 0 ? 2 : step === 2 ? -2 : 0);
     R(x + 8 + armSwing, y + 10, 2, 6, L.skin);
     R(x - 1, y + 10, 2, 5, L.skin);
   } else {
-    // 평온한 차렷 자세
+    // 서 있는 기본 자세
     R(x - 1, y + 10, 2, 6, L.skin);
     R(x + 8, y + 10, 2, 6, L.skin);
   }
@@ -11524,49 +11592,62 @@ function drawPetFrame(ts) {
     const dt = shimejiLastTs > 0 ? Math.min(0.05, (ts - shimejiLastTs) / 1000) : 0.016;
     shimejiLastTs = ts;
 
-    const walkSpeed = 16.0; // 초당 16px (천천히 유유자적 걷는 편안한 보행 속도)
+    const walkSpeed = 13.5; // 초당 13.5px (급하게 서두르지 않고 차분하고 평온하게 걷는 편안한 속도)
 
     if (shimejiState === 'walk' || shimejiState === 'walk_coffee') {
       shimejiX += shimejiVx * walkSpeed * dt;
 
-      // 벽(가장자리) 도달 시 즉시 멈추고 뒤를 돌아보며 둘러보기
-      if (shimejiX < 4) {
-        shimejiX = 4;
+      // 벽(가장자리) 부근 도달 시 무조건 벽에 부딪쳐 튕기지 않고 자연스럽게 멈춰서기
+      if (shimejiX < 6) {
+        shimejiX = 6;
         shimejiVx = 1;
-        shimejiState = 'look';
+        const edgeRnd = Math.random();
+        if (edgeRnd < 0.35) shimejiState = 'look';
+        else if (edgeRnd < 0.60) shimejiState = 'wave';
+        else if (edgeRnd < 0.80) shimejiState = 'think';
+        else shimejiState = 'sit';
         shimejiNextSwitch = ts + 2500 + Math.random() * 2000;
-      } else if (shimejiX > PW - 15) {
-        shimejiX = PW - 15;
+      } else if (shimejiX > PW - 16) {
+        shimejiX = PW - 16;
         shimejiVx = -1;
-        shimejiState = 'look';
+        const edgeRnd = Math.random();
+        if (edgeRnd < 0.35) shimejiState = 'look';
+        else if (edgeRnd < 0.60) shimejiState = 'wave';
+        else if (edgeRnd < 0.80) shimejiState = 'think';
+        else shimejiState = 'sit';
         shimejiNextSwitch = ts + 2500 + Math.random() * 2000;
       }
 
+      // 걷다가 중간에 자연스럽게 멈춰서거나 다양한 행동으로 전환 (벽에 가기 전 중간에서도 자주 멈춤!)
       if (ts > shimejiNextSwitch) {
-        // 걷기를 마치고 다양한 정지 행동으로 자연스럽게 전환
         const hasCompanion = isCompanionCatEnabled() && getPrimaryCatType() !== 'none';
         const rnd = Math.random();
-        if (hasCompanion && rnd < 0.22) {
-          // 22%: 가던 길 멈추고 고양이 쪽으로 몸을 돌려 다정하게 쓰다듬어주기
+        if (hasCompanion && rnd < 0.24) {
+          // 24%: 가던 길 멈추고 고양이 쪽으로 몸을 돌려 다정하게 쓰다듬어주기
           shimejiState = 'pet_cat';
           shimejiVx = (shimejiCatX >= shimejiX) ? 1 : -1;
-          shimejiNextSwitch = ts + 4200 + Math.random() * 2000;
-        } else if (rnd < 0.45) {
-          shimejiState = 'look'; // 23%: 호기심 어린 주변 둘러보기
-          shimejiNextSwitch = ts + 3000 + Math.random() * 2500;
-        } else if (rnd < 0.65) {
-          shimejiState = 'sip';  // 20%: 서서 눈 감고 따뜻한 커피 홀짝
+          shimejiNextSwitch = ts + 3800 + Math.random() * 1800;
+        } else if (rnd < 0.40) {
+          shimejiState = 'look';    // 16%: 서서 주변 둘러보기
+          shimejiNextSwitch = ts + 2500 + Math.random() * 2000;
+        } else if (rnd < 0.54) {
+          shimejiState = 'sip';     // 14%: 따뜻한 커피 한 모금
+          shimejiNextSwitch = ts + 3500 + Math.random() * 2000;
+        } else if (rnd < 0.68) {
+          shimejiState = 'wave';    // 14%: 사용자 쪽을 바라보며 반갑게 손 흔들기
+          shimejiNextSwitch = ts + 2500 + Math.random() * 1500;
+        } else if (rnd < 0.80) {
+          shimejiState = 'think';   // 12%: 턱을 괴고 골똘히 생각/궁리하기 (전구 💡)
+          shimejiNextSwitch = ts + 2800 + Math.random() * 1800;
+        } else if (rnd < 0.90) {
+          shimejiState = 'hum';     // 10%: 리듬 타며 콧노래 흥얼거리기 (음표 🎵)
+          shimejiNextSwitch = ts + 3000 + Math.random() * 2000;
+        } else if (rnd < 0.96) {
+          shimejiState = 'sit';     // 6%: 바닥에 편안히 앉아 쉬기
           shimejiNextSwitch = ts + 4500 + Math.random() * 2500;
-        } else if (rnd < 0.82) {
-          shimejiState = 'sit';  // 17%: 바닥에 털썩 앉아 휴식
-          shimejiNextSwitch = ts + 6000 + Math.random() * 3000;
-        } else if (rnd < 0.92) {
-          shimejiState = 'stretch'; // 10%: 시원하게 기지개 켜기
-          shimejiNextSwitch = ts + 3000 + Math.random() * 1500;
         } else {
-          shimejiState = 'jump';    // 8%: 기분 좋아 깡총 점프
-          shimejiVy = -3.0;
-          shimejiNextSwitch = ts + 2000;
+          shimejiState = 'stretch'; // 4%: 기지개 켜기
+          shimejiNextSwitch = ts + 2500 + Math.random() * 1500;
         }
       }
     } else if (shimejiState === 'jump') {
@@ -11575,24 +11656,54 @@ function drawPetFrame(ts) {
       if (shimejiY >= 0) {
         shimejiY = 0;
         shimejiVy = 0;
-        shimejiState = 'idle';
-        shimejiNextSwitch = ts + 2500 + Math.random() * 2000;
+        // 점프 착지 후 기분 좋게 콧노래나 둘러보기
+        shimejiState = Math.random() < 0.5 ? 'hum' : 'idle';
+        shimejiNextSwitch = ts + 2200 + Math.random() * 1600;
       }
-    } else { // stationary: idle, look, sip, sit, stretch, pet_cat
+    } else { // stationary: idle, look, sip, sit, stretch, pet_cat, wave, think, hum
       if (ts > shimejiNextSwitch) {
         const hasCompanion = isCompanionCatEnabled() && getPrimaryCatType() !== 'none';
-        if (hasCompanion && Math.random() < 0.22 && shimejiState !== 'pet_cat') {
-          // 정지 상태에서도 간혹 고양이에게 다가가 쓰다듬기
-          shimejiState = 'pet_cat';
-          shimejiVx = (shimejiCatX >= shimejiX) ? 1 : -1;
-          shimejiNextSwitch = ts + 4200 + Math.random() * 2000;
+
+        // ⭐ 핵심: 정지 행동이 끝났을 때 매번 바로 걷는 것이 아니라,
+        // 35% 확률로 다른 정지 행동으로 자연스럽게 연속 전환(행동 체이닝)!
+        // (예: 둘러보다가 손 흔들기, 생각하다가 점프하기, 앉아있다가 고양이 쓰다듬기 등)
+        const chainRnd = Math.random();
+        if (chainRnd < 0.35) {
+          if (hasCompanion && Math.random() < 0.35 && shimejiState !== 'pet_cat') {
+            shimejiState = 'pet_cat';
+            shimejiVx = (shimejiCatX >= shimejiX) ? 1 : -1;
+            shimejiNextSwitch = ts + 3800 + Math.random() * 1800;
+          } else if (shimejiState === 'think' && Math.random() < 0.40) {
+            // 생각하다가 번뜩 좋은 생각이 나서 깡총 점프!
+            shimejiState = 'jump';
+            shimejiVy = -2.6;
+            shimejiNextSwitch = ts + 1800;
+          } else {
+            const nextActs = ['wave', 'hum', 'sip', 'look', 'think'].filter(a => a !== shimejiState);
+            shimejiState = nextActs[Math.floor(Math.random() * nextActs.length)];
+            shimejiNextSwitch = ts + 2600 + Math.random() * 2000;
+          }
         } else {
-          // 정지 행동 후 다시 산책 시작 (일반 산책 60% vs 커피 산책 40%)
-          shimejiState = Math.random() < 0.4 ? 'walk_coffee' : 'walk';
-          if (shimejiX < 20) shimejiVx = 1;
-          else if (shimejiX > PW - 30) shimejiVx = -1;
-          else if (Math.random() < 0.45) shimejiVx = -shimejiVx;
-          shimejiNextSwitch = ts + 7000 + Math.random() * 6000;
+          // 65%: 다시 산책 시작 (일반 산책 vs 커피 들고 산책)
+          shimejiState = Math.random() < 0.35 ? 'walk_coffee' : 'walk';
+
+          // 방향 선택: 너무 끝에 몰려있으면 안쪽으로, 중간이면 자유롭게 50:50 방향 결정
+          if (shimejiX < 24) {
+            shimejiVx = 1;
+          } else if (shimejiX > PW - 32) {
+            shimejiVx = -1;
+          } else {
+            // 중간에 있을 때는 50% 확률로 방향 반전하여 한쪽으로만 끝까지 가지 않음!
+            if (Math.random() < 0.50) shimejiVx = -shimejiVx;
+          }
+
+          // ⭐ 걷는 시간을 1.8초 ~ 4.2초 (약 25~55px)로 짧게 주어 중간에서도 자주 멈추게 함!
+          // 가끔씩만(20%) 4.2~6.0초 동안 여유롭게 거닐기
+          if (Math.random() < 0.80) {
+            shimejiNextSwitch = ts + 1800 + Math.random() * 2400; // 짧은 마실/서성거리기
+          } else {
+            shimejiNextSwitch = ts + 4200 + Math.random() * 1800; // 여유로운 산책
+          }
         }
       }
     }
