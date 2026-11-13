@@ -152,6 +152,8 @@ public partial class MainWindow : Window
         _cloud.Dispose();                              // 올리기 루프를 먼저 멈춘다(생존 신호가 "꺼짐"을 덮어쓰지 않게)
         _cloud.SendOffline(TimeSpan.FromSeconds(3));   // 휴대폰에 1분 반을 기다리지 않고 바로 "꺼짐"
         _tray?.Dispose();
+        _nativeBigIcon?.Dispose();
+        _nativeSmallIcon?.Dispose();
         Application.Current.Shutdown();
     }
 
@@ -831,12 +833,67 @@ public partial class MainWindow : Window
         return $"https://{VirtualHost}/index.html" + (q.Count > 0 ? "?" + string.Join("&", q) : "");
     }
 
+    private const uint WM_SETICON = 0x0080;
+    private static readonly IntPtr ICON_SMALL = new IntPtr(0);
+    private static readonly IntPtr ICON_BIG = new IntPtr(1);
+    private System.Drawing.Icon? _nativeBigIcon;
+    private System.Drawing.Icon? _nativeSmallIcon;
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        ApplyAppIcon();
+    }
+
     private void ApplyAppIcon()
     {
         var iconKey = App.Settings.AppIcon is "b" or "c" ? App.Settings.AppIcon : "a";
         try
         {
-            Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri($"pack://application:,,,/Assets/office_{iconKey}.ico"));
+            var uri = new Uri($"pack://application:,,,/Assets/office_{iconKey}.ico");
+            var decoder = System.Windows.Media.Imaging.BitmapDecoder.Create(uri, System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+
+            // 작업표시줄과 창 아이콘에 16x16이 아닌 최적 해상도(32x32~64x64 또는 최대 크기) 프레임 전달
+            var bestFrame = decoder.Frames.FirstOrDefault(f => f.PixelWidth == 48)
+                         ?? decoder.Frames.FirstOrDefault(f => f.PixelWidth == 64)
+                         ?? decoder.Frames.FirstOrDefault(f => f.PixelWidth == 32)
+                         ?? decoder.Frames.OrderByDescending(f => f.PixelWidth).FirstOrDefault()
+                         ?? decoder.Frames[0];
+            Icon = bestFrame;
+
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero)
+            {
+                SetNativeWindowIcons(hwnd, iconKey);
+            }
+        }
+        catch { }
+    }
+
+    private void SetNativeWindowIcons(IntPtr hwnd, string iconKey)
+    {
+        try
+        {
+            var res = Application.GetResourceStream(new Uri($"pack://application:,,,/Assets/office_{iconKey}.ico"));
+            if (res?.Stream == null) return;
+            using var s = res.Stream;
+
+            // Windows 작업표시줄 대형 아이콘 (SM_CXICON, 32x32~48x48 등 현재 배율에 맞춘 완벽한 크기)
+            var bigSize = System.Windows.Forms.SystemInformation.IconSize;
+            var newBig = new System.Drawing.Icon(s, bigSize);
+            s.Position = 0;
+
+            // 창 타이틀바 소형 아이콘 (SM_CXSMICON, 16x16~24x24)
+            var smallSize = System.Windows.Forms.SystemInformation.SmallIconSize;
+            var newSmall = new System.Drawing.Icon(s, smallSize);
+
+            SendMessage(hwnd, WM_SETICON, ICON_BIG, newBig.Handle);
+            SendMessage(hwnd, WM_SETICON, ICON_SMALL, newSmall.Handle);
+
+            _nativeBigIcon?.Dispose();
+            _nativeSmallIcon?.Dispose();
+            _nativeBigIcon = newBig;
+            _nativeSmallIcon = newSmall;
         }
         catch { }
     }
@@ -1490,6 +1547,9 @@ public partial class MainWindow : Window
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
     private static readonly HashSet<string> TerminalOrIdeProcesses = new(StringComparer.OrdinalIgnoreCase)
     {

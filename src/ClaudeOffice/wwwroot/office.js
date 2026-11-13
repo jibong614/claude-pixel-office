@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.18';
+const PAGE_VERSION = '1.9.19';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1122,13 +1122,14 @@ function looks(id) {
   if (L) return L;
   const seed = lookIdx ? `${id}@${lookIdx}` : id;
   const h = hash(seed), h2 = hash(seed + '#');
+  const hairStyleCount = gender === 'f' ? 10 : 3;
   L = {
     gender,
     skin: SKINS[h % SKINS.length],
     hair: HAIRS[(h >>> 4) % HAIRS.length],
     shirt: SHIRTS[(h >>> 9) % SHIRTS.length],
     pants: PANTS[(h >>> 14) % PANTS.length],
-    hairStyle: (h2 >>> 2) % 4,
+    hairStyle: (h2 >>> 2) % hairStyleCount,
     glasses: (h2 >>> 6) % 4 === 0,
     deco: decoOverride !== null ? decoOverride : (h2 >>> 9) % 4,
     blink: h2 % 3200,
@@ -1458,6 +1459,72 @@ const OFFICE_THEMES = {
       floorA: '#2b354c', floorB: '#252e42', floorLine: '#0284c7',
       plaque: '#1e293b', plaqueIn: '#334155'
     }
+  },
+  cherry_blossom: {
+    id: 'cherry_blossom',
+    name: '화사한 벚꽃 엔딩',
+    enName: 'Cherry Blossom',
+    swatches: ['#4a303e', '#f472b6'],
+    pal: {
+      wall: '#4a303e', wallStripe: '#422b37', wainscot: '#331e2b', wainscotHi: '#f472b6', base: '#24141e',
+      floorA: '#8a4f47', floorB: '#7e463f', floorLine: '#66342e',
+      plaque: '#542839', plaqueIn: '#7a3b53'
+    }
+  },
+  botanic_forest: {
+    id: 'botanic_forest',
+    name: '싱그러운 보타닉 포레스트',
+    enName: 'Botanic Forest Garden',
+    swatches: ['#21382e', '#4ade80'],
+    pal: {
+      wall: '#21382e', wallStripe: '#1a2e25', wainscot: '#15241d', wainscotHi: '#4ade80', base: '#0e1813',
+      floorA: '#5c4a36', floorB: '#52412e', floorLine: '#403222',
+      plaque: '#1a2e25', plaqueIn: '#2d4a3d'
+    }
+  },
+  sunset_ocean: {
+    id: 'sunset_ocean',
+    name: '노을빛 오션 라운지',
+    enName: 'Sunset Ocean Lounge',
+    swatches: ['#3b2d4a', '#fb923c'],
+    pal: {
+      wall: '#3b2d4a', wallStripe: '#322540', wainscot: '#211f38', wainscotHi: '#fb923c', base: '#171529',
+      floorA: '#785c45', floorB: '#6e533e', floorLine: '#57402e',
+      plaque: '#2b203c', plaqueIn: '#46335f'
+    }
+  },
+  midnight_library: {
+    id: 'midnight_library',
+    name: '고풍스러운 심야 도서관',
+    enName: 'Antique Midnight Library',
+    swatches: ['#2c1f1d', '#eab308'],
+    pal: {
+      wall: '#2c1f1d', wallStripe: '#241817', wainscot: '#1c1211', wainscotHi: '#eab308', base: '#120a09',
+      floorA: '#4f2b1d', floorB: '#462518', floorLine: '#33190e',
+      plaque: '#381c12', plaqueIn: '#592d1c'
+    }
+  },
+  pixel_arcade: {
+    id: 'pixel_arcade',
+    name: '레트로 8비트 아케이드',
+    enName: 'Retro 8-Bit Arcade',
+    swatches: ['#18122b', '#a855f7'],
+    pal: {
+      wall: '#18122b', wallStripe: '#21183c', wainscot: '#0f0b1c', wainscotHi: '#a855f7', base: '#090612',
+      floorA: '#232238', floorB: '#181726', floorLine: '#06b6d4',
+      plaque: '#2e1065', plaqueIn: '#581c87'
+    }
+  },
+  nordic_snow: {
+    id: 'nordic_snow',
+    name: '포근한 북유럽 화이트 스노우',
+    enName: 'Nordic Cozy Snow',
+    swatches: ['#3a4454', '#cbd5e1'],
+    pal: {
+      wall: '#3a4454', wallStripe: '#323b49', wainscot: '#282f3a', wainscotHi: '#cbd5e1', base: '#1c2129',
+      floorA: '#71695f', floorB: '#665f56', floorLine: '#4f4942',
+      plaque: '#242b35', plaqueIn: '#3d495a'
+    }
   }
 };
 
@@ -1724,17 +1791,28 @@ function updateCoinDisplay() {
 }
 
 function getOwnedFurniture() {
+  let list = [];
   if (remoteShare && Array.isArray(remoteShare.furniture)) {
-    return remoteShare.furniture;
+    list = [...remoteShare.furniture];
+  } else {
+    try {
+      list = JSON.parse(localStorage.getItem(FURNITURE_KEY) || '[]');
+    } catch {
+      list = [];
+    }
   }
-  try {
-    return JSON.parse(localStorage.getItem(FURNITURE_KEY) || '[]');
-  } catch {
-    return [];
+  // 기본 지급 아이템: turntable (LP 턴테이블) 및 theme_default (기본 배경) 항상 보유 상태 유지
+  let changed = false;
+  if (!list.includes('turntable')) { list.push('turntable'); changed = true; }
+  if (!list.includes('theme_default')) { list.push('theme_default'); changed = true; }
+  if (changed && !remoteShare) {
+    try { localStorage.setItem(FURNITURE_KEY, JSON.stringify(list)); } catch {}
   }
+  return list;
 }
 
 function isFurnitureOwned(id) {
+  if (id === 'theme_default' || id === 'turntable') return true;
   return getOwnedFurniture().includes(id);
 }
 
@@ -2086,16 +2164,16 @@ const SHOP_ITEMS = [
     enDesc: 'Fragrant catnip powder! Relieves stress and induces joyful room dashes.',
   },
 
-  // ── 🎨 사무실 인테리어 테마 (v1.9.4) ──
+  // ── 🎨 사무실 인테리어 테마 (v1.9.4 / v1.9.19) ──
   {
-    id: 'theme_cyberpunk',
+    id: 'theme_default',
     catGroup: 'theme',
-    name: '사이버펑크 네온 테마',
-    enName: 'Cyberpunk Neon Theme',
-    price: 250,
-    icon: '🌆',
-    desc: '심야 코딩 감성의 다크 바이올렛 벽지와 네온 사이언/마젠타 발광 그리드 바닥재.',
-    enDesc: 'Dark violet cyber walls and glowing neon cyan/magenta grid flooring.',
+    name: '클래식 오피스 (기본 테마)',
+    enName: 'Classic Office (Default)',
+    price: 0,
+    icon: '🏢',
+    desc: '언제든 돌아올 수 있는 아늑하고 편안한 Claude Office의 기본 클래식 인테리어 배경.',
+    enDesc: 'The cozy, classic default Claude Office interior background. Switch back anytime.',
   },
   {
     id: 'theme_cozy_wood',
@@ -2106,6 +2184,16 @@ const SHOP_ITEMS = [
     icon: '☕',
     desc: '향긋한 커피 향이 어울리는 따뜻한 원목 브라운 벽면과 고급 마루 바닥재.',
     enDesc: 'Warm natural wood walls and parquet floor creating a peaceful cafe atmosphere.',
+  },
+  {
+    id: 'theme_cyberpunk',
+    catGroup: 'theme',
+    name: '사이버펑크 네온 테마',
+    enName: 'Cyberpunk Neon Theme',
+    price: 250,
+    icon: '🌆',
+    desc: '심야 코딩 감성의 다크 바이올렛 벽지와 네온 사이언/마젠타 발광 그리드 바닥재.',
+    enDesc: 'Dark violet cyber walls and glowing neon cyan/magenta grid flooring.',
   },
   {
     id: 'theme_hanok',
@@ -2126,6 +2214,66 @@ const SHOP_ITEMS = [
     icon: '🚀',
     desc: '우주선 조종석 느낌의 다크 네이비 메탈 패널과 푸른 LED 라인 인테리어.',
     enDesc: 'Sci-Fi spaceship dark navy metal panels and neon blue LED line interior.',
+  },
+  {
+    id: 'theme_cherry_blossom',
+    catGroup: 'theme',
+    name: '화사한 벚꽃 엔딩 테마',
+    enName: 'Cherry Blossom Theme',
+    price: 240,
+    icon: '🌸',
+    desc: '살랑이는 봄바람과 벚꽃 잎이 흩날리는 듯한 로즈 플럼 벽면과 따뜻한 벚나무 원목 마루.',
+    enDesc: 'Spring blossom ambiance with soft rose-plum walls and warm cherry-tinted oak floor.',
+  },
+  {
+    id: 'theme_botanic_forest',
+    catGroup: 'theme',
+    name: '싱그러운 보타닉 포레스트 테마',
+    enName: 'Botanic Forest Garden Theme',
+    price: 230,
+    icon: '🌿',
+    desc: '울창한 숲속 식물원에 온 듯한 딥 에메랄드 벽면과 내추럴 오크 마루의 피톤치드 힐링 오피스.',
+    enDesc: 'Deep emerald botanical walls and natural oak flooring creating an indoor plant sanctuary.',
+  },
+  {
+    id: 'theme_sunset_ocean',
+    catGroup: 'theme',
+    name: '노을빛 오션 라운지 테마',
+    enName: 'Sunset Ocean Lounge Theme',
+    price: 250,
+    icon: '🌅',
+    desc: '황혼의 노을빛 오렌지와 심해 네이비가 어우러진 감성적인 휴양지 비치 라운지 인테리어.',
+    enDesc: 'Romantic sunset gradient ambiance with twilight purple walls and coastal beach deck flooring.',
+  },
+  {
+    id: 'theme_midnight_library',
+    catGroup: 'theme',
+    name: '고풍스러운 심야 도서관 테마',
+    enName: 'Antique Midnight Library Theme',
+    price: 260,
+    icon: '📚',
+    desc: '오래된 고서와 황동 램프가 어울리는 앤틱 마호가니 벽면과 품격 있는 다크 월넛 헤링본 바닥재.',
+    enDesc: 'Antique mahogany walls with brass gold accents and rich dark walnut parquet flooring.',
+  },
+  {
+    id: 'theme_pixel_arcade',
+    catGroup: 'theme',
+    name: '레트로 8비트 아케이드 테마',
+    enName: 'Retro 8-Bit Arcade Theme',
+    price: 270,
+    icon: '👾',
+    desc: '오락실 감성의 다크 바이올렛 벽지와 네온 퍼플 레이저 몰딩, 힙한 체커보드 타일 바닥재.',
+    enDesc: 'Vintage arcade game room with dark purple walls, neon laser lines, and checkerboard tiles.',
+  },
+  {
+    id: 'theme_nordic_snow',
+    catGroup: 'theme',
+    name: '포근한 북유럽 화이트 스노우 테마',
+    enName: 'Nordic Cozy Snow Theme',
+    price: 220,
+    icon: '❄️',
+    desc: '눈 덮인 북유럽 숲의 포근함! 쿨 슬레이트 그레이 벽면과 부드러운 애쉬 그레이 원목 바닥재.',
+    enDesc: 'Minimalist Nordic winter style with cool slate gray walls and soft ash gray wood flooring.',
   },
 
   // ── 🎄 겨울 & 크리스마스 시즌 한정 (v1.9.4) ──
@@ -2286,9 +2434,9 @@ const SHOP_ITEMS = [
   {
     id: 'turntable',
     catGroup: 'interior',
-    name: '레트로 LP 턴테이블 & 스피커',
-    enName: 'Vinyl Turntable & Speaker',
-    price: 160,
+    name: '레트로 LP 턴테이블 & 스피커 (기본 제공)',
+    enName: 'Vinyl Turntable & Speaker (Default)',
+    price: 0,
     icon: '🎵',
     desc: '아날로그 감성의 LP 레코드 플레이어. 클릭 시 지지직- 편안한 로파이 코딩 비트가 흐릅니다.',
     enDesc: 'Analog vinyl turntable playing relaxing lofi coding beats with floating music notes.',
@@ -6040,33 +6188,87 @@ function drawHead(hx, hy, L, pose, t, isStretching = false, s = null) {
   R(hx, hy, 8, 8, L.skin);
 
   if (L.gender === 'f') {
-    // 여자 기본 헤어 (단발, 긴생머리, 포니테일, 웨이브/헤어핀)
+    // 👧 여성 헤어 스타일 10종 (긴머리·웨이브·파마·땋은머리·트윈테일·C컬 중심)
     R(hx, hy - 1, 8, 3, L.hair);
     R(hx - 1, hy, 3, 6, L.hair);
-    const style = (L.hairStyle || 0) % 4;
+    const style = (L.hairStyle || 0) % 10;
     if (style === 0) {
-      // 1. 귀여운 단발
-      R(hx - 1, hy + 3, 3, 5, L.hair);
-      R(hx + 5, hy + 2, 3, 1, L.hair);
-      R(hx + 1, hy + 6, 2, 2, L.hair);
-    } else if (style === 1) {
-      // 2. 찰랑이는 긴 생머리
-      R(hx - 2, hy + 2, 3, 8, L.hair);
-      R(hx + 5, hy + 2, 3, 1, L.hair);
+      // 1. 찰랑이는 실키 롱 스트레이트 (Straight Long Hair)
+      R(hx - 2, hy + 2, 3, 9, L.hair);
       R(hx + 1, hy + 6, 2, 4, L.hair);
-    } else if (style === 2) {
-      // 3. 리본 포니테일
       R(hx + 5, hy + 2, 3, 1, L.hair);
+      P(hx - 1, hy + 5, shade(L.hair, 1.2));
+    } else if (style === 1) {
+      // 2. 풍성한 글래머러스 웨이브 펌 (Glamorous Wavy Perm)
+      R(hx - 2, hy + 2, 3, 8, L.hair);
+      R(hx - 3, hy + 4, 2, 3, L.hair);
+      R(hx - 1, hy + 8, 3, 3, L.hair);
+      R(hx + 1, hy + 6, 2, 4, L.hair);
+      R(hx + 5, hy + 2, 3, 1, L.hair);
+      P(hx + 2, hy + 9, shade(L.hair, 1.25));
+      P(hx - 2, hy + 5, shade(L.hair, 1.2));
+    } else if (style === 2) {
+      // 3. 보글보글 러블리 히피 펌 (Lovely Hippie Perm with Curls)
+      R(hx - 3, hy + 1, 4, 8, L.hair);
+      R(hx - 4, hy + 3, 2, 4, L.hair);
+      R(hx + 1, hy - 2, 6, 1, L.hair);
+      R(hx + 5, hy + 1, 3, 2, L.hair);
+      R(hx, hy + 6, 3, 4, L.hair);
+      P(hx - 2, hy + 3, shade(L.hair, 1.25));
+      P(hx - 3, hy + 5, shade(L.hair, 0.8));
+    } else if (style === 3) {
+      // 4. 우아한 하프업 반묶음 & 웨이브핀 (Half-Up Wavy with Hairpin)
+      R(hx - 2, hy + 2, 3, 8, L.hair);
+      R(hx - 3, hy + 1, 3, 2, L.hair);
+      P(hx - 2, hy, '#38bdf8');
+      R(hx + 5, hy + 2, 2, 1, L.hair);
+      R(hx, hy + 7, 3, 3, L.hair);
+    } else if (style === 4) {
+      // 5. 리본 하이 포니테일 (Bouncy High Ponytail with Rose Ribbon)
       R(hx - 3, hy + 1, 3, 3, L.hair);
-      P(hx - 2, hy + 1, '#f43f5e');   // 포인트 리본
+      P(hx - 2, hy + 1, '#f43f5e');
       const ponyBob = (pose === 'run' && tick(t, 220, 2) === 1) ? -1 : 0;
       R(hx - 4, hy + 3 + ponyBob, 2, 6, L.hair);
-    } else {
-      // 4. 하프업 웨이브 & 헤어핀
+      R(hx - 3, hy + 8 + ponyBob, 2, 2, L.hair);
+      R(hx + 5, hy + 2, 3, 1, L.hair);
+    } else if (style === 5) {
+      // 6. 러블리 트윈테일 양갈래 (Cute Twin Tails / Pigtails)
+      R(hx - 3, hy + 2, 2, 2, L.hair);
+      P(hx - 2, hy + 2, '#fb7185');
+      R(hx - 3, hy + 4, 2, 5, L.hair);
+      R(hx + 1, hy + 5, 2, 5, L.hair);
+      P(hx + 2, hy + 5, '#fb7185');
+      R(hx + 5, hy + 2, 3, 1, L.hair);
+    } else if (style === 6) {
+      // 7. 청순한 사이드 땋은 머리 (Side Braid / French Braid)
+      R(hx - 2, hy + 2, 3, 6, L.hair);
+      R(hx + 1, hy + 6, 2, 2, L.hair);
+      R(hx + 2, hy + 8, 2, 2, L.hair);
+      P(hx + 3, hy + 8, shade(L.hair, 1.25));
+      R(hx + 1, hy + 10, 2, 2, L.hair);
+      P(hx + 2, hy + 11, '#f59e0b');
+      R(hx + 5, hy + 2, 3, 1, L.hair);
+    } else if (style === 7) {
+      // 8. 단아한 롱 C컬 펌 (Elegant Long C-Curl Perm)
       R(hx - 2, hy + 2, 3, 7, L.hair);
-      R(hx + 5, hy + 2, 2, 1, L.hair);
-      P(hx + 5, hy + 1, '#38bdf8');   // 하늘색 헤어핀
-      R(hx, hy + 7, 2, 2, L.hair);
+      R(hx + 1, hy + 6, 2, 3, L.hair);
+      R(hx + 2, hy + 8, 3, 2, L.hair);
+      R(hx + 5, hy + 2, 3, 1, L.hair);
+      P(hx + 3, hy + 9, shade(L.hair, 1.2));
+    } else if (style === 8) {
+      // 9. 허리까지 내려오는 울트라 롱헤어 (Waist-Length Flowing Hair)
+      R(hx - 2, hy + 2, 4, 10, L.hair);
+      R(hx - 1, hy + 11, 3, 2, L.hair);
+      R(hx + 1, hy + 6, 2, 6, L.hair);
+      R(hx + 5, hy + 2, 3, 1, L.hair);
+      P(hx - 1, hy + 4, shade(L.hair, 1.25));
+      P(hx - 1, hy + 8, shade(L.hair, 1.2));
+    } else {
+      // 10. 내추럴 볼륨 단발 & 사이드 웨이브 (Chic Voluminous Bob)
+      R(hx - 2, hy + 2, 3, 6, L.hair);
+      R(hx + 5, hy + 2, 3, 2, L.hair);
+      R(hx + 1, hy + 6, 3, 2, L.hair);
+      P(hx + 5, hy + 1, '#a855f7');
     }
     // 발그레한 볼터치
     P(hx + 5, hy + 5, '#fda4af');
@@ -9091,7 +9293,7 @@ const ALL_ACHIEVEMENTS = [
     enGuide: 'Click 🪙 top HUD or shortcut S ➔ Buy any item in the shop',
     exp: 150,
     action: () => openShopModal(),
-    check: () => getOwnedFurniture().length > 0 || !!getQuest('first_furniture'),
+    check: () => getOwnedFurniture().filter(id => id !== 'turntable' && id !== 'theme_default').length > 0 || !!getQuest('first_furniture'),
   },
   {
     id: 'interior_master',
@@ -9927,7 +10129,7 @@ function renderShopModal() {
     top.append(icon, info);
 
     const foot = elem('div', 'shop-card-foot');
-    const price = elem('div', 'shop-price', `🪙 ${item.price} 코인`);
+    const price = elem('div', 'shop-price', item.price > 0 ? `🪙 ${item.price} 코인` : T('무료 (기본 제공)', 'Free (Default)'));
     const btn = elem('button', `shop-btn ${isOwned || isAdopted ? 'owned' : ''}`);
     btn.type = 'button';
 

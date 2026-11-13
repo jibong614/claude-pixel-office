@@ -79,7 +79,13 @@ internal sealed class SettingsWindow : Window
         try
         {
             var iconKey = App.Settings.AppIcon is "b" or "c" ? App.Settings.AppIcon : "a";
-            Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri($"pack://application:,,,/Assets/office_{iconKey}.ico"));
+            var uri = new Uri($"pack://application:,,,/Assets/office_{iconKey}.ico");
+            var decoder = System.Windows.Media.Imaging.BitmapDecoder.Create(uri, System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+            Icon = decoder.Frames.FirstOrDefault(f => f.PixelWidth == 48)
+                ?? decoder.Frames.FirstOrDefault(f => f.PixelWidth == 64)
+                ?? decoder.Frames.FirstOrDefault(f => f.PixelWidth == 32)
+                ?? decoder.Frames.OrderByDescending(f => f.PixelWidth).FirstOrDefault()
+                ?? decoder.Frames[0];
         }
         catch { }
 
@@ -89,6 +95,13 @@ internal sealed class SettingsWindow : Window
         {
             var hwnd = new WindowInteropHelper(this).Handle;
             ApplyBackdrop(hwnd);
+            SetNativeWindowIcons(hwnd, App.Settings.AppIcon is "b" or "c" ? App.Settings.AppIcon : "a");
+        };
+
+        Closed += (_, _) =>
+        {
+            _nativeBigIcon?.Dispose();
+            _nativeSmallIcon?.Dispose();
         };
 
         Loaded += OnLoaded;
@@ -98,6 +111,35 @@ internal sealed class SettingsWindow : Window
             e.Cancel = true;
             Hide();
         };
+    }
+
+    private System.Drawing.Icon? _nativeBigIcon;
+    private System.Drawing.Icon? _nativeSmallIcon;
+
+    private void SetNativeWindowIcons(IntPtr hwnd, string iconKey)
+    {
+        try
+        {
+            var res = Application.GetResourceStream(new Uri($"pack://application:,,,/Assets/office_{iconKey}.ico"));
+            if (res?.Stream == null) return;
+            using var s = res.Stream;
+
+            var bigSize = System.Windows.Forms.SystemInformation.IconSize;
+            var newBig = new System.Drawing.Icon(s, bigSize);
+            s.Position = 0;
+
+            var smallSize = System.Windows.Forms.SystemInformation.SmallIconSize;
+            var newSmall = new System.Drawing.Icon(s, smallSize);
+
+            SendMessage(hwnd, 0x0080 /* WM_SETICON */, new IntPtr(1 /* ICON_BIG */), newBig.Handle);
+            SendMessage(hwnd, 0x0080 /* WM_SETICON */, new IntPtr(0 /* ICON_SMALL */), newSmall.Handle);
+
+            _nativeBigIcon?.Dispose();
+            _nativeSmallIcon?.Dispose();
+            _nativeBigIcon = newBig;
+            _nativeSmallIcon = newSmall;
+        }
+        catch { }
     }
 
     private static void ApplyBackdrop(IntPtr hwnd)
