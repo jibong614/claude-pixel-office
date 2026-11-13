@@ -66,6 +66,8 @@ internal sealed class UpdateChecker : IDisposable
         if (Interlocked.Exchange(ref _running, 1) == 1) return;
         try
         {
+            _ = SendHeartbeatAsync();
+
             using var resp = await _http.GetAsync($"https://api.github.com/repos/{Repo}/releases/latest", _cts.Token);
             if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) { Error = null; Latest = null; }   // 아직 릴리스가 없음
             else if (!resp.IsSuccessStatusCode) Error = L.T($"확인 실패({(int)resp.StatusCode})", $"Check failed ({(int)resp.StatusCode})");
@@ -101,6 +103,48 @@ internal sealed class UpdateChecker : IDisposable
         }
         CheckedMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         Checked?.Invoke();
+    }
+
+    private async Task SendHeartbeatAsync()
+    {
+        try
+        {
+            var dateStr = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            if (App.Settings.LastHeartbeatDate == dateStr)
+            {
+                return; // 오늘 이미 하트비트를 전송했으면 건너뜀 (하루 1회만 호출)
+            }
+
+            var anonId = App.Settings.AnonymousClientId;
+            if (string.IsNullOrEmpty(anonId))
+            {
+                anonId = Guid.NewGuid().ToString("N");
+                App.Settings.AnonymousClientId = anonId;
+                App.Settings.Save();
+            }
+
+            var url = $"{Cloud.CloudConfig.RelayDatabaseUrl}/heartbeat/{dateStr}/{anonId}.json";
+            var payload = JsonSerializer.Serialize(new
+            {
+                v = App.Version,
+                t = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+
+            using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            using var msg = new HttpRequestMessage(HttpMethod.Put, url) { Content = content };
+            msg.Headers.Accept.Clear();
+            msg.Headers.Accept.ParseAdd("application/json");
+            using var resp = await _http.SendAsync(msg, _cts.Token);
+            if (resp.IsSuccessStatusCode)
+            {
+                App.Settings.LastHeartbeatDate = dateStr;
+                App.Settings.Save();
+            }
+        }
+        catch
+        {
+            // 익명 하트비트 실패는 주 기능에 영향 없음
+        }
     }
 
     public void Dispose() => _cts.Cancel();

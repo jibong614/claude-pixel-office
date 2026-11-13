@@ -18,6 +18,15 @@
           ".validate": "newData.hasChildren(['iv', 'ct']) && newData.child('iv').isString() && newData.child('ct').isString() && newData.child('ct').val().length < 6000"
         }
       }
+    },
+    "heartbeat": {
+      "$date": {
+        "$id": {
+          ".read": false,
+          ".write": true,
+          ".validate": "newData.hasChildren(['v', 't']) && newData.child('v').isString() && newData.child('v').val().length < 20 && newData.child('t').isNumber()"
+        }
+      }
     }
   }
 }

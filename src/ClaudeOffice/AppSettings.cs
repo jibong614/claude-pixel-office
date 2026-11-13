@@ -33,6 +33,10 @@ internal sealed class AppSettings
     /// <summary>업데이트 확인 주기(시간 단위: 1 | 5 | 12, 기본값 1시간).</summary>
     public int UpdateIntervalHours { get; set; } = 1;
     public string? UpdateNotified { get; set; }
+    /// <summary>마지막으로 익명 하트비트(DAU 집계)를 전송한 날짜(UTC yyyy-MM-dd). 하루 1회만 전송하고 오늘 이미 했으면 건너뛴다.</summary>
+    public string? LastHeartbeatDate { get; set; }
+    /// <summary>익명 통계용 클라이언트 임의 식별자(UUIDv4). 개인정보·PC정보 없이 하루 1회 활성 유저수(DAU) 집계에만 사용.</summary>
+    public string? AnonymousClientId { get; set; }
 
     /// <summary>사용자가 직접 ⚙️ 설정에서 Claude Code 연결을 끊었는지(기본값은 false = 자동 연결 활성화).</summary>
     public bool HooksDisabledByUser { get; set; }
