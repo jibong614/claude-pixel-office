@@ -9,7 +9,7 @@
 [![Release](https://img.shields.io/github/v/release/jibong614/claude-pixel-office?color=7c3aed&label=Release)](https://github.com/jibong614/claude-pixel-office/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078d4)](https://github.com/jibong614/claude-pixel-office)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512bd4)](https://dotnet.microsoft.com/download/dotnet/8.0)
-[![Tests](https://img.shields.io/badge/Tests-45%20Passed-brightgreen)](tests/ClaudeOffice.Tests)
+[![Tests](https://img.shields.io/badge/Tests-52%20Passed-brightgreen)](tests/ClaudeOffice.Tests)
 [![License](https://img.shields.io/github/license/jibong614/claude-pixel-office?color=green)](LICENSE)
 
 **See at a glance what Claude Code is doing and whether it's waiting for your approval — as a retro pixel-art office on Windows.**  
@@ -49,7 +49,7 @@
 | 🛋️ Furniture Decor & 3-Stage Cat Adoption Shop | 📋 Live 3-Column Kanban Board (Auto-extracted) |
 | :---: | :---: |
 | <img src="docs/screenshots/shop_storage.png" width="460" alt="Interior Shop & Cat Adoption"> | <img src="docs/screenshots/kanban_board.png" width="460" alt="Live Whiteboard Kanban"> |
-| *Spend earned coins on turntables & beanbags; kitten ➔ teen ➔ adult cat perches on monitors* | *Automatically parses session transcripts into live To Do / In Progress / Done cards* |
+| *11 Rich Themes (Sakura, Forest, Sunset Ocean, etc.), free starter turntable, kitten ➔ adult cat & 10 female hairstyles* | *Automatically parses session transcripts into live To Do / In Progress / Done cards* |
 
 ### 🏆 Quests & Details
 | 🏆 30 Challenge Badges & Title Book | 🔍 Agent Detail Drawer Panel (Tokens & Cost Stats) |
@@ -91,7 +91,8 @@
 - **Floating Mini Player**: Throttling-resistant offscreen/mini playback with a 140px bottom-right pill mode (`−`) and smart audio fallback.
 
 ### 3. 🛋️ Office Life, Cat Adoption & Whiteboard Kanban
-- **🪙 Coins & Office Decor Shop**: Earn coins by completing tasks and saving cache tokens. Purchase 7 interactive props including a vinyl turntable, cozy beanbag, and arcade cabinet.
+- **🪙 11 Background Themes & Office Decor Shop**: Transform your office with 11 themes (Cherry Blossom, Forest, Sunset Ocean, Midnight Library, 8-Bit Arcade, Nordic Snow, etc.), free starter LP turntable, beanbags, and arcade cabinets, with instant restoration to the default theme.
+- **🎨 10 Female Hairstyles & Custom Look Rolls**: Long straight, wavy curls, hippie perm, half-up, ribbons, twin tails, braids, and C-curls easily swappable via look roll (🎲).
 - **🐱 3-Stage Cat Evolution & Monitor Perch**: Adopt a kitten and watch it grow into a mischievous teen and majestic adult cat. Cats hop across desks and nap on top of monitors; petting them triggers purring and cute thought bubbles.
 - **📋 Live 3-Column Kanban Board**: Automatically parses session conversations into live To Do / In Progress / Done cards on the office whiteboard.
 - **🏆 30 Challenge Badges & Quest Book**: Unlock achievements for coin rewards and level up your developer title and EXP.
@@ -99,13 +100,14 @@
 
 ### 4. 🪟 Desktop MiniWidget & Dynamic Island
 - **Always-on-Top Floating Companion**: Monitor your primary agent in the corner of your screen even when editors or browsers are full-screen.
-- **3-Tier Responsive Scaling (Large 360px · Medium 300px · Small 260px)**: Fonts and buttons scale proportionally to preserve whitespace and crisp readability.
+- **3-Tier Responsive Scaling (Large 360px · Medium 300px · Small 260px)**: Fonts and buttons scale proportionally with an optimized, snappy combo switcher.
 - **Ultra-Slim Dynamic Island (MiniBar)**: Floats at the top as a 44px capsule that expands on hover with one-click terminal jump, emergency stop, and widget restore (`🪟` / `💼`) buttons.
-- **🐾 Shimeji Wide Walk Mode**: Agents step away from their desks to freely roam a 680px virtual stage across the bottom of your screen with 10 expressive idle motions.
+- **🐾 Shimeji Wide Walk Mode**: Agents step away from their desks to freely roam the bottom of your screen with natural gait (looking left/right, swinging arms, sipping coffee, sitting down, stretching, jumping).
 - **💡 25 Developer Memes Easter Egg**: Click to trigger humorous developer quotes wrapped into 2-line thought bubbles.
 
 ### 5. 📱 Mobile Remote Control — Keep Work Moving While Away
 - **Zero-Setup Quick Connect**: Scan a QR code on your PC to immediately open the dashboard on your phone's browser (no login required).
+- **📱 Mobile Screen Rotation Optimization**: Auto-adapts viewport seamlessly when rotating between portrait and landscape modes without shrinking or UI distortion.
 - **🔍 Pre-Approval Git Diff Review**: When Claude requests permission to modify files, expand the unified diff (`+N`, `-N`) on your phone to inspect changes before tapping **[Approve]**.
 - **🎙️ Voice-to-Prompt Instructions**: Tap the microphone on mobile to dictate instructions; speech is transcribed in real-time and delivered to Claude.
 - **Seamless Context Resumption**: Send a follow-up instruction to an idle session, and it wakes up in the exact same conversation context.
@@ -115,7 +117,7 @@
 ### 6. ⚙️ Lightweight, Native Windows Performance
 - **Standalone Transparent Settings**: Right-click the system tray to open a lightweight 720×640 modal without loading the main dashboard.
 - **Zero-Idle CPU Footprint**: Efficient 0.7s delta parsing uses 0% CPU when sessions are idle.
-- **45 Passing Automated Unit Tests**: Complete xUnit test suite ensuring rendering, hook dispatch, encryption, virtual wide layout, and window mode switching integrity.
+- **52 Passing Automated Unit Tests**: Complete xUnit test suite ensuring rendering, hook dispatch, encryption, virtual wide layout, and window mode switching integrity.
 
 ---
 

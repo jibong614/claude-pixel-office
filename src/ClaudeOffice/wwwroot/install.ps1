@@ -47,7 +47,7 @@ try {
 }
 
 if (-not $zipUrl) {
-    $zipUrl = "https://github.com/$repo/releases/download/v1.9.15/ClaudePixelOffice-v1.9.15-win-x64.zip"
+    $zipUrl = "https://github.com/$repo/releases/download/v1.9.19/ClaudePixelOffice-v1.9.19-win-x64.zip"
 }
 
 Write-Host "다운로드 버전: $ver" -ForegroundColor Green
