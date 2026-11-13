@@ -2121,6 +2121,19 @@ body.widget-window .cg-step, body.pet-window .cg-step { padding: 6px 8px; gap: 7
 }
 .seg button:hover { color: var(--text); }
 .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+.seg.seg-wrap {
+  flex-wrap: wrap;
+  border-radius: 10px;
+  gap: 5px;
+  padding: 4px;
+}
+.seg.seg-wrap button {
+  flex: 1 1 calc(33.33% - 6px);
+  min-width: 105px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
 .stepper button:focus-visible, .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* 휴대폰 보기: PC가 꺼졌거나 소식이 없을 때 — 지난 모습이라는 걸 알게 흐리게 */

@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.21';
+const PAGE_VERSION = '1.9.22';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -775,7 +775,6 @@ function onSavedShare(saved) {
   refreshSettings();
   if (WIDGET_WINDOW || petOn()) renderPet();
   if (appMode === 'office') renderCleanOffice();
-  if (!WIDGET_WINDOW) shareToApp();
 }
 
 /** 설정 초기화(앱이 확인을 받은 뒤): 화면 설정을 지우고 다시 읽는다. 별명·메모·사무실 이름·팀 이름·순서는 남긴다(사람이 쓴 것). */
@@ -1743,6 +1742,7 @@ function getPrimaryCatType() {
 }
 
 function setPrimaryCatType(type) {
+  if (officeCatState.primaryCat === type) return;
   officeCatState.primaryCat = type;
   saveOfficeCatState();
   if (!REMOTE) shareToApp();
@@ -13025,7 +13025,8 @@ const RENDER = {
 
   choice(it, row) {
     row.classList.add('stack');
-    const seg = elem('div', 'seg');
+    const isWrap = it.wrap || (it.options && it.options.length > 4);
+    const seg = elem('div', 'seg' + (isWrap ? ' seg-wrap' : ''));
     const buttons = it.options.map(([value, label]) => {
       const b = elem('button', '', label);
       b.addEventListener('click', () => it.set(value));

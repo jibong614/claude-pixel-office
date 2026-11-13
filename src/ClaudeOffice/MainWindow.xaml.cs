@@ -442,7 +442,7 @@ public partial class MainWindow : Window
 
         {
 
-            _settingsWindow = new SettingsWindow(VirtualHost, FindWebRoot(), e => OnWebMessage(null, e));
+            _settingsWindow = new SettingsWindow(VirtualHost, FindWebRoot(), e => OnWebMessage(_settingsWindow, e));
 
         }
 
@@ -467,7 +467,7 @@ public partial class MainWindow : Window
         if (App.Settings.Pet)
         {
             if (_widgetWindow is null)
-                _widgetWindow = new WidgetWindow(VirtualHost, FindWebRoot(), e => OnWebMessage(null, e), () => SetPet(false, null));
+                _widgetWindow = new WidgetWindow(VirtualHost, FindWebRoot(), e => OnWebMessage(_widgetWindow, e), () => SetPet(false, null));
             _widgetWindow.ApplyBackdrop(App.Settings.PetNoBg);
             if (!_widgetWindow.IsVisible)
             {
@@ -1062,16 +1062,24 @@ public partial class MainWindow : Window
                         var json = share.GetRawText();
                         ApplyShare(json);
                         SaveShare(json);
-                        _widgetWindow?.Post("{\"type\":\"share\",\"data\":" + json + "}");
-                        _settingsWindow?.Post("{\"type\":\"share\",\"data\":" + json + "}");
+                        if (!ReferenceEquals(sender, _widgetWindow))
+                            _widgetWindow?.Post("{\"type\":\"share\",\"data\":" + json + "}");
+                        if (!ReferenceEquals(sender, _settingsWindow))
+                            _settingsWindow?.Post("{\"type\":\"share\",\"data\":" + json + "}");
+                        if (sender is not (Microsoft.Web.WebView2.Core.CoreWebView2 or Microsoft.Web.WebView2.Wpf.WebView2) && !ReferenceEquals(sender, Web) && _pageReady)
+                            Web.CoreWebView2?.PostWebMessageAsJson("{\"type\":\"share\",\"data\":" + json + "}");
                     }
                     break;
                 case "gender-update":
                     {
                         var gVal = root.TryGetProperty("gender", out var g) ? g.GetString() : null;
                         var msg = JsonSerializer.Serialize(new { type = "gender-update", gender = gVal });
-                        _widgetWindow?.Post(msg);
-                        _settingsWindow?.Post(msg);
+                        if (!ReferenceEquals(sender, _widgetWindow))
+                            _widgetWindow?.Post(msg);
+                        if (!ReferenceEquals(sender, _settingsWindow))
+                            _settingsWindow?.Post(msg);
+                        if (sender is not (Microsoft.Web.WebView2.Core.CoreWebView2 or Microsoft.Web.WebView2.Wpf.WebView2) && !ReferenceEquals(sender, Web) && _pageReady)
+                            Web.CoreWebView2?.PostWebMessageAsJson(msg);
                     }
                     break;
                 case "change-app-icon":

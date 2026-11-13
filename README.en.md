@@ -103,7 +103,8 @@
 - **3-Tier Responsive Scaling (Large 360px · Medium 300px · Small 260px)**: Fonts and buttons scale proportionally with an optimized, snappy combo switcher.
 - **Ultra-Slim Dynamic Island (MiniBar)**: Floats at the top as a 44px capsule that expands on hover with one-click terminal jump, emergency stop, and widget restore (`🪟` / `💼`) buttons.
 - **🐾 Shimeji Wide Walk Mode & 🐱⭐ Companion Cat System**:
-  - Agents step away from their desks to freely roam the bottom of your screen (looking around, sipping coffee, resting sitting down, stretching, synchronized jumping).
+  - Agents step away from their desks to freely roam the bottom of your screen with 10 healing motions (waving 👋, thinking 💡, humming 🎵, sipping coffee, sitting down, stretching, jumping) at a calm 13.5px/s pace.
+  - **Random Walking & Action Chaining**: Pauses naturally in the middle of your screen for 1.8~4.2s bursts and chains multiple idle actions (35% probability) instead of repetitive wall-to-wall bouncing.
   - **Designate Companion Cat**: Pick any adopted cat in the Shop (`☆ Set Companion` button) or Settings tab to accompany you on top of the MiniWidget monitor and in Walk Mode.
   - **Monitor Top Companion Cat**: Loafs on top of the monitor, lies belly-down gazing into the screen, swipes with its paw following your mouse cursor, grooms, sleeps, and purrs when clicked!
   - **Walk Mode Petting Interaction (`pet_cat`)**: Minime occasionally pauses, crouches down, and **gently pets the purring cat** with happy squinting eyes, rosy blushing cheeks, and floating hearts (`💕`). Clicking on the walking cat also immediately triggers petting!
