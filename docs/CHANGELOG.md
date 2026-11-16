@@ -2,6 +2,13 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.37 — 2026-11-16
+- **✨ Google Antigravity 실시간 대화/작업 감시 엔진 탑재 & 모바일 zzz(수면) 오표시 해결**:
+  - `TranscriptWatcher`에 Antigravity 대화 로그(`~/.gemini/antigravity/brain/**/transcript.jsonl`) 실시간 자동 감시 기능 추가
+  - `TranscriptParser`에 Antigravity JSONL 스키마(`USER_INPUT`, `PLANNER_RESPONSE`, `tool_calls`, `thinking`) 전용 파서 및 상태 매핑 구현
+  - `run_command`(⌨️ 명령 실행), `write_file`/`edit_file`(✏️ 코드 작성), `read_file`(📄 파일 읽기), `search_web`(🌐 웹 검색), `thinking`(💡 생각 중) 등 실제 작업 내용이 실시간 말풍선 및 상태로 반영
+  - 5분간 활동 보고 부재 시 발생하던 자동 수면(`zzz`) 전환을 방지하고, Antigravity가 작업 중일 때 데스크톱 사무실·위젯·모바일에서 실시간 작업 상태가 즉각 동기화되도록 개선
+
 ## 1.9.36 — 2026-11-16
 - **⚡ 모바일 원격 외부 AI(Antigravity 등) 지시 전달 스레드 안정성 및 큐 보호**:
   - `RemoteHub.Say`에서 `InstructionReceivedForExternalAi` 이벤트를 `Notify()`보다 먼저 호출하고 예외 방어(`try-catch`) 적용

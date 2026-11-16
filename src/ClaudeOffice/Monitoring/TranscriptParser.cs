@@ -43,6 +43,13 @@ internal static partial class TranscriptParser
         var r = doc.RootElement;
         if (r.ValueKind != JsonValueKind.Object) return;
 
+        // Antigravity JSONL 로그 검사: step_index 또는 source 필드 존재 여부
+        if (r.TryGetProperty("step_index", out _) || (r.TryGetProperty("source", out var src) && src.GetString() is "MODEL" or "USER_EXPLICIT" or "SYSTEM"))
+        {
+            ApplyAntigravity(s, r);
+            return;
+        }
+
         var type = Str(r, "type");
         if (type is null) return;
         var ts = Time(r) ?? s.FileWriteUtc;
@@ -276,7 +283,7 @@ internal static partial class TranscriptParser
 
     internal static DateTime? Time(JsonElement r)
     {
-        var s = Str(r, "timestamp");
+        var s = Str(r, "timestamp") ?? Str(r, "created_at");
         return s != null && DateTime.TryParse(s, CultureInfo.InvariantCulture,
             DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var d) ? d : null;
     }
@@ -293,5 +300,137 @@ internal static partial class TranscriptParser
             if (t != null) return t;
         }
         return null;
+    }
+
+    private static void ApplyAntigravity(TranscriptState s, JsonElement r)
+    {
+        s.Seen = true;
+        s.Entrypoint = "antigravity";
+        var ts = Time(r) ?? s.FileWriteUtc;
+        if (ts > s.LastEventUtc) s.LastEventUtc = ts;
+
+        var type = Str(r, "type") ?? "";
+        var source = Str(r, "source") ?? "";
+        var status = Str(r, "status") ?? "";
+
+        long inTok = 0, outTok = 0, cacheRead = 0;
+        if (r.TryGetProperty("input_tokens", out var inEl) && inEl.TryGetInt64(out var iv)) inTok = iv;
+        if (r.TryGetProperty("output_tokens", out var outEl) && outEl.TryGetInt64(out var ov)) outTok = ov;
+        if (r.TryGetProperty("cache_read_tokens", out var crEl) && crEl.TryGetInt64(out var crv)) cacheRead = crv;
+
+        if (type == "USER_INPUT" || source == "USER_EXPLICIT")
+        {
+            var content = Str(r, "content") ?? "";
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                var prompt = content;
+                var startTag = "<USER_REQUEST>";
+                var endTag = "</USER_REQUEST>";
+                var si = content.IndexOf(startTag, StringComparison.OrdinalIgnoreCase);
+                if (si >= 0)
+                {
+                    var ei = content.IndexOf(endTag, si + startTag.Length, StringComparison.OrdinalIgnoreCase);
+                    if (ei > si)
+                    {
+                        prompt = content.Substring(si + startTag.Length, ei - si - startTag.Length).Trim();
+                    }
+                }
+                prompt = CleanPrompt(prompt) ?? prompt.Trim();
+                s.LastPrompt = prompt;
+                s.BaseActivity = Activity.Thinking;
+                s.BaseIcon = "💭";
+                s.BaseText = L.T("생각 중", "Thinking");
+                s.BaseSinceUtc = ts;
+                s.Log(ts, "📨", L.T("지시: ", "Prompt: ") + ToolCatalog.Clip(prompt, 60));
+                s.Today.AddAntigravity("USER_INPUT", ts, null, 0, 0, 0);
+            }
+            return;
+        }
+
+        if (type == "PLANNER_RESPONSE" || source == "MODEL")
+        {
+            string? firstToolName = null;
+            if (r.TryGetProperty("tool_calls", out var toolCalls) && toolCalls.ValueKind == JsonValueKind.Array && toolCalls.GetArrayLength() > 0)
+            {
+                foreach (var tc in toolCalls.EnumerateArray())
+                {
+                    var name = Str(tc, "name") ?? "tool";
+                    firstToolName ??= name;
+                    string toolDesc = name;
+                    Activity act = Activity.Working;
+                    string icon = "✨";
+
+                    if (tc.TryGetProperty("args", out var args) && args.ValueKind == JsonValueKind.Object)
+                    {
+                        if (name == "run_command")
+                        {
+                            act = Activity.Running;
+                            icon = "⌨️";
+                            toolDesc = Str(args, "toolSummary") ?? Str(args, "CommandLine") ?? L.T("명령 실행", "Running command");
+                        }
+                        else if (name is "write_file" or "edit_file")
+                        {
+                            act = Activity.Writing;
+                            icon = "✏️";
+                            var p = Str(args, "Path") ?? "";
+                            toolDesc = (!string.IsNullOrWhiteSpace(p) ? System.IO.Path.GetFileName(p) + " " : "") + L.T("작성 중", "Writing");
+                        }
+                        else if (name == "read_file")
+                        {
+                            act = Activity.Reading;
+                            icon = "📄";
+                            var p = Str(args, "Path") ?? "";
+                            toolDesc = (!string.IsNullOrWhiteSpace(p) ? System.IO.Path.GetFileName(p) + " " : "") + L.T("읽는 중", "Reading");
+                        }
+                        else if (name == "search_web")
+                        {
+                            act = Activity.Browsing;
+                            icon = "🌐";
+                            toolDesc = Str(args, "query") ?? L.T("웹 검색", "Web search");
+                        }
+                        else
+                        {
+                            act = Activity.Working;
+                            icon = "✨";
+                            toolDesc = L.T("도구 실행: ", "Tool: ") + name;
+                        }
+                    }
+
+                    s.BaseActivity = act;
+                    s.BaseIcon = icon;
+                    s.BaseText = toolDesc;
+                    s.BaseSinceUtc = ts;
+                    s.Log(ts, icon, ToolCatalog.Clip(toolDesc, 60));
+                }
+            }
+            else
+            {
+                if (r.TryGetProperty("thinking", out var thinking) && thinking.ValueKind == JsonValueKind.String)
+                {
+                    s.LastThinking = ToolCatalog.Clip(thinking.GetString(), 200);
+                    s.BaseActivity = Activity.Thinking;
+                    s.BaseIcon = "💡";
+                    s.BaseText = L.T("생각 중", "Thinking");
+                    s.BaseSinceUtc = ts;
+                }
+
+                if (status == "DONE")
+                {
+                    s.BaseActivity = Activity.Idle;
+                    s.BaseIcon = "✨";
+                    s.BaseText = L.T("답변 완료", "Response complete");
+                    s.BaseSinceUtc = ts;
+
+                    var content = Str(r, "content");
+                    if (!string.IsNullOrWhiteSpace(content))
+                    {
+                        s.LastReply = ToolCatalog.Clip(content, 300);
+                    }
+                    s.Log(ts, "✅", L.T("답변 완료", "Response complete"));
+                }
+            }
+
+            s.Today.AddAntigravity("PLANNER_RESPONSE", ts, firstToolName, inTok, outTok, cacheRead);
+        }
     }
 }

@@ -82,6 +82,41 @@ internal sealed class DayStats
         }
     }
 
+    /// <summary>Antigravity 대화 기록 한 줄을 근무 일지 및 토큰 통계에 반영한다.</summary>
+    public void AddAntigravity(string type, DateTime ts, string? toolName, long inTok, long outTok, long cacheRead)
+    {
+        var day = ts.ToLocalTime().Date;
+        if (day > _latestDay)
+        {
+            _latestDay = day;
+            var cutoff = _latestDay.AddDays(-KeepDays);
+            foreach (var old in _days.Keys.Where(k => k < cutoff).ToList())
+                _days.Remove(old);
+        }
+
+        if (_latestDay != default && day < _latestDay.AddDays(-KeepDays)) return;
+
+        if (!_days.TryGetValue(day, out var b))
+            _days[day] = b = new Bucket();
+
+        bool prompt = type == "USER_INPUT";
+        if (prompt) b.Prompts++;
+        else if (b.LastUtc != default && ts > b.LastUtc && ts - b.LastUtc <= MaxGap)
+            b.WorkMs += (long)(ts - b.LastUtc).TotalMilliseconds;
+        if (ts > b.LastUtc) b.LastUtc = ts;
+
+        if (!string.IsNullOrWhiteSpace(toolName))
+            b.Tools[toolName] = b.Tools.GetValueOrDefault(toolName) + 1;
+
+        if (inTok > 0 || outTok > 0 || cacheRead > 0)
+        {
+            var id = ts.Ticks.ToString();
+            b.Messages[id] = new Usage(inTok, outTok, cacheRead, 0);
+            long ctx = inTok + cacheRead;
+            if (ctx > 0) LastContextTokens = ctx;
+        }
+    }
+
     /// <summary>사람이 쓴 지시인지(도구 결과·스킬 본문·압축 요약이 아닌 user 줄).</summary>
     private static bool IsPrompt(JsonElement r)
     {

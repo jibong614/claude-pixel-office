@@ -330,21 +330,26 @@ public sealed class TranscriptWatcher : IDisposable
 
     private void Discover()
     {
-        if (!Directory.Exists(_root)) return;
         var cutoff = DateTime.UtcNow - Window;
-
-        foreach (var projDir in SafeDirs(_root))
-            foreach (var fi in SafeFileInfos(projDir, "*.jsonl"))
-                Track(fi, null, cutoff);
-
-        // 인턴(서브에이전트)은 사무실에 있는 세션 것만 찾는다: <프로젝트>\<세션ID>\subagents\agent-*.jsonl
-        foreach (var s in _states.Values.Where(x => x.ParentId == null).ToList())
+        if (Directory.Exists(_root))
         {
-            var subDir = Path.Combine(Path.GetDirectoryName(s.FilePath)!, s.Id, "subagents");
-            if (!Directory.Exists(subDir)) continue;
-            foreach (var fi in SafeFileInfos(subDir, "agent-*.jsonl"))
-                Track(fi, s.Id, cutoff);
+            foreach (var projDir in SafeDirs(_root))
+                foreach (var fi in SafeFileInfos(projDir, "*.jsonl"))
+                    Track(fi, null, cutoff);
+
+            // 인턴(서브에이전트)은 사무실에 있는 세션 것만 찾는다: <프로젝트>\<세션ID>\subagents\agent-*.jsonl
+            foreach (var s in _states.Values.Where(x => x.ParentId == null && !string.IsNullOrEmpty(x.FilePath)).ToList())
+            {
+                var dir = Path.GetDirectoryName(s.FilePath);
+                if (string.IsNullOrEmpty(dir)) continue;
+                var subDir = Path.Combine(dir, s.Id, "subagents");
+                if (!Directory.Exists(subDir)) continue;
+                foreach (var fi in SafeFileInfos(subDir, "agent-*.jsonl"))
+                    Track(fi, s.Id, cutoff);
+            }
         }
+
+        DiscoverAntigravity(cutoff);
 
         // 지워졌거나 오래된 파일, 소속 세션이 사라진 인턴은 정리 (가상 세션은 파일 검사 제외)
         var sessionIds = _states.Values.Where(x => x.ParentId == null).Select(x => x.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -509,5 +514,64 @@ public sealed class TranscriptWatcher : IDisposable
     {
         try { return new DirectoryInfo(path).EnumerateFiles(pattern).ToList(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return Array.Empty<FileInfo>(); }
+    }
+
+    private void DiscoverAntigravity(DateTime cutoff)
+    {
+        try
+        {
+            var user = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var brainDir = Path.Combine(user, ".gemini", "antigravity", "brain");
+            if (!Directory.Exists(brainDir)) return;
+
+            // 가장 최근에 활동한 대화 기록 검색
+            FileInfo? latest = null;
+            foreach (var convDir in SafeDirs(brainDir))
+            {
+                var logPath = Path.Combine(convDir, ".system_generated", "logs", "transcript.jsonl");
+                if (!File.Exists(logPath)) continue;
+                var fi = new FileInfo(logPath);
+                if (fi.LastWriteTimeUtc < cutoff) continue;
+                if (latest == null || fi.LastWriteTimeUtc > latest.LastWriteTimeUtc)
+                    latest = fi;
+            }
+
+            if (latest == null) return;
+            var file = latest.FullName;
+
+            if (!_states.TryGetValue(file, out var s))
+            {
+                // 기존에 출근해 있는 antigravity 직원이 있으면 그 직원에 파일 연결 (ID 일관성 유지)
+                var existing = _states.Values.FirstOrDefault(x => string.Equals(x.Entrypoint, "antigravity", StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    var oldKey = _states.FirstOrDefault(kv => kv.Value == existing).Key;
+                    if (oldKey != null && oldKey != file) _states.Remove(oldKey);
+                    existing.FilePath = file;
+                    existing.FileWriteUtc = latest.LastWriteTimeUtc;
+                    existing.IsVirtual = false;
+                    s = existing;
+                }
+                else
+                {
+                    var id = "mcp_" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("virtual:mcp:antigravity:antigravity project:메인")))[..8].ToLowerInvariant();
+                    s = new TranscriptState(file, id, null)
+                    {
+                        Entrypoint = "antigravity",
+                        StartedUtc = latest.CreationTimeUtc,
+                        FileWriteUtc = latest.LastWriteTimeUtc,
+                        Seen = true,
+                        CustomTitle = "Antigravity",
+                        Cwd = "Antigravity Project",
+                    };
+                }
+                _states[file] = s;
+            }
+            else
+            {
+                s.FileWriteUtc = latest.LastWriteTimeUtc;
+            }
+        }
+        catch { }
     }
 }

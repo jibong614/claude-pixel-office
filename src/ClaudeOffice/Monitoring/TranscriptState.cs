@@ -46,7 +46,7 @@ internal sealed class TranscriptState
         ParentId = parentId;
     }
 
-    public string FilePath { get; }
+    public string FilePath { get; set; }
     public string Id { get; }
 
     /// <summary>인턴(서브에이전트)이면 소속 세션 ID, 일반 세션이면 null.</summary>
