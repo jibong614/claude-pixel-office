@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.30';
+const PAGE_VERSION = '1.9.31';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -9595,6 +9595,23 @@ if (btnTestClockInGpt) {
 // 📢 업데이트 뉴스 (Changelog & Announcement Board)
 const UPDATE_NEWS = [
   {
+    id: 'v1.9.31',
+    ver: 'v1.9.31',
+    date: '2026-11-16',
+    title: '모바일 원격 지시 외부 AI 직접 전달 & 고속 인메모리 MCP 디스패치',
+    enTitle: 'Mobile Remote Instruction Direct Delivery to External AI & In-Memory MCP Dispatch',
+    items: [
+      '📱 모바일 원격에서 Antigravity, Cursor 등 외부 AI 세션으로 보낸 지시를 PC 작업창에 즉시 자동 포커스 및 직접 입력(Ctrl+V/Enter)',
+      '⚡ HookServer 로컬 HTTP MCP 처리 시 루프백 소켓 호출 제거 및 100% 인메모리 고속 디스패치 연동',
+      '💬 외부 AI 세션 선택 시 모바일 화면에서 지시 입력창 상시 활성화 및 비상정지 버튼 오표시 해결'
+    ],
+    enItems: [
+      '📱 Direct auto-focus and keystroke delivery (Ctrl+V/Enter) for mobile remote instructions to external AI windows',
+      '⚡ Zero-socket 100% in-memory dispatch for HookServer local HTTP MCP protocol',
+      '💬 Always-active instruction input box for external AI on mobile and fixed emergency stop display'
+    ]
+  },
+  {
     id: 'v1.9.30',
     ver: 'v1.9.30',
     date: '2026-11-16',
@@ -16034,7 +16051,7 @@ function renderRemote(s) {
     });
     $('rStatus').insertAdjacentElement('afterend', rStopBtn);
   }
-  const isWorking = (actOf(s).busy || asks.length > 0) && s.act !== 'away';
+  const isWorking = !isVirtual && (actOf(s).busy || asks.length > 0) && s.act !== 'away';
   rStopBtn.hidden = !isWorking;
 
   // 승인·질문 요청: 칸은 요청마다 한 번만 만든다
@@ -16049,8 +16066,8 @@ function renderRemote(s) {
   }
   for (const [id, at] of answered) if (Date.now() - at > 120000) answered.delete(id);
 
-  // 지시 보내기: PC 본창에서는 늘 보이고, 휴대폰에서는 자리 비움이거나 PC를 아무도 안 쓸 때 보인다
-  $('rSayWrap').hidden = REMOTE && !(away || idle);
+  // 지시 보내기: PC 본창에서는 늘 보이고, 휴대폰에서는 자리 비움이거나 PC를 아무도 안 쓸 때 보인다 (외부 AI는 항상 가능)
+  $('rSayWrap').hidden = REMOTE && !(away || idle) && !isVirtual;
   if (sayFor !== s.id) { sayFor = s.id; sayEl.value = ''; }
   $('rQuickChips')?.remove();
   if (remoteNote && r.said && r.said.t > remoteNote.at && remoteNote.sid === s.id && (!isVirtual || r.said.state === 'delivered')) remoteNote = null;   // PC가 처리했다

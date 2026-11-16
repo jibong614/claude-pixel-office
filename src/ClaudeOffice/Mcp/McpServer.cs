@@ -88,7 +88,11 @@ internal static class McpServer
     /// 단일 JSON-RPC 요청 문자열을 받아 처리 후 응답 JSON 문자열을 돌려준다 (단위 테스트 지원).
     /// 알림(id가 없는 메시지)인 경우 null을 돌려준다.
     /// </summary>
-    public static string? ProcessRequest(string json, Func<JsonObject, (bool, string)>? customSender = null)
+    public static string? ProcessRequest(
+        string json,
+        Func<JsonObject, (bool, string)>? customSender = null,
+        Func<JsonObject, (bool, string)>? customInstructionChecker = null,
+        Func<(bool, string)>? customStatusProvider = null)
     {
         JsonNode? parsed;
         try
@@ -113,7 +117,7 @@ internal static class McpServer
             "initialize" => BuildInitializeResponse(id, req["params"] as JsonObject),
             "ping" => BuildResult(id, new JsonObject()),
             "tools/list" => BuildToolsListResponse(id),
-            "tools/call" => BuildToolsCallResponse(id, req["params"] as JsonObject, customSender),
+            "tools/call" => BuildToolsCallResponse(id, req["params"] as JsonObject, customSender, customInstructionChecker, customStatusProvider),
             _ => BuildError(id, -32601, $"Method not found: {method}")
         };
     }
@@ -231,7 +235,12 @@ internal static class McpServer
         return BuildResult(id, result);
     }
 
-    private static string BuildToolsCallResponse(object id, JsonObject? @params, Func<JsonObject, (bool, string)>? customSender)
+    private static string BuildToolsCallResponse(
+        object id,
+        JsonObject? @params,
+        Func<JsonObject, (bool, string)>? customSender,
+        Func<JsonObject, (bool, string)>? customInstructionChecker = null,
+        Func<(bool, string)>? customStatusProvider = null)
     {
         var toolName = @params?["name"]?.ToString();
         var arguments = @params?["arguments"] as JsonObject ?? new JsonObject();
@@ -245,13 +254,15 @@ internal static class McpServer
 
         if (toolName == "office_check_instruction")
         {
-            var (ok, resp) = CheckInstructionFromOffice(arguments);
+            var checker = customInstructionChecker ?? CheckInstructionFromOffice;
+            var (ok, resp) = checker(arguments);
             return BuildToolResult(id, resp, !ok);
         }
 
         if (toolName == "office_get_status")
         {
-            var (ok, resp) = GetOfficeStatus();
+            var provider = customStatusProvider ?? GetOfficeStatus;
+            var (ok, resp) = provider();
             return BuildToolResult(id, resp, !ok);
         }
 

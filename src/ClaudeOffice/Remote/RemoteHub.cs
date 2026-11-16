@@ -63,6 +63,9 @@ internal sealed class RemoteHub
     /// <summary>휴대폰에서 세션 긴급 작업 중단(Ctrl+C)을 요청했을 때 발생한다.</summary>
     public event Action<string>? StopRequested;
 
+    /// <summary>외부 AI(MCP) 세션으로 사용자 지시가 도착했을 때(모바일 원격 포함) 발생한다.</summary>
+    public event Action<string, string>? InstructionReceivedForExternalAi;
+
     /// <summary>원격 훅이 Claude Code 설정에 들어 있는지 — 없으면 원격은 꺼진 것.</summary>
     public static bool Installed => HookSetup.IsRemoteInstalled();
 
@@ -416,11 +419,16 @@ internal sealed class RemoteHub
     {
         text = text.Trim();
         if (text.Length > max) text = text[..max];
+        string? triggerExternalSid = null;
+        string? triggerExternalText = null;
         lock (_lock)
         {
-            // 자리 비움이 아니어도 PC 를 아무도 안 쓰고 있으면 보내는 순간 켠다(PC 에서 따로 켜지 않아도 되게)
-            if (!_away && _pcIdle) TurnAwayOn("phone-say");
-            if (!_away)
+            bool isExternal = sid.StartsWith("mcp_", StringComparison.OrdinalIgnoreCase);
+
+            // 자리 비움이 아니어도 PC 를 아무도 안 쓰고 있거나 외부 AI 세션이면 보내는 순간 켠다
+            if ((!_away && _pcIdle) || isExternal) TurnAwayOn("phone-say");
+
+            if (!_away && !isExternal)
             {
                 _said[sid] = new Said(text, DateTime.UtcNow, "dropped");
                 Log("drop", sid, text);
@@ -436,11 +444,22 @@ internal sealed class RemoteHub
                 // 지금 일하는 중이거나 아직 훅이 붙지 않은 세션 — 일을 마치고 다시 붙는 순간 건넨다
                 if (!_queued.TryGetValue(sid, out var list)) _queued[sid] = list = [];
                 if (list.Count < 5) list.Add(new QueuedMsg(text, FromPc: false));
-                _said[sid] = new Said(string.Join("\n\n", list.Select(x => x.Text)), DateTime.UtcNow, "queued");
+                _said[sid] = new Said(string.Join("\n\n", list.Select(x => x.Text)), DateTime.UtcNow, isExternal ? "delivered" : "queued");
                 Log("queue", sid, text);
+
+                if (isExternal)
+                {
+                    triggerExternalSid = sid;
+                    triggerExternalText = text;
+                }
             }
         }
         Notify();
+
+        if (triggerExternalSid != null && triggerExternalText != null)
+        {
+            InstructionReceivedForExternalAi?.Invoke(triggerExternalSid, triggerExternalText);
+        }
     }
 
     /// <summary>

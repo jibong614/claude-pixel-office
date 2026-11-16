@@ -2,6 +2,17 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.31 — 2026-11-16
+- **📱 모바일 원격 지시 외부 AI 직접 전달 연동 (`InstructionReceivedForExternalAi`)**:
+  - 스마트폰 모바일 화면에서 Google Antigravity, Cursor, Windsurf 등 외부 AI 세션으로 지시를 보낼 때 PC가 비어있지 않더라도 지시가 드롭되지 않고 즉시 수신 처리되도록 개선
+  - 수신 즉시 PC 작업 창 자동 포커스 및 클립보드 복사 후 `Ctrl+V` + `Enter` 키 스트로크를 주입하여 대상 AI 에이전트로 지시 직접 전달
+- **⚡ HookServer 로컬 HTTP MCP 프로토콜 100% 인메모리 고속 디스패치**:
+  - `HookServer` 내부에서 `/mcp` JSON-RPC 도구 호출을 처리할 때 기존 루프백 HTTP 소켓을 재호출하여 발생하던 소켓 데드락 및 '실행되어 있지 않습니다' 오류 완전 해결
+  - `McpServer.ProcessRequest`에 인메모리 델리게이트(`customSender`, `customInstructionChecker`, `customStatusProvider`)를 연동하여 지시 큐 확인 및 상태 조회를 0ms로 즉각 응답
+- **💬 모바일 화면 외부 AI 세션 지시창 상시 노출 & 긴급 작업 중단 버튼 오표시 개선**:
+  - 외부 AI 세션(`isVirtual`)의 경우 PC 사용 여부와 무관하게 모바일에서 언제든 지시를 보낼 수 있도록 입력창 상시 활성화
+  - 가상 AI 세션에서 불필요하게 [🛑 긴급 작업 중단] 버튼이 노출되어 입력을 방해하던 현상 수정
+
 ## 1.9.30 — 2026-11-16
 - **🛑 작업 트레이 [끝내기] 시 프로세스 즉시 완전 종료 보장 (`Environment.Exit`)**:
   - 트레이 아이콘 우클릭 후 [끝내기] 클릭 시 `ExitApp()` 및 `OnExit`에서 `Environment.Exit(0)`을 호출하여, 백그라운드 스레드나 WebView2 대기로 인한 좀비 프로세스 잔여 현상 원천 차단

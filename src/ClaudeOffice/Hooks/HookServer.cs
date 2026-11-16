@@ -221,8 +221,84 @@ internal sealed class HookServer : IDisposable
 
             if (isMcpRpc)
             {
+                static string? GetArg(System.Text.Json.Nodes.JsonObject o, params string[] keys)
+                {
+                    foreach (var k in keys)
+                    {
+                        if (o.TryGetPropertyValue(k, out var node) && node != null)
+                        {
+                            var s = node.ToString();
+                            if (!string.IsNullOrWhiteSpace(s)) return s.Trim();
+                        }
+                    }
+                    return null;
+                }
+
                 var rpcReqText = Encoding.UTF8.GetString(body);
-                var rpcRespText = Mcp.McpServer.ProcessRequest(rpcReqText);
+                var rpcRespText = Mcp.McpServer.ProcessRequest(
+                    rpcReqText,
+                    customSender: args =>
+                    {
+                        try
+                        {
+                            var proj = GetArg(args, "project_name", "projectName") ?? "Antigravity Project";
+                            var sess = GetArg(args, "session_name", "sessionName") ?? "메인";
+                            var st = GetArg(args, "status") ?? "idle";
+                            var msg = GetArg(args, "message");
+                            var detail = GetArg(args, "detail");
+                            var ai = GetArg(args, "ai", "partner_ai", "provider") ?? "antigravity";
+                            var aiClean = ai.ToLowerInvariant();
+                            McpUpdated?.Invoke(new McpUpdateEvent(proj, sess, st, msg, detail, DateTime.UtcNow, aiClean));
+
+                            var projClean = proj.Trim();
+                            var sessClean = sess.Trim();
+                            var key = "virtual:mcp:" + aiClean + ":" + projClean.ToLowerInvariant() + ":" + sessClean.ToLowerInvariant();
+                            var hex = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+                            var sid = "mcp_" + hex.Substring(0, 8).ToLowerInvariant();
+                            Remote?.OnMcpReply(sid, !string.IsNullOrWhiteSpace(detail) ? detail : msg);
+                            var instruction = Remote?.PopPendingInstruction(sid, proj, sess, aiClean);
+
+                            return (true, instruction != null
+                                ? $"[상태 반영 완료] 📢 새 사용자 지시가 도착했습니다:\n\"{instruction}\"\n위 지시사항을 지금 수행하세요."
+                                : "[상태 반영 완료] 현재 작업 상태가 오피스에 정상 보고되었습니다.");
+                        }
+                        catch (Exception ex)
+                        {
+                            return (false, "상태 반영 오류: " + ex.Message);
+                        }
+                    },
+                    customInstructionChecker: args =>
+                    {
+                        try
+                        {
+                            var proj = GetArg(args, "project_name", "projectName");
+                            var sess = GetArg(args, "session_name", "sessionName");
+                            var ai = GetArg(args, "ai", "partner_ai", "provider") ?? "antigravity";
+                            var aiClean = ai.ToLowerInvariant();
+                            var projClean = !string.IsNullOrWhiteSpace(proj) ? proj.Trim() : "Antigravity";
+                            var sessClean = !string.IsNullOrWhiteSpace(sess) ? sess.Trim() : "메인";
+                            var key = "virtual:mcp:" + aiClean + ":" + projClean.ToLowerInvariant() + ":" + sessClean.ToLowerInvariant();
+                            var hex = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+                            var sid = "mcp_" + hex.Substring(0, 8).ToLowerInvariant();
+                            var instruction = Remote?.PopPendingInstruction(sid, proj, sess, aiClean);
+
+                            if (!string.IsNullOrWhiteSpace(instruction))
+                            {
+                                return (true, $"📢 [새로운 사용자 지시사항이 도착했습니다!]:\n\"{instruction}\"\n\n위 사용자 지시사항을 확인하고 지금 즉시 사용자의 요청을 수행하세요.");
+                            }
+                            return (true, "현재 대기 중인 사용자 지시사항이 없습니다.");
+                        }
+                        catch (Exception ex)
+                        {
+                            return (false, "지시 확인 오류: " + ex.Message);
+                        }
+                    },
+                    customStatusProvider: () =>
+                    {
+                        var summary = OfficeSummaryProvider?.Invoke() ?? "{}";
+                        return (true, summary);
+                    }
+                );
                 if (rpcRespText is null)
                 {
                     var accepted = Encoding.ASCII.GetBytes("HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");

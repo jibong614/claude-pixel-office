@@ -216,6 +216,14 @@ public partial class MainWindow : Window
         _remote.SetPet(App.Settings.Pet, App.Settings.PetSessionId);
         _hooks.Remote = _remote;
         _hooks.Received += ev => { if (ev.Event == "SessionEnd") _remote.OnSessionEnd(ev.SessionId); };
+        _remote.InstructionReceivedForExternalAi += (sid, text) =>
+        {
+            Dispatcher.BeginInvoke(async () =>
+            {
+                _watcher.ApplyVirtualInstruction(sid, text);
+                await DeliverToExternalAiWindowAsync(sid, text);
+            });
+        };
         _hooks.Start();
         _watcher.AttachHooks(_hooks);
         _watcher.SnapshotChanged += json =>
