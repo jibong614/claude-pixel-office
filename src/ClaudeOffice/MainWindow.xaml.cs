@@ -1809,9 +1809,15 @@ public partial class MainWindow : Window
 
         try
         {
+            _remote.Log("deliver-window", sid, $"target={targetProc}, hwnd=0x{bestHwnd:X}");
+
             await Dispatcher.InvokeAsync(() =>
             {
-                try { Clipboard.SetDataObject(text, true); } catch { }
+                for (int i = 0; i < 5; i++)
+                {
+                    try { Clipboard.SetDataObject(text, true); break; }
+                    catch { Thread.Sleep(30); }
+                }
             });
 
             uint targetThread = GetWindowThreadProcessId(bestHwnd, out _);
@@ -1822,10 +1828,6 @@ public partial class MainWindow : Window
 
             try
             {
-                // Alt 키를 가볍게 눌렀다 떼어 Windows 포그라운드 활성화 락 우회
-                keybd_event(0x12, 0, 0, UIntPtr.Zero);
-                keybd_event(0x12, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-
                 if (IsIconic(bestHwnd)) ShowWindow(bestHwnd, 9); // SW_RESTORE
                 ShowWindow(bestHwnd, 5); // SW_SHOW
                 SetForegroundWindow(bestHwnd);
@@ -1838,9 +1840,8 @@ public partial class MainWindow : Window
 
             await Task.Delay(250);
 
-            // Antigravity / Cursor / Windsurf: 먼저 Ctrl + L 로 AI 채팅/에이전트 입력창에 포커스를 맞춤
-            if (targetProc.Equals("Antigravity", StringComparison.OrdinalIgnoreCase) ||
-                targetProc.Equals("Cursor", StringComparison.OrdinalIgnoreCase) ||
+            // Cursor / Windsurf: 먼저 Ctrl + L 로 AI 채팅/에이전트 입력창에 포커스를 맞춤
+            if (targetProc.Equals("Cursor", StringComparison.OrdinalIgnoreCase) ||
                 targetProc.Equals("Windsurf", StringComparison.OrdinalIgnoreCase))
             {
                 keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);

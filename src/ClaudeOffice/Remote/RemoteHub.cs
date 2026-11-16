@@ -837,7 +837,7 @@ internal sealed class RemoteHub
     }
 
     /// <summary>원격 기록(remote.log): 언제 무엇을 받아 어떻게 했는지 — 지시·승인을 나중에 확인할 수 있게.</summary>
-    private void Log(string what, string sid, string text)
+    internal void Log(string what, string sid, string text)
     {
         if (_logPath is null) return;
         var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\t{what}\t{sid}\t{text.Replace("\r", " ").Replace("\n", " ")}\r\n";
