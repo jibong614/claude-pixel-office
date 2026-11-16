@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.34';
+const PAGE_VERSION = '1.9.35';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -12559,7 +12559,7 @@ function renderPet() {
   // 승인 요청 카드 (접혀 있어도 승인 요청이 오면 바로 보여 준다)
   const r = remoteOf(s.id) || {};
   const asks = r.asks || [];
-  petEl.classList.toggle('compact', compact && asks.length === 0 && otherWaiting.length === 0);
+  petEl.classList.toggle('compact', compact && asks.length === 0);
 
   const keep = new Set(asks.map((x) => x.id));
   for (const [id, el] of petAskEls) if (!keep.has(id) || el.dataset.sid !== s.id) { el.remove(); petAskEls.delete(id); }

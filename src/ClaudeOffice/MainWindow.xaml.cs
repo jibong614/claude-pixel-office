@@ -218,8 +218,10 @@ public partial class MainWindow : Window
         _hooks.Received += ev => { if (ev.Event == "SessionEnd") _remote.OnSessionEnd(ev.SessionId); };
         _remote.InstructionReceivedForExternalAi += (sid, text) =>
         {
+            _remote.Log("external-event", sid, text);
             Dispatcher.BeginInvoke(async () =>
             {
+                _remote.Log("external-begin", sid, text);
                 _watcher.ApplyVirtualInstruction(sid, text);
                 await DeliverToExternalAiWindowAsync(sid, text);
             });
@@ -1762,6 +1764,8 @@ public partial class MainWindow : Window
         }
         catch { }
 
+        _remote.Log("deliver-start", sid, $"target={targetProc}, pids={targetPids.Count}");
+
         EnumWindows((hWnd, _) =>
         {
             if (!IsWindowVisible(hWnd)) return true;
@@ -1805,6 +1809,7 @@ public partial class MainWindow : Window
             return true;
         }, IntPtr.Zero);
 
+        _remote.Log("deliver-end", sid, $"best=0x{bestHwnd:X}, score={bestScore}");
         if (bestHwnd == IntPtr.Zero) return;
 
         try

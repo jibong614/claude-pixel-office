@@ -2353,6 +2353,22 @@ body.widget-window #pet, body.pet-window #pet {
   font-size: 10px;
   color: #fff;
 }
+/* 접기(compact) 및 배경 투명(nobg) 모드에서는 상단 툴바(.pet-head)가 마우스 호버 시 top: 4px 에 나타나므로,
+   대기 중 전환 알림 배지(.pet-alert)가 툴바 아래(margin-top: 34px)에 자리잡아 서로 겹치거나 가리지 않게 한다 */
+#pet.compact > .pet-alert,
+#pet.nobg > .pet-alert {
+  margin-top: 34px !important;
+  position: relative !important;
+  z-index: 4 !important;
+}
+#pet.nobg .pet-alert:hover {
+  background: rgba(58, 40, 24, 0.98);
+  border-color: rgba(255, 195, 105, 0.9);
+}
+#pet.nobg .pet-alert:hover .go {
+  background: rgba(255, 179, 71, 0.45);
+  color: #fff;
+}
 /* 견본(--demo)이나 미리보기에서 화면 우측 하단에 띄울 때 */
 body.pet-float #pet {
   position: fixed;
@@ -4877,6 +4893,12 @@ body.widget-size-medium #pet:not(.pet-island) .pet-alert .go,
   font-size: 9px;
   padding: 1px 5px;
 }
+body.widget-size-medium #pet.compact > .pet-alert,
+body.widget-size-medium #pet.nobg > .pet-alert,
+#pet.size-medium.compact > .pet-alert,
+#pet.size-medium.nobg > .pet-alert {
+  margin-top: 30px !important;
+}
 
 body.widget-size-medium #pet:not(.pet-island) .pet-ask,
 #pet.size-medium:not(.pet-island) .pet-ask {
@@ -5035,6 +5057,12 @@ body.widget-size-small #pet:not(.pet-island) .pet-alert .go,
 #pet.size-small:not(.pet-island) .pet-alert .go {
   font-size: 8px;
   padding: 0.5px 4px;
+}
+body.widget-size-small #pet.compact > .pet-alert,
+body.widget-size-small #pet.nobg > .pet-alert,
+#pet.size-small.compact > .pet-alert,
+#pet.size-small.nobg > .pet-alert {
+  margin-top: 26px !important;
 }
 
 body.widget-size-small #pet:not(.pet-island) .pet-ask,
