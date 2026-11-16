@@ -1688,8 +1688,15 @@ public partial class MainWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
     private const byte VK_CONTROL = 0x11;
     private const byte VK_V = 0x56;
+    private const byte VK_L = 0x4C;
     private const byte VK_RETURN = 0x0D;
     private const uint KEYEVENTF_KEYUP = 0x0002;
 
@@ -1746,6 +1753,7 @@ public partial class MainWindow : Window
         EnumWindows((hWnd, _) =>
         {
             if (!IsWindowVisible(hWnd)) return true;
+            if (!GetWindowRect(hWnd, out var rc) || (rc.Right - rc.Left) < 300 || (rc.Bottom - rc.Top) < 200) return true;
             GetWindowThreadProcessId(hWnd, out uint pid);
             if (pid == 0 || pid == selfPid) return true;
             sb.Clear();
@@ -1764,6 +1772,9 @@ public partial class MainWindow : Window
                 score += 50;
             if (!string.IsNullOrWhiteSpace(cwd) && wTitle.Contains(cwd, StringComparison.OrdinalIgnoreCase))
                 score += 40;
+
+            int area = (rc.Right - rc.Left) * (rc.Bottom - rc.Top);
+            if (area > 300_000) score += 30;
 
             if (score > bestScore)
             {
@@ -1799,7 +1810,20 @@ public partial class MainWindow : Window
                 if (attached) AttachThreadInput(curThread, targetThread, false);
             }
 
-            await Task.Delay(220);
+            await Task.Delay(250);
+
+            // Antigravity / Cursor / Windsurf: 먼저 Ctrl + L 로 AI 채팅/에이전트 입력창에 포커스를 맞춤
+            if (targetProc.Equals("Antigravity", StringComparison.OrdinalIgnoreCase) ||
+                targetProc.Equals("Cursor", StringComparison.OrdinalIgnoreCase) ||
+                targetProc.Equals("Windsurf", StringComparison.OrdinalIgnoreCase))
+            {
+                keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_L, 0, 0, UIntPtr.Zero);
+                await Task.Delay(40);
+                keybd_event(VK_L, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                await Task.Delay(180);
+            }
 
             // Ctrl + V
             keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);

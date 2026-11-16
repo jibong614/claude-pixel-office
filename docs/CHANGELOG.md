@@ -2,6 +2,15 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.32 — 2026-11-16
+- **📱 모바일 지시 전송 후 "PC가 받는 중..." 무한 대기 현상 개선 (`office.js`)**:
+  - 모바일과 PC 간 미세한 시계 오차(NTP 드리프트)로 인해 지시가 정상 수신되었음에도 `r.said.t > remoteNote.at` 검증 실패로 30초간 안내 문구가 고정되던 문제 해결
+  - 지시 전송 즉시 가상 AI 세션의 상태를 낙관적(Optimistic)으로 갱신하고, 전송 텍스트 일치 또는 6초 타임아웃을 적용하여 최신 서버 상태(`✅ 지시 전달 완료`)가 즉시 반영되도록 개선
+  - `index.html`에 `office.js?v=1.9.32` 캐시 버스팅 파라미터 적용으로 모바일 브라우저의 구버전 JS 캐싱 방지
+- **🎯 외부 AI(Antigravity·Cursor·Windsurf) 채팅 입력창 정확한 자동 타겟팅 & 키 주입 강화 (`MainWindow.xaml.cs`)**:
+  - `DeliverToExternalAiWindowAsync`에서 Electron/Chromium의 0x0 또는 1x1 투명 더미 윈도우가 타겟으로 오선택되지 않도록 `GetWindowRect` 크기(최소 300x200 및 면적 기반 스코어링) 필터링 추가
+  - Antigravity, Cursor, Windsurf 활성화 시 에디터 코드가 아닌 AI 에이전트 채팅 입력창으로 즉시 포커스되도록 `Ctrl+L` 단축키 주입 후 `Ctrl+V` + `Enter` 전송 실행
+
 ## 1.9.31 — 2026-11-16
 - **📱 모바일 원격 지시 외부 AI 직접 전달 연동 (`InstructionReceivedForExternalAi`)**:
   - 스마트폰 모바일 화면에서 Google Antigravity, Cursor, Windsurf 등 외부 AI 세션으로 지시를 보낼 때 PC가 비어있지 않더라도 지시가 드롭되지 않고 즉시 수신 처리되도록 개선

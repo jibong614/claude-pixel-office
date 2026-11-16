@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.31';
+const PAGE_VERSION = '1.9.32';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -16070,9 +16070,19 @@ function renderRemote(s) {
   $('rSayWrap').hidden = REMOTE && !(away || idle) && !isVirtual;
   if (sayFor !== s.id) { sayFor = s.id; sayEl.value = ''; }
   $('rQuickChips')?.remove();
-  if (remoteNote && r.said && r.said.t > remoteNote.at && remoteNote.sid === s.id && (!isVirtual || r.said.state === 'delivered')) remoteNote = null;   // PC가 처리했다
-  $('rSaid').textContent = remoteNote && remoteNote.sid === s.id && Date.now() - remoteNote.at < 30000 ? remoteNote.text
-    : saidText(r.said, actOf(s).busy || asks.length > 0, isVirtual);
+  if (remoteNote && remoteNote.sid === s.id) {
+    const isMatch = r && r.said && (
+      (remoteNote.sentText && r.said.text && r.said.text.includes(remoteNote.sentText)) ||
+      (r.said.t && r.said.t >= remoteNote.at - 60000)
+    );
+    if (isMatch && (!isVirtual || r.said.state === 'delivered')) {
+      remoteNote = null;   // PC가 처리했다
+    } else if (Date.now() - remoteNote.at > 6000) {
+      remoteNote = null;   // 6초 경과 시 강제 해제하여 최신 서버 상태 반영
+    }
+  }
+  $('rSaid').textContent = remoteNote && remoteNote.sid === s.id && Date.now() - remoteNote.at < 6000 ? remoteNote.text
+    : saidText(r?.said, actOf(s).busy || asks.length > 0, isVirtual);
   if (!rCancelBtn) {
     const rSaidEl = $('rSaid');
     rCancelBtn = elem('button', 'cancel-q', T('취소', 'Cancel'));
@@ -16306,7 +16316,31 @@ async function sendSay() {
   const ok = await postInbox({ k: 'say', sid, text: text.slice(0, 1000) });
   $('rSend').disabled = false;
   if (ok) sayEl.value = '';
-  remoteNote = { sid, at: Date.now(), text: ok ? T('📤 보냈어요 — PC가 받는 중…', '📤 Sent — waiting for the PC…') : lastPostError };
+  const s = data.sessions.find((x) => x.id === sid);
+  const isVirtualAi = s && (s.isVirtual || sid.startsWith('mcp_') || (s.entry && s.entry !== 'cli' && s.entry !== 'terminal'));
+  if (ok && isVirtualAi) {
+    if (s) {
+      s.text = text.slice(0, 100);
+      s.lastSay = { text, t: Date.now() };
+    }
+    if (remoteState && remoteState.s) {
+      if (!remoteState.s[sid]) remoteState.s[sid] = {};
+      remoteState.s[sid].said = { text: text.slice(0, 1000), t: Date.now(), state: 'delivered' };
+    }
+    remoteNote = {
+      sid,
+      at: Date.now(),
+      sentText: text.trim().slice(0, 50),
+      text: T(`✅ "${text.slice(0, 24)}" 지시를 전송했어요!`, `✅ Sent "${text.slice(0, 24)}"`)
+    };
+  } else {
+    remoteNote = {
+      sid,
+      at: Date.now(),
+      sentText: text.trim().slice(0, 50),
+      text: ok ? T('📤 보냈어요 — PC가 받는 중…', '📤 Sent — waiting for the PC…') : lastPostError
+    };
+  }
   renderPanel();
 }
 $('rSend').addEventListener('click', sendSay);
