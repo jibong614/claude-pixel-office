@@ -1691,6 +1691,9 @@ public partial class MainWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private struct RECT { public int Left, Top, Right, Bottom; }
 
@@ -1749,32 +1752,50 @@ public partial class MainWindow : Window
         IntPtr bestHwnd = IntPtr.Zero;
         int bestScore = 0;
         var sb = new System.Text.StringBuilder(512);
+        var cb = new System.Text.StringBuilder(256);
+
+        var targetPids = new HashSet<uint>();
+        try
+        {
+            foreach (var p in Process.GetProcessesByName(targetProc))
+                targetPids.Add((uint)p.Id);
+        }
+        catch { }
 
         EnumWindows((hWnd, _) =>
         {
             if (!IsWindowVisible(hWnd)) return true;
-            if (!GetWindowRect(hWnd, out var rc) || (rc.Right - rc.Left) < 300 || (rc.Bottom - rc.Top) < 200) return true;
             GetWindowThreadProcessId(hWnd, out uint pid);
             if (pid == 0 || pid == selfPid) return true;
+            if (targetPids.Count > 0 && !targetPids.Contains(pid)) return true;
+
+            bool isIconic = IsIconic(hWnd);
+            RECT rc;
+            GetWindowRect(hWnd, out rc);
+            if (!isIconic && ((rc.Right - rc.Left) < 300 || (rc.Bottom - rc.Top) < 200))
+                return true;
+
             sb.Clear();
-            if (GetWindowText(hWnd, sb, sb.Capacity) <= 0) return true;
+            GetWindowText(hWnd, sb, sb.Capacity);
             var wTitle = sb.ToString();
 
-            string procName = "";
-            try { procName = Process.GetProcessById((int)pid).ProcessName; }
-            catch { return true; }
-
-            if (!procName.Equals(targetProc, StringComparison.OrdinalIgnoreCase)) return true;
+            cb.Clear();
+            GetClassName(hWnd, cb, cb.Capacity);
+            var className = cb.ToString();
 
             int score = 100;
+            if (className.Equals("Chrome_WidgetWin_1", StringComparison.OrdinalIgnoreCase))
+                score += 100;
+
             if (wTitle.Contains("Antigravity", StringComparison.OrdinalIgnoreCase) ||
-                wTitle.Contains("ClaudeOffice", StringComparison.OrdinalIgnoreCase))
+                wTitle.Contains("ClaudeOffice", StringComparison.OrdinalIgnoreCase) ||
+                wTitle.Contains("Claude", StringComparison.OrdinalIgnoreCase))
                 score += 50;
+
             if (!string.IsNullOrWhiteSpace(cwd) && wTitle.Contains(cwd, StringComparison.OrdinalIgnoreCase))
                 score += 40;
 
-            int area = (rc.Right - rc.Left) * (rc.Bottom - rc.Top);
-            if (area > 300_000) score += 30;
+            if (isIconic) score += 20;
 
             if (score > bestScore)
             {
@@ -1801,7 +1822,12 @@ public partial class MainWindow : Window
 
             try
             {
+                // Alt 키를 가볍게 눌렀다 떼어 Windows 포그라운드 활성화 락 우회
+                keybd_event(0x12, 0, 0, UIntPtr.Zero);
+                keybd_event(0x12, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+
                 if (IsIconic(bestHwnd)) ShowWindow(bestHwnd, 9); // SW_RESTORE
+                ShowWindow(bestHwnd, 5); // SW_SHOW
                 SetForegroundWindow(bestHwnd);
                 BringWindowToTop(bestHwnd);
             }
@@ -1819,24 +1845,24 @@ public partial class MainWindow : Window
             {
                 keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
                 keybd_event(VK_L, 0, 0, UIntPtr.Zero);
-                await Task.Delay(40);
+                await Task.Delay(50);
                 keybd_event(VK_L, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
                 keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-                await Task.Delay(180);
+                await Task.Delay(200);
             }
 
             // Ctrl + V
             keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
             keybd_event(VK_V, 0, 0, UIntPtr.Zero);
-            await Task.Delay(40);
+            await Task.Delay(50);
             keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
             keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
 
-            await Task.Delay(120);
+            await Task.Delay(150);
 
             // Enter
             keybd_event(VK_RETURN, 0, 0, UIntPtr.Zero);
-            await Task.Delay(40);
+            await Task.Delay(50);
             keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
         }
         catch { }

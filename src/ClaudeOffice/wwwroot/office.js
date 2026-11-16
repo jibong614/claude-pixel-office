@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.32';
+const PAGE_VERSION = '1.9.33';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -16325,13 +16325,13 @@ async function sendSay() {
     }
     if (remoteState && remoteState.s) {
       if (!remoteState.s[sid]) remoteState.s[sid] = {};
-      remoteState.s[sid].said = { text: text.slice(0, 1000), t: Date.now(), state: 'delivered' };
+      remoteState.s[sid].said = { text: text.slice(0, 1000), t: Date.now(), state: 'queued' };
     }
     remoteNote = {
       sid,
       at: Date.now(),
       sentText: text.trim().slice(0, 50),
-      text: T(`✅ "${text.slice(0, 24)}" 지시를 전송했어요!`, `✅ Sent "${text.slice(0, 24)}"`)
+      text: T(`📤 "${text.slice(0, 24)}" 전송 완료 (PC 처리 중…)`, `📤 Sent "${text.slice(0, 24)}" (delivering to PC…)`)
     };
   } else {
     remoteNote = {
