@@ -454,12 +454,20 @@ internal sealed class RemoteHub
                 }
             }
         }
-        Notify();
-
         if (triggerExternalSid != null && triggerExternalText != null)
         {
-            InstructionReceivedForExternalAi?.Invoke(triggerExternalSid, triggerExternalText);
+            try
+            {
+                InstructionReceivedForExternalAi?.Invoke(triggerExternalSid, triggerExternalText);
+            }
+            catch { }
         }
+
+        try
+        {
+            Notify();
+        }
+        catch { }
     }
 
     /// <summary>
@@ -536,6 +544,7 @@ internal sealed class RemoteHub
                     // PC로 돌아왔을 때(back·unlock)는 휴대폰에서 보낸 대기열만 취소하고, PC(미니펫·본창)에서 직접 보낸 대기 지시는 그대로 유지한다
                     foreach (var (sid, list) in _queued.ToList())
                     {
+                        if (sid.StartsWith("mcp_", StringComparison.OrdinalIgnoreCase)) continue; // 외부 AI 지시는 PC 복귀로 자동 취소하지 않음
                         var dropped = list.Where(x => !x.FromPc).ToList();
                         list.RemoveAll(x => !x.FromPc);
                         if (list.Count == 0)

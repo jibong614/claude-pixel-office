@@ -407,9 +407,9 @@ public partial class MainWindow : Window
     private void OnRemoteChanged()
     {
         var json = _remote.StateJson();
-        SendAiPlatforms(silent: true);
+        try { SendAiPlatforms(silent: true); } catch { }
         _cloud.OnRemote(json, RemoteHub.Installed, _remote.Away);
-        Dispatcher.InvokeAsync(() => Post("{\"type\":\"remote\",\"data\":" + json + "}"));
+        Dispatcher.BeginInvoke(() => Post("{\"type\":\"remote\",\"data\":" + json + "}"));
     }
 
     private void SetPet(bool on, string? sid)
@@ -1009,10 +1009,14 @@ public partial class MainWindow : Window
 
     private void Post(string json)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(() => Post(json));
+            return;
+        }
         if (_pageReady) Web.CoreWebView2?.PostWebMessageAsJson(json);
         _widgetWindow?.Post(json);
         _settingsWindow?.Post(json);
-
     }
 
     private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -1816,14 +1820,11 @@ public partial class MainWindow : Window
         {
             _remote.Log("deliver-window", sid, $"target={targetProc}, hwnd=0x{bestHwnd:X}");
 
-            await Dispatcher.InvokeAsync(() =>
+            for (int i = 0; i < 5; i++)
             {
-                for (int i = 0; i < 5; i++)
-                {
-                    try { Clipboard.SetDataObject(text, true); break; }
-                    catch { Thread.Sleep(30); }
-                }
-            });
+                try { Clipboard.SetDataObject(text, true); break; }
+                catch { Thread.Sleep(30); }
+            }
 
             uint targetThread = GetWindowThreadProcessId(bestHwnd, out _);
             uint curThread = GetCurrentThreadId();

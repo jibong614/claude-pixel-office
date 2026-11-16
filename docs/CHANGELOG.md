@@ -2,6 +2,13 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.36 — 2026-11-16
+- **⚡ 모바일 원격 외부 AI(Antigravity 등) 지시 전달 스레드 안정성 및 큐 보호**:
+  - `RemoteHub.Say`에서 `InstructionReceivedForExternalAi` 이벤트를 `Notify()`보다 먼저 호출하고 예외 방어(`try-catch`) 적용
+  - `MainWindow.Post`에 `Dispatcher.CheckAccess()` 방어 로직을 추가하여 백그라운드 스레드에서 WebView2 호출 시 발생하던 COM RPC 스레드 예외 차단
+  - PC 복귀(`TurnAwayOff`) 시 `mcp_` 외부 AI 대기열이 자동 취소(`dropped`)되지 않도록 제외 처리
+  - 외부 AI 윈도우 직접 주입 시 불필요한 중첩 Dispatcher 대기 제거 및 클립보드 복사 즉시 실행
+
 ## 1.9.35 — 2026-11-16
 - **🐾 미니위젯 대기 중 전환 알림 배지(.pet-alert) 호버 툴바 겹침 방지**:
   - 배경 투명(`nobg`) 및 접기(`compact`) 모드에서 호버 시 나타나는 상단 툴바(`.pet-head`)가 대기 중 전환 배지(`[전환 ▸]`)를 덮어 클릭을 가로막던 레이아웃 충돌 해결
