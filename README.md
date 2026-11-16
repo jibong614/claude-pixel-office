@@ -9,11 +9,11 @@
 [![Release](https://img.shields.io/github/v/release/jibong614/claude-pixel-office?color=7c3aed&label=Release)](https://github.com/jibong614/claude-pixel-office/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078d4)](https://github.com/jibong614/claude-pixel-office)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512bd4)](https://dotnet.microsoft.com/download/dotnet/8.0)
-[![Tests](https://img.shields.io/badge/Tests-52%20Passed-brightgreen)](tests/ClaudeOffice.Tests)
+[![Tests](https://img.shields.io/badge/Tests-71%20Passed-brightgreen)](tests/ClaudeOffice.Tests)
 [![License](https://img.shields.io/github/license/jibong614/claude-pixel-office?color=green)](LICENSE)
 
-**Claude Code가 지금 무엇을 하는지, 내 승인을 기다리는지 — 레트로 픽셀 사무실로 한눈에 모니터링하는 Windows 데스크탑 동반자입니다.**  
-*턴테이블 절차적 Lo-Fi & YouTube 인기 코딩음악, 귀여운 고양이 키우기, 바탕화면 미니위젯, 모바일 원격 제어까지 지원합니다.*
+**Claude Code뿐만 아니라 Google Antigravity, Cursor, Windsurf, ChatGPT 등 다양한 AI 코딩 어시스턴트가 지금 무엇을 하는지, 내 승인을 기다리는지 — 레트로 픽셀 사무실로 한눈에 모니터링하고 직접 지시하는 Windows 데스크탑 동반자입니다.**  
+*멀티 AI 자동 출근 & 원클릭 창 포커스/지시 전달, 경량 HTTP MCP 서버, 턴테이블 절차적 Lo-Fi & YouTube 인기 코딩음악, 귀여운 고양이 키우기, 바탕화면 미니위젯, 모바일 원격 제어까지 지원합니다.*
 
 [🚀 빠른 시작](#-빠른-시작) · [✨ 주요 기능](#-주요-기능) · [📸 스크린샷](#-스크린샷) · [🎮 조작법](#-단축키-및-화면-조작) · [📱 휴대폰 원격 제어](#-휴대폰-원격-제어-선택) · [📖 FAQ](#-자주-묻는-질문-faq)
 
@@ -72,8 +72,10 @@
 
 ## ✨ 주요 기능
 
-### 1. 🧑‍💻 직관적인 다중 세션 시각화 & 비즈니스 모드
-- **세션 = 직원, 폴더 = 팀 구역(카펫), 서브에이전트 = 인턴**: 여러 터미널을 번갈아 확인하지 않아도 누가 어떤 작업을 하는지 즉시 파악할 수 있습니다.
+### 1. 🧑‍💻 직관적인 멀티 AI 세션 시각화 & 비즈니스 모드
+- **멀티 AI 플랫폼 통합 (Claude Code, Antigravity, Cursor, Windsurf, ChatGPT)**: 여러 터미널과 AI 도구를 번갈아 확인할 필요 없이 가상 오피스 책상에 독립 캐릭터로 시각화합니다.
+- **외부 AI 창 자동 포커스 & 직접 지시 전달**: 가상 사무실에서 특정 AI 직원에게 지시를 보내면 대상 AI 작업 창을 즉시 포커스하고 클립보드 복사 + `Ctrl+V` + `Enter`로 프롬프트를 자동 전달합니다.
+- **프로세스 잔여 없는 경량 HTTP MCP 스트리밍 (`/mcp`)**: Antigravity, Cursor 등 최신 MCP 지원 클라이언트와 백그라운드 프로세스 누수 없이 로컬 루프백(`http://127.0.0.1:47821/mcp`)으로 실시간 연결됩니다.
 - **실시간 작업 상태 말풍선**: 읽기(`Read`), 검색(`Grep/Glob`), 코드 작성(`Edit/Write`), 명령 실행(`Bash/PowerShell`), 웹 탐색 등 실제 동작을 친근한 한글 말풍선으로 표현합니다.
 - **모던 클린 대시보드 (`단축키 O`)**: 픽셀 그래픽 대신 카드 그리드로 대화 상태와 터미널 점프를 한눈에 관리하는 비즈니스 모드(단일 다크톤 `#0d0f17`)를 지원합니다.
 
@@ -122,7 +124,7 @@
 ### 6. ⚙️ 가볍고 견고한 네이티브 Windows 앱
 - **트레이 단독 투명 설정창**: 작업표시줄 트레이 메뉴 우클릭 시 메인 대시보드 로딩 없이 720×640 단독 투명 모달만 가볍게 팝업됩니다.
 - **초경량 백그라운드 상주**: 0.7초 차분(Delta) 파일 파싱으로 유휴 시 CPU 점유율 0% 유지.
-- **52개 자동화 단위 테스트 전원 통과**: xUnit 테스트 스위트로 렌더링, 훅, 암호화, 위젯 배치, 가상 와이드 너비, 모드 전환 무결성을 철저히 보증합니다.
+- **71개 자동화 단위 테스트 전원 통과**: xUnit 테스트 스위트로 렌더링, 훅, 암호화, 위젯 배치, 가상 와이드 너비, 모드 전환 무결성을 철저히 보증합니다.
 
 ---
 
@@ -169,8 +171,9 @@ src\ClaudeOffice\bin\Release\net8.0-windows\ClaudeOffice.exe
 
 ---
 
-## 🔗 Claude Code 연결 안내 (권장)
+## 🔗 Claude Code & 멀티 AI 연결 안내
 
+### 1. Claude Code 터미널 훅 연동 (권장)
 처음 실행 시 **"Claude Code와 연결할까요?"**에 [예]를 선택하면, 로컬 `~/.claude/settings.json`에 안전한 이벤트 훅을 등록합니다.
 
 ```
@@ -184,6 +187,24 @@ src\ClaudeOffice\bin\Release\net8.0-windows\ClaudeOffice.exe
 
 - 모든 통신은 `127.0.0.1` 로컬 루프백에서만 이루어지며, 프로그램이 꺼져 있어도 터미널에 에러를 남기지 않습니다.
 - 연결을 끊으면 추가했던 훅 라인만 안전하게 원상 복구됩니다 (백업 파일 자동 생성).
+
+### 2. Google Antigravity, Cursor, Claude Desktop (MCP 연동)
+Claude Pixel Office에 내장된 고속 로컬 HTTP MCP 서버(`http://127.0.0.1:47821/mcp`)를 통해 모든 MCP 클라이언트와 별도 프로세스 실행 없이 연결할 수 있습니다.
+
+- **MCP 설정 예시 (`mcp_config.json` / Claude Desktop / Cursor)**:
+  ```json
+  {
+    "mcpServers": {
+      "claude-pixel-office": {
+        "url": "http://127.0.0.1:47821/mcp"
+      }
+    }
+  }
+  ```
+- **제공 도구**:
+  - `office_report_status`: 작업 상태 및 진척률을 픽셀 오피스에 실시간 보고
+  - `office_check_instruction`: 오피스 또는 모바일에서 보낸 사용자 지시 확인
+  - `office_get_status`: 현재 사무실 직원 및 환경 상태 조회
 
 ---
 
@@ -210,7 +231,7 @@ src/ClaudeOffice/
   ├── SettingsWindow.cs 트레이 전용 720×640 단독 투명 설정 윈도우
   ├── MainWindow.xaml 메인 WebView2 호스트 및 트레이 아이콘 관리
   └── wwwroot/        순수 HTML5 Canvas 픽셀 엔진 (office.js, office.css)
-tests/ClaudeOffice.Tests/ 45개 자동화 단위 테스트 (렌더링, 훅, 암호화, 위젯 배치)
+tests/ClaudeOffice.Tests/ 71개 자동화 단위 테스트 (렌더링, 훅, 암호화, 위젯 배치)
 ```
 
 ---

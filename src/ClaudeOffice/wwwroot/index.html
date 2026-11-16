@@ -50,7 +50,7 @@
     <div class="hud-group hud-ctrl-group">
       <button id="btnPin" title="항상 위에 표시" data-en-title="Always on top">📌</button>
       <div class="hud-more-wrap">
-        <button id="btnMore" title="더 많은 메뉴 (근무일지·업적·브로드캐스트 등)" data-en-title="More Options">⋯</button>
+        <button id="btnMore" title="더 많은 메뉴 (근무일지·업적·브로드캐스트 등)" data-en-title="More Options">⋯<span id="btnMoreNewsBadge" class="hud-more-badge" hidden></span></button>
         <div id="hudMoreMenu" class="hud-more-menu" hidden>
           <div class="more-sec-lbl" data-en="Work &amp; Views">💼 업무 &amp; 보기</div>
           <button id="btnWidget" class="more-item" type="button"><span class="m-icon"><span class="px-icon px-doc"></span></span> <span class="m-txt" data-en="Compact list view (W)">목록형 작게 보기 (W)</span></button>
@@ -65,6 +65,7 @@
           <button id="btnWrapped" class="more-item" type="button"><span class="m-icon">📊</span> <span class="m-txt" data-en="2026 Office Wrapped">연말 결산 Wrapped</span></button>
           <div class="more-divider"></div>
           <div class="more-sec-lbl" data-en="Info &amp; Links">🌐 안내 &amp; 바로가기</div>
+          <button id="btnNews" class="more-item" type="button"><span class="m-icon">📢</span> <span class="m-txt" data-en="Update News">업데이트 뉴스</span><span id="btnNewsMenuBadge" class="news-menu-badge" hidden>N</span></button>
           <a id="btnIntroLink" href="intro.html" class="more-item" style="text-decoration:none;"><span class="m-icon">🌐</span> <span class="m-txt" data-en="Website &amp; Install">소개 페이지 &amp; 설치</span></a>
         </div>
       </div>
@@ -287,7 +288,127 @@
         <button type="button" class="btn-faq-close" id="faqCloseBottom" data-en="Close">닫기</button>
       </div>
     </div>
-  </div>>
+  </div>
+
+  <!-- ➕ 새 AI 직원 / MCP 수동 등록 모달 -->
+  <div id="addAiModal" class="modal" hidden>
+    <div class="mbox add-ai-box" role="dialog" aria-modal="true" aria-labelledby="addAiTitle">
+      <div class="mhead add-ai-head">
+        <div class="add-ai-head-info">
+          <h2 id="addAiTitle">
+            <span style="color: #60a5fa;">➕</span>
+            <span data-en="Add &amp; Manage AI Employee">AI 플랫폼 추가 및 직접 편집</span>
+          </h2>
+          <span class="add-ai-sub" data-en="Add popular AI platforms or register a custom AI agent">
+            추천 AI 도구를 내 목록에 추가하거나, 나만의 커스텀 AI 직원을 직접 등록하고 편집합니다.
+          </span>
+        </div>
+        <button id="addAiClose" class="close" title="닫기" data-en-title="Close">✕</button>
+      </div>
+      <div class="add-ai-nav">
+        <button type="button" id="tabAddAiPresets" class="add-ai-tab active" data-en="⚡ Quick Add Presets">⚡ 추천 AI 빠른 추가</button>
+        <button type="button" id="tabAddAiManual" class="add-ai-tab" data-en="✏️ Custom AI Registration">✏️ 직접 등록 (커스텀 AI)</button>
+        <button type="button" id="tabAddAiMcp" class="add-ai-tab" data-en="📋 MCP JSON Config">📋 표준 MCP JSON</button>
+        <button type="button" id="tabAddAiWebhook" class="add-ai-tab" data-en="✨ Webhook &amp; Test">✨ 프롬프트 &amp; 웹훅</button>
+      </div>
+      <div class="add-ai-body" id="addAiBody">
+        <!-- Tab 1: 추천 AI 빠른 추가 -->
+        <div id="secAddAiPresets" class="add-ai-sec">
+          <p class="add-ai-desc" data-en="Add popular AI platforms to your office list with one click:">
+            원하는 AI 플랫폼을 클릭 한 번으로 내 사무실 연동 목록에 추가합니다:
+          </p>
+          <div class="ai-presets-grid" id="aiPresetsGrid">
+            <!-- Dynamically populated in office.js -->
+          </div>
+        </div>
+
+        <!-- Tab 2: 직접 등록 (커스텀 AI 추가 및 편집) -->
+        <div id="secAddAiManual" class="add-ai-sec" hidden>
+          <p class="add-ai-desc" id="customAiFormDesc" data-en="Register or edit a custom AI employee:">
+            나만의 AI 에이전트, 사내 AI 도구, 또는 커스텀 MCP/웹훅 직원을 등록하고 편집합니다:
+          </p>
+          <input type="hidden" id="customAiEditId" value="" />
+          <div class="custom-ai-form">
+            <div class="custom-ai-form-row">
+              <label class="custom-ai-label">AI 플랫폼 이름</label>
+              <input type="text" id="inputCustomAiName" class="custom-path-input" placeholder="예: 디자인팀 제미나이, 데이터분석 GPT" spellcheck="false" />
+            </div>
+            <div class="custom-ai-form-row">
+              <label class="custom-ai-label">캐릭터 아이콘</label>
+              <select id="selectCustomAiIcon" class="custom-path-select">
+                <option value="✨" selected>✨ 반짝이 (Gemini)</option>
+                <option value="🤖">🤖 로봇 (Claude)</option>
+                <option value="🟢">🟢 초록원 (ChatGPT)</option>
+                <option value="⚡">⚡ 번개 (Cursor)</option>
+                <option value="🏄">🏄 서핑 (Windsurf)</option>
+                <option value="🐬">🐬 돌고래 (DeepSeek)</option>
+                <option value="🎨">🎨 팔레트 (디자인)</option>
+                <option value="🚀">🚀 로켓 (배포)</option>
+                <option value="💻">💻 노트북 (코딩)</option>
+                <option value="🐾">🐾 펫 발바닥</option>
+              </select>
+            </div>
+            <div class="custom-ai-form-row">
+              <label class="custom-ai-label">연동 방식</label>
+              <select id="selectCustomAiType" class="custom-path-select">
+                <option value="webhook" selected>웹훅 / HTTP API 리포트 (기본)</option>
+                <option value="mcp">MCP 설정 파일 (JSON 주입)</option>
+              </select>
+            </div>
+            <div class="custom-ai-form-row" id="rowCustomAiPath">
+              <label class="custom-ai-label" id="lblCustomAiPath">설정 파일 경로 또는 웹훅 식별자</label>
+              <input type="text" id="inputCustomAiPath" class="custom-path-input" placeholder="예: C:\Users\username\.cursor\mcp.json 또는 gemini-studio" spellcheck="false" />
+            </div>
+            <div class="custom-ai-form-row">
+              <label class="custom-ai-label">한 줄 설명</label>
+              <input type="text" id="inputCustomAiDesc" class="custom-path-input" placeholder="예: 그래픽 디자인 및 이미지 생성 담당" spellcheck="false" />
+            </div>
+            <div class="custom-ai-btn-row">
+              <button type="button" class="btn-apply-path" id="btnSaveCustomAi">💾 저장하기</button>
+              <button type="button" class="btn-cancel-path" id="btnCancelCustomAi" hidden>취소</button>
+            </div>
+            <span class="custom-path-status" id="customAiStatus"></span>
+          </div>
+        </div>
+
+        <!-- Tab 3: MCP JSON 복사 -->
+        <div id="secAddAiMcp" class="add-ai-sec" hidden>
+          <p class="add-ai-desc" data-en="Copy and paste this MCP configuration into Cursor (~/.cursor/mcp.json), Windsurf (~/.codeium/windsurf/mcp_config.json), Zed, or any MCP-compatible client:">
+            Cursor, Windsurf, Claude 데스크톱, Antigravity, Zed 등 <strong>모든 MCP 호환 클라이언트</strong>의 설정 파일(JSON)에 그대로 붙여넣을 수 있는 공용 설정입니다:
+          </p>
+          <div class="code-box-wrap">
+            <pre class="add-ai-code" id="mcpJsonSnippetCode">로딩 중...</pre>
+            <button type="button" class="btn-copy-code" id="btnCopyMcpJson" data-en="📋 Copy JSON">📋 설정 JSON 복사</button>
+          </div>
+          <div class="add-ai-hint" data-en="💡 After pasting into your client's config file and restarting the app, employees will automatically connect via MCP.">
+            💡 클라이언트 설정 파일에 붙여넣고 해당 앱을 재시작하면, 가상 사무실과 MCP 도구로 자동 연결됩니다.
+          </div>
+        </div>
+
+        <!-- Tab 4: 프롬프트 & 웹훅 연동 -->
+        <div id="secAddAiWebhook" class="add-ai-sec" hidden>
+          <p class="add-ai-desc" data-en="Connect Google Gemini, ChatGPT, or custom scripts using the local HTTP webhook. Send a simple POST request:">
+            웹 챗지피티, 제미나이 웹/API, 파이썬 스크립트 등 어디서든 아래의 <strong>로컬 HTTP 웹훅</strong>으로 1줄만 쏘면 즉시 캐릭터가 출근합니다:
+          </p>
+          <div class="webhook-endpoint-card">
+            <span class="badge-post">POST</span>
+            <code class="webhook-url">http://localhost:47821/api/report</code>
+          </div>
+          <div class="code-box-wrap">
+            <div class="code-label" data-en="Test with cURL (Terminal):">터미널 1줄 출근 테스트 (cURL):</div>
+            <pre class="add-ai-code">curl -X POST http://localhost:47821/api/report -H "Content-Type: application/json" -d "{\"ai\":\"gemini\",\"project\":\"디자인팀\",\"session\":\"시안작업\",\"status\":\"working\",\"message\":\"제미나이 출근 테스트 ✨\"}"</pre>
+          </div>
+          <div class="add-ai-actions-row">
+            <button type="button" class="btn-action-test" id="btnTestClockInGemini">✨ 제미나이 테스트 출근 쏘기</button>
+            <button type="button" class="btn-action-test" id="btnTestClockInGpt">🟢 ChatGPT 테스트 출근 쏘기</button>
+          </div>
+        </div>
+      </div>
+      <div class="add-ai-foot">
+        <button type="button" class="btn-faq-close" id="addAiCloseBottom" data-en="Close">닫기</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 세션 최초 1회 터미널 연결 안내 팝업 -->
   <div id="connectGuide" class="modal" hidden>
@@ -690,6 +811,42 @@
           <div class="wrapped-footer">
             <button id="wrappedCopyBtn" class="wrapped-action-btn" type="button">📋 결과 복사하기</button>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <!-- 📢 업데이트 뉴스 모달 -->
+  <div id="newsModal" class="modal" hidden>
+    <div class="mbox news-box" role="dialog" aria-modal="true" aria-labelledby="newsTitle">
+      <div class="mhead news-head">
+        <div class="news-head-info">
+          <h2 id="newsTitle">
+            <span class="news-icon-title">📢</span>
+            <span data-en="Update News &amp; Changelog">업데이트 뉴스 &amp; 변경 내역</span>
+          </h2>
+          <span class="news-sub" data-en="Check out new features, bug fixes, and improvements by version.">
+            버전별 새로운 기능과 개선 및 수정 내역을 한눈에 확인하세요.
+          </span>
+        </div>
+        <button id="newsClose" class="close" title="닫기" data-en-title="Close">✕</button>
+      </div>
+      <div class="news-board-wrap">
+        <div class="news-board-head">
+          <div class="nb-col nb-badge-col" data-en="Status">상태</div>
+          <div class="nb-col nb-ver-col" data-en="Version">버전</div>
+          <div class="nb-col nb-title-col" data-en="Title &amp; Key Updates">제목 &amp; 주요 업데이트</div>
+          <div class="nb-col nb-date-col" data-en="Date">날짜</div>
+        </div>
+        <div class="news-list" id="newsList">
+          <!-- office.js에서 동적 생성 -->
+        </div>
+      </div>
+      <div class="news-foot">
+        <button type="button" id="btnMarkAllNewsRead" class="news-btn-allread" data-en="✓ Mark all as read">✓ 모두 읽음 처리</button>
+        <div class="news-foot-right">
+          <span id="newsUnreadCount" class="news-unread-summary"></span>
+          <button type="button" id="btnNewsCloseBottom" class="news-btn-close" data-en="Close">닫기</button>
         </div>
       </div>
     </div>

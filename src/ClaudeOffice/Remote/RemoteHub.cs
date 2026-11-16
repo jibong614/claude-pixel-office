@@ -194,8 +194,8 @@ internal sealed class RemoteHub
         if (changed) Notify();
     }
 
-    /// <summary>세션 ID 또는 프로젝트명/세션명에 대해 대기 중인 지시를 꺼내 간다 (Claude 데스크톱 MCP 도구 반환값용).</summary>
-    public string? PopPendingInstruction(string sid, string? projectName = null, string? sessionName = null)
+    /// <summary>세션 ID 또는 프로젝트명/세션명/AI 제공자에 대해 대기 중인 지시를 꺼내 간다 (Claude 데스크톱 MCP 도구 반환값용).</summary>
+    public string? PopPendingInstruction(string sid, string? projectName = null, string? sessionName = null, string? aiProvider = null)
     {
         lock (_lock)
         {
@@ -224,8 +224,38 @@ internal sealed class RemoteHub
                     return text;
                 }
             }
+
+            // 폴백: 가상 세션(mcp_*)용 대기 지시가 단 1개 있으면 안전하게 전달
+            var mcpQueued = _queued.Where(kv => kv.Key.StartsWith("mcp_") && kv.Value.Count > 0).ToList();
+            if (mcpQueued.Count == 1)
+            {
+                var kvp = mcpQueued[0];
+                var text = string.Join("\n", kvp.Value.Select(x => x.Text));
+                _queued.Remove(kvp.Key);
+                _said[kvp.Key] = new Said(text, DateTime.UtcNow, "delivered");
+                Log("mcp-deliver", kvp.Key, text);
+                Notify();
+                return text;
+            }
+
             return null;
         }
+    }
+
+    /// <summary>외부 AI(MCP) 세션이 상태/응답을 보고했을 때 마지막 답(_replies)을 갱신한다.</summary>
+    public void OnMcpReply(string sid, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(sid) || string.IsNullOrWhiteSpace(text)) return;
+        var clean = text.Trim();
+        lock (_lock)
+        {
+            _replies[sid] = new Said(clean, DateTime.UtcNow, "reply");
+            foreach (var k in _said.Keys.Where(k => k.StartsWith("mcp_", StringComparison.OrdinalIgnoreCase)).ToList())
+            {
+                _replies[k] = new Said(clean, DateTime.UtcNow, "reply");
+            }
+        }
+        Notify();
     }
 
     /// <summary>아직 세션에 전달되지 않고 대기열(_queued)에 있는 지시를 취소한다.</summary>
@@ -543,11 +573,11 @@ internal sealed class RemoteHub
         lock (_lock)
         {
             var s = new Dictionary<string, object>();
-            if (installed)
             {
                 var ids = _listeners.Keys.Concat(_approvals.Values.Select(a => a.Sid)).Concat(_said.Keys).Concat(_replies.Keys).ToHashSet(StringComparer.Ordinal);
                 foreach (var sid in ids)
                 {
+                    if (!installed && !sid.StartsWith("mcp_", StringComparison.OrdinalIgnoreCase)) continue;
                     var asks = _approvals.Values.Where(a => a.Sid == sid).OrderBy(a => a.SinceUtc)
                         .Select(a => new { id = a.Id, kind = a.Kind, text = a.Text, detail = a.Detail, options = a.Options, diff = a.Diff, t = SnapshotBuilder.Ms(a.SinceUtc) }).ToList();
                     s[sid] = new

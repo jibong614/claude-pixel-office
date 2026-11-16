@@ -48,6 +48,15 @@ internal sealed class HookServer : IDisposable
     /// <summary>Claude 데스크톱 앱 MCP 도구(office_report_status)로 상태가 전달되었을 때 호출된다.</summary>
     public event Action<McpUpdateEvent>? McpUpdated;
 
+    /// <summary>가상/MCP 세션에 지시사항이 등록되었을 때 호출된다.</summary>
+    public event Action<string, string>? McpInstructionQueued;
+
+    /// <summary>테스트 또는 내부 수동 호출용 가상 MCP 업데이트 트리거.</summary>
+    public void TriggerMcpUpdate(string projectName, string sessionName, string status, string message, string? detail = null, string? ai = null)
+    {
+        McpUpdated?.Invoke(new McpUpdateEvent(projectName, sessionName, status, message, detail, DateTime.UtcNow, ai ?? "claude-desktop"));
+    }
+
     /// <summary>MCP office_get_status 도구 요청 시 돌려줄 현재 사무실 상태 요약 JSON 제공자.</summary>
     public Func<string>? OfficeSummaryProvider { get; set; }
 
@@ -131,10 +140,29 @@ internal sealed class HookServer : IDisposable
             var method = request.Length >= 1 ? request[0] : "";
             var path = request.Length >= 2 ? request[1] : "";
             string? remote = path switch { "/remote/listen" => "listen", "/remote/approve" => "approve", "/remote/pretool" => "pretool", _ => null };
+            bool isMcpRpc = (method == "POST" || method == "GET" || method == "DELETE") && (path == "/mcp" || path.StartsWith("/mcp?"));
             bool isMcpUpdate = method == "POST" && path == "/mcp/update";
             bool isMcpStatus = (method == "GET" || method == "POST") && path == "/mcp/status";
             bool isMcpInstruction = (method == "GET" || method == "POST") && (path == "/mcp/instruction" || path.StartsWith("/mcp/instruction?"));
-            if (request.Length < 2 || (method != "POST" && !isMcpStatus && !isMcpInstruction) || (remote is null && path != "/hook" && !isMcpUpdate && !isMcpStatus && !isMcpInstruction))
+            bool isMcpSay = method == "POST" && path == "/mcp/say";
+            bool isApiReport = method == "POST" && (path == "/api/report" || path == "/api/clock-in");
+            bool isOptions = method == "OPTIONS";
+
+            if (isOptions)
+            {
+                var corsHead = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Accept, Mcp-Session-Id, X-ClaudeOffice-Token\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                await stream.WriteAsync(corsHead, token);
+                return;
+            }
+
+            if (isMcpRpc && method != "POST")
+            {
+                var methodNotAllowed = Encoding.ASCII.GetBytes("HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                await stream.WriteAsync(methodNotAllowed, token);
+                return;
+            }
+
+            if (request.Length < 2 || (method != "POST" && !isMcpStatus && !isMcpInstruction) || (remote is null && path != "/hook" && !isMcpRpc && !isMcpUpdate && !isMcpStatus && !isMcpInstruction && !isMcpSay && !isApiReport))
             {
                 await stream.WriteAsync(NotFound, token);
                 return;
@@ -159,7 +187,7 @@ internal sealed class HookServer : IDisposable
                 else if (name.Equals("X-ClaudeOffice-Token", StringComparison.OrdinalIgnoreCase)) hookToken = value;
             }
             //
-            if (fromBrowser || (hookToken != null && !HookSetup.ValidToken(hookToken)) || (!isMcpStatus && !isMcpInstruction && !json))
+            if ((fromBrowser && !isApiReport && !isMcpRpc) || (hookToken != null && !HookSetup.ValidToken(hookToken)) || (!isMcpStatus && !isMcpInstruction && !isMcpRpc && !json))
             {
                 if (remote != "listen") await stream.WriteAsync(NotFound, token);
                 return;
@@ -191,6 +219,49 @@ internal sealed class HookServer : IDisposable
                 await stream.ReadExactlyAsync(body.AsMemory(have), token);
             }
 
+            if (isMcpRpc)
+            {
+                var rpcReqText = Encoding.UTF8.GetString(body);
+                var rpcRespText = Mcp.McpServer.ProcessRequest(rpcReqText);
+                if (rpcRespText is null)
+                {
+                    var accepted = Encoding.ASCII.GetBytes("HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    await stream.WriteAsync(accepted, token);
+                    return;
+                }
+                var rpcBytes = Encoding.UTF8.GetBytes(rpcRespText);
+                var rpcHead = $"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {rpcBytes.Length}\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(rpcHead), token);
+                await stream.WriteAsync(rpcBytes, token);
+                return;
+            }
+
+            if (isApiReport)
+            {
+                string ai = "custom";
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    var r = doc.RootElement;
+                    ai = ToolCatalog.Str(r, "ai") ?? ToolCatalog.Str(r, "provider") ?? ToolCatalog.Str(r, "platform") ?? "custom";
+                    var proj = ToolCatalog.Str(r, "project") ?? ToolCatalog.Str(r, "project_name") ?? ToolCatalog.Str(r, "projectName") ?? (ai.ToUpperInvariant() + " Project");
+                    var sess = ToolCatalog.Str(r, "session") ?? ToolCatalog.Str(r, "session_name") ?? ToolCatalog.Str(r, "sessionName") ?? "메인";
+                    var st = ToolCatalog.Str(r, "status") ?? "working";
+                    var msg = ToolCatalog.Str(r, "message") ?? ToolCatalog.Str(r, "msg");
+                    var detail = ToolCatalog.Str(r, "detail");
+
+                    McpUpdated?.Invoke(new McpUpdateEvent(proj, sess, st, msg, detail, DateTime.UtcNow, ai.ToLowerInvariant()));
+                }
+                catch { }
+
+                var respJson = "{\"ok\":true,\"message\":\"Status updated\",\"ai\":\"" + ai.ToLowerInvariant() + "\"}";
+                var respBytes = Encoding.UTF8.GetBytes(respJson);
+                var respHead = $"HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {respBytes.Length}\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(respHead), token);
+                await stream.WriteAsync(respBytes, token);
+                return;
+            }
+
             if (isMcpUpdate)
             {
                 string? instruction = null;
@@ -203,13 +274,16 @@ internal sealed class HookServer : IDisposable
                     var st = ToolCatalog.Str(r, "status");
                     var msg = ToolCatalog.Str(r, "message");
                     var detail = ToolCatalog.Str(r, "detail");
-                    McpUpdated?.Invoke(new McpUpdateEvent(proj, sess, st, msg, detail, DateTime.UtcNow));
+                    var ai = ToolCatalog.Str(r, "ai") ?? ToolCatalog.Str(r, "partner_ai") ?? ToolCatalog.Str(r, "provider") ?? "claude-desktop";
+                    var aiClean = !string.IsNullOrWhiteSpace(ai) ? ai.Trim().ToLowerInvariant() : "claude-desktop";
+                    McpUpdated?.Invoke(new McpUpdateEvent(proj, sess, st, msg, detail, DateTime.UtcNow, aiClean));
 
                     var projClean = !string.IsNullOrWhiteSpace(proj) ? proj.Trim() : "Claude Desktop";
                     var sessClean = !string.IsNullOrWhiteSpace(sess) ? sess.Trim() : "프로젝트";
-                    var key = "virtual:mcp:" + projClean.ToLowerInvariant() + ":" + sessClean.ToLowerInvariant();
+                    var key = "virtual:mcp:" + aiClean + ":" + projClean.ToLowerInvariant() + ":" + sessClean.ToLowerInvariant();
                     var sid = "mcp_" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..8].ToLowerInvariant();
-                    instruction = Remote?.PopPendingInstruction(sid, proj, sess);
+                    Remote?.OnMcpReply(sid, !string.IsNullOrWhiteSpace(detail) ? detail : msg);
+                    instruction = Remote?.PopPendingInstruction(sid, proj, sess, aiClean);
                 }
                 catch { }
 
@@ -227,6 +301,7 @@ internal sealed class HookServer : IDisposable
             {
                 string? proj = null;
                 string? sess = null;
+                string? ai = null;
                 if (length > 0)
                 {
                     try
@@ -235,18 +310,60 @@ internal sealed class HookServer : IDisposable
                         var r = doc.RootElement;
                         proj = ToolCatalog.Str(r, "project_name") ?? ToolCatalog.Str(r, "projectName");
                         sess = ToolCatalog.Str(r, "session_name") ?? ToolCatalog.Str(r, "sessionName");
+                        ai = ToolCatalog.Str(r, "ai") ?? ToolCatalog.Str(r, "partner_ai") ?? ToolCatalog.Str(r, "provider");
                     }
                     catch { }
                 }
+                var aiClean = !string.IsNullOrWhiteSpace(ai) ? ai.Trim().ToLowerInvariant() : "claude-desktop";
                 var projClean = !string.IsNullOrWhiteSpace(proj) ? proj.Trim() : "Claude Desktop";
                 var sessClean = !string.IsNullOrWhiteSpace(sess) ? sess.Trim() : "프로젝트";
-                var key = "virtual:mcp:" + projClean.ToLowerInvariant() + ":" + sessClean.ToLowerInvariant();
+                var key = "virtual:mcp:" + aiClean + ":" + projClean.ToLowerInvariant() + ":" + sessClean.ToLowerInvariant();
                 var sid = "mcp_" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..8].ToLowerInvariant();
-                var instruction = Remote?.PopPendingInstruction(sid, proj, sess);
+                var instruction = Remote?.PopPendingInstruction(sid, proj, sess, aiClean);
 
                 var respJson = instruction != null
                     ? $"{{\"ok\":true,\"instruction\":{JsonSerializer.Serialize(instruction)}}}"
                     : "{\"ok\":true,\"instruction\":null}";
+                var respBytes = Encoding.UTF8.GetBytes(respJson);
+                var header = $"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {respBytes.Length}\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(header), token);
+                await stream.WriteAsync(respBytes, token);
+                return;
+            }
+
+            if (isMcpSay)
+            {
+                bool ok = false;
+                string? targetSid = null;
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    var r = doc.RootElement;
+                    targetSid = ToolCatalog.Str(r, "sid");
+                    var text = ToolCatalog.Str(r, "text") ?? ToolCatalog.Str(r, "message");
+                    if (string.IsNullOrWhiteSpace(targetSid))
+                    {
+                        var ai = (ToolCatalog.Str(r, "ai") ?? "antigravity").Trim().ToLowerInvariant();
+                        var proj = (ToolCatalog.Str(r, "project") ?? (ai.ToUpperInvariant() + " Studio")).Trim().ToLowerInvariant();
+                        var sess = (ToolCatalog.Str(r, "session") ?? "Antigravity").Trim().ToLowerInvariant();
+                        var key = "virtual:mcp:" + ai + ":" + proj + ":" + sess;
+                        targetSid = "mcp_" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..8].ToLowerInvariant();
+                    }
+                    if (!string.IsNullOrWhiteSpace(targetSid) && !string.IsNullOrWhiteSpace(text))
+                    {
+                        Remote?.SayFromPc(targetSid, text);
+                        if (targetSid.StartsWith("mcp_"))
+                        {
+                            McpInstructionQueued?.Invoke(targetSid, text);
+                        }
+                        ok = true;
+                    }
+                }
+                catch { }
+
+                var respJson = ok
+                    ? $"{{\"ok\":true,\"sid\":{JsonSerializer.Serialize(targetSid)}}}"
+                    : "{\"ok\":false}";
                 var respBytes = Encoding.UTF8.GetBytes(respJson);
                 var header = $"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {respBytes.Length}\r\nConnection: close\r\n\r\n";
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(header), token);
@@ -334,4 +451,5 @@ internal sealed record McpUpdateEvent(
     string? Status,
     string? Message,
     string? Detail,
-    DateTime Utc);
+    DateTime Utc,
+    string? AiProvider = "claude-desktop");

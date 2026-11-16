@@ -1,0 +1,8 @@
+1.9.29 멀티 AI 연동(Antigravity·Cursor·Windsurf·ChatGPT) & 직접 창 전달 & 경량 HTTP MCP
+
+- 멀티 AI 코딩 어시스턴트(Google Antigravity, Cursor, Windsurf, ChatGPT Desktop 등) 자동 감지 및 커스텀 플랫폼 등록
+- 등록된 AI 플랫폼 앱 시작 시 자동 출근(Activity.Idle) 및 실시간 상태 동기화
+- 오피스/모바일에서 AI 직원에게 지시 전송 시 대상 윈도우 포커스 + 클립보드 복사 + Ctrl+V/Enter 직접 전달
+- 로컬 루프백(http://127.0.0.1:47821/mcp) 기반 경량 Streamable HTTP MCP 서버 및 /mcp/say 지시 큐 구현
+- 백그라운드 프로세스 잔여 방지 및 작업 트레이 종료 시 리소스 완전 정리
+- README 문서 최신화 및 AI 플랫폼 관리 단위 테스트 19종 추가 (총 71개 테스트 통과)

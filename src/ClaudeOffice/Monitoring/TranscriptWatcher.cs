@@ -39,6 +39,7 @@ public sealed class TranscriptWatcher : IDisposable
     private readonly Dictionary<string, TranscriptState> _states = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentQueue<HookEvent> _hookQueue = new();
     private readonly ConcurrentQueue<McpUpdateEvent> _mcpQueue = new();
+    private readonly ConcurrentQueue<(string Sid, string Text)> _virtualInstructionQueue = new();
     private readonly List<HookEvent> _hookBacklog = new();
     private HookServer? _hookServer;
     private bool _hooksInstalled;
@@ -75,6 +76,7 @@ public sealed class TranscriptWatcher : IDisposable
         _hookServer = server;
         server.Received += _hookQueue.Enqueue;
         server.McpUpdated += _mcpQueue.Enqueue;
+        server.McpInstructionQueued += ApplyVirtualInstruction;
         server.OfficeSummaryProvider = () => _lastSnapshot ?? "{}";
     }
 
@@ -95,6 +97,15 @@ public sealed class TranscriptWatcher : IDisposable
     /// (그대로 두면 쉬는 직원의 "대기 중" 같은 문구가 다음 일을 할 때까지 예전 언어로 남는다)
     /// </summary>
     public void Reparse() => _reparseNow = true;
+
+    /// <summary>가상 세션(외부 AI / MCP)에 전송된 지시를 캐릭터 말풍선 및 상태에 즉시 반영한다.</summary>
+    public void ApplyVirtualInstruction(string sid, string text)
+    {
+        if (!string.IsNullOrWhiteSpace(sid) && !string.IsNullOrWhiteSpace(text))
+        {
+            _virtualInstructionQueue.Enqueue((sid, text.Trim()));
+        }
+    }
 
     public void Start()
     {
@@ -189,25 +200,65 @@ public sealed class TranscriptWatcher : IDisposable
 
     private void ApplyMcpUpdates(DateTime now)
     {
+        while (_virtualInstructionQueue.TryDequeue(out var inst))
+        {
+            var target = _states.Values.FirstOrDefault(x => x.Id.Equals(inst.Sid, StringComparison.OrdinalIgnoreCase))
+                      ?? _states.Values.FirstOrDefault(x => x.IsVirtual);
+            if (target != null)
+            {
+                target.LastPrompt = inst.Text;
+                target.BaseText = L.T("지시 수신: ", "Instruction: ") + inst.Text;
+                target.AiTitle = inst.Text;
+                target.BaseActivity = Activity.Working;
+                target.BaseIcon = target.Entrypoint switch
+                {
+                    "gemini" or "antigravity" => "✨",
+                    "chatgpt" => "🟢",
+                    "cursor" => "⚡",
+                    "windsurf" => "🏄",
+                    "deepseek" => "🐬",
+                    _ => "💻"
+                };
+                target.FileWriteUtc = now;
+                target.LastEventUtc = now;
+                target.BaseSinceUtc = now;
+                target.Recent.Add(new LogItem(now, "📨", L.T("사용자 지시: ", "User instruction: ") + inst.Text));
+                while (target.Recent.Count > TranscriptState.RecentMax) target.Recent.RemoveAt(0);
+            }
+        }
         while (_mcpQueue.TryDequeue(out var ev))
         {
             var proj = !string.IsNullOrWhiteSpace(ev.ProjectName) ? ev.ProjectName.Trim() : "Claude Desktop";
             var sess = !string.IsNullOrWhiteSpace(ev.SessionName) ? ev.SessionName.Trim() : "프로젝트";
-            var key = "virtual:mcp:" + proj.ToLowerInvariant() + ":" + sess.ToLowerInvariant();
+            var provider = !string.IsNullOrWhiteSpace(ev.AiProvider) ? ev.AiProvider.Trim().ToLowerInvariant() : "claude-desktop";
+            var key = "virtual:mcp:" + provider + ":" + proj.ToLowerInvariant() + ":" + sess.ToLowerInvariant();
             var id = "mcp_" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..8].ToLowerInvariant();
 
             if (!_states.TryGetValue(key, out var s))
             {
-                s = new TranscriptState(key, id, null)
+                // 같은 AI 플랫폼(provider)으로 이미 출근해 있는 가상 직원이 있으면 중복 생성하지 않고 해당 직원을 갱신한다
+                var existing = _states.Values.FirstOrDefault(x => x.IsVirtual && string.Equals(x.Entrypoint, provider, StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
                 {
-                    IsVirtual = true,
-                    StartedUtc = ev.Utc,
-                    Seen = true,
-                    Entrypoint = "claude-desktop",
-                    Cwd = proj,
-                    CustomTitle = sess,
-                };
-                _states[key] = s;
+                    s = existing;
+                }
+                else
+                {
+                    s = new TranscriptState(key, id, null)
+                    {
+                        IsVirtual = true,
+                        StartedUtc = ev.Utc,
+                        Seen = true,
+                        Entrypoint = provider,
+                        Cwd = proj,
+                        CustomTitle = sess,
+                    };
+                    _states[key] = s;
+                }
+            }
+            else
+            {
+                s.Entrypoint = provider;
             }
 
             s.FileWriteUtc = ev.Utc;
@@ -219,9 +270,25 @@ public sealed class TranscriptWatcher : IDisposable
             var (act, icon) = actStr switch
             {
                 "thinking" => (Activity.Thinking, "🧠"),
-                "idle" => (Activity.Idle, "☕"),
+                "idle" => (Activity.Idle, provider switch
+                {
+                    "gemini" or "antigravity" => "✨",
+                    "chatgpt" => "🟢",
+                    "cursor" => "⚡",
+                    "windsurf" => "🏄",
+                    "deepseek" => "🐬",
+                    _ => "☕"
+                }),
                 "done" or "completed" => (Activity.Idle, "✅"),
-                _ => (Activity.Working, "💻"),
+                _ => (Activity.Working, provider switch
+                {
+                    "gemini" or "antigravity" => "✨",
+                    "chatgpt" => "🟢",
+                    "cursor" => "⚡",
+                    "windsurf" => "🏄",
+                    "deepseek" => "🐬",
+                    _ => "💻"
+                }),
             };
 
             s.BaseActivity = act;
@@ -237,6 +304,16 @@ public sealed class TranscriptWatcher : IDisposable
                 s.AiTitle = ev.Message.Trim();
                 s.Recent.Add(new LogItem(ev.Utc, icon, ev.Message.Trim()));
                 while (s.Recent.Count > TranscriptState.RecentMax) s.Recent.RemoveAt(0);
+            }
+            if (!string.IsNullOrWhiteSpace(ev.Detail))
+            {
+                s.LastReply = ev.Detail.Trim();
+                s.Recent.Add(new LogItem(ev.Utc, "💬", ev.Detail.Trim()));
+                while (s.Recent.Count > TranscriptState.RecentMax) s.Recent.RemoveAt(0);
+            }
+            else if (!string.IsNullOrWhiteSpace(ev.Message))
+            {
+                s.LastReply = ev.Message.Trim();
             }
         }
     }
@@ -272,8 +349,7 @@ public sealed class TranscriptWatcher : IDisposable
         // 지워졌거나 오래된 파일, 소속 세션이 사라진 인턴은 정리 (가상 세션은 파일 검사 제외)
         var sessionIds = _states.Values.Where(x => x.ParentId == null).Select(x => x.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var stale = _states
-            .Where(kv => (!kv.Value.IsVirtual && !File.Exists(kv.Key))
-                         || kv.Value.FileWriteUtc < cutoff
+            .Where(kv => (!kv.Value.IsVirtual && (!File.Exists(kv.Key) || kv.Value.FileWriteUtc < cutoff))
                          || (kv.Value.ParentId != null && !sessionIds.Contains(kv.Value.ParentId)))
             .Select(kv => kv.Key)
             .ToList();

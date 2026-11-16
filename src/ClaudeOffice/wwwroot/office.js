@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.28';
+const PAGE_VERSION = '1.9.29';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -1025,7 +1025,7 @@ function onSnapshot(snap) {
   ensureSessionsGender(snap.sessions);
   data = snap;
   skew = (snap.now || Date.now()) - Date.now();
-  if (SETTINGS_WINDOW) return;
+  if (SETTINGS_WINDOW) { refreshSettings(); return; }
   if (WIDGET_WINDOW) { renderPet(); return; }
   if (appMode === 'office') renderCleanOffice();
   refreshHud();
@@ -1255,20 +1255,25 @@ function ensureLayout() {
 
   // 화면에 다 들어가는 가장 큰 배율을 고른다(아트 1픽셀 = 화면 k픽셀, k는 정수). 그래도 넘치면 세로 스크롤.
   // 고해상도(배율 125% 등)에서는 k를 1씩 내려가며 더 촘촘하게 맞춘다.
-  let best = null;
-  const kMax = Math.max(2, Math.round(4 * dpr)), kMin = Math.max(2, Math.round(2 * dpr));
+  let tight = null;
+  const kMax = Math.max(2, Math.round(4 * dpr)), kMin = Math.max(1, Math.round(2 * dpr) - 1);
   for (let k = kMax; k >= kMin; k--) {
     const lw = Math.floor((vw * dpr) / k);
     const viewLh = Math.floor((innerHeight * dpr) / k);
     const plan = planZones([...teams.entries()], lw, cellHFor(k));
-    best = { k, lw, viewLh, plan };
+    tight = { k, lw, viewLh, plan };
     if (plan.height <= viewLh) break;
   }
 
-  if (zoom) {   // 사무실 크기 설정: 맞춘 배율에서 단계만큼(크게 하면 넘치는 만큼 세로 스크롤)
-    const k = Math.max(1, best.k + zoom);
-    const lw = Math.floor((vw * dpr) / k);
-    best = { k, lw, viewLh: Math.floor((innerHeight * dpr) / k), plan: planZones([...teams.entries()], lw, cellHFor(k)) };
+  // 너무 꽉 차지 않도록 1단계 여유 있는 '작게' 수준을 기본 맞춤(Fit, zoom=0)으로 설정
+  const baseK = Math.max(1, tight.k - 1);
+  const targetK = Math.max(1, baseK + zoom);
+  let best;
+  if (targetK === tight.k) {
+    best = tight;
+  } else {
+    const lw = Math.floor((vw * dpr) / targetK);
+    best = { k: targetK, lw, viewLh: Math.floor((innerHeight * dpr) / targetK), plan: planZones([...teams.entries()], lw, cellHFor(targetK)) };
   }
   K = best.k;
   U = K / dpr;
@@ -3664,6 +3669,7 @@ function showYtContainer(show) {
 }
 
 function playYouTubeVideo() {
+  if (SETTINGS_WINDOW || WIDGET_WINDOW || REMOTE) return;
   const curYt = getCurYtTrack();
   const iframe = ensureYtContainer();
   const targetEmbed = `https://www.youtube-nocookie.com/embed/${curYt.videoId}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&origin=${encodeURIComponent(location.origin)}`;
@@ -3718,6 +3724,11 @@ function getCurYtTrack() {
 
 function selectYtTrack(trackId, immediatePlay = true) {
   lofiBgmState.curYtTrackId = trackId;
+  if (SETTINGS_WINDOW) {
+    send({ cmd: 'bgm-control', action: 'select-yt-track', trackId });
+    updateLofiUiDisplay();
+    return;
+  }
   store.set('ytCurTrack', trackId);
 
   if (!lofiBgmState.activeYtTracks.includes(trackId)) {
@@ -3785,6 +3796,13 @@ function setBgmPlaying(v) {
   lofiBgmState.enabled = !!v;
   store.set('bgmAutoPlay', lofiBgmState.enabled);
 
+  if (SETTINGS_WINDOW) {
+    send({ cmd: 'bgm-control', action: 'set-playing', value: lofiBgmState.enabled });
+    updateLofiUiDisplay();
+    if (typeof refreshSettings === 'function') refreshSettings();
+    return;
+  }
+
   if (lofiBgmState.enabled) {
     if (lofiBgmState.source === 'youtube') {
       stopTurntableLofi();
@@ -3811,6 +3829,13 @@ function setBgmSource(src) {
   lofiBgmState.source = src;
   store.set('bgmSource', src);
 
+  if (SETTINGS_WINDOW) {
+    send({ cmd: 'bgm-control', action: 'set-source', source: src });
+    updateLofiUiDisplay();
+    if (typeof refreshSettings === 'function') refreshSettings();
+    return;
+  }
+
   if (lofiBgmState.enabled) {
     if (src === 'youtube') {
       stopTurntableLofi();
@@ -3834,8 +3859,8 @@ function setBgmSource(src) {
   if (typeof refreshSettings === 'function') refreshSettings();
 }
 
-// 저장된 bgmAutoPlay 가 true이면 첫 사용자 인터랙션(클릭/터치) 시 자동 재생
-if (lofiBgmState.enabled) {
+// 저장된 bgmAutoPlay 가 true이면 첫 사용자 인터랙션(클릭/터치) 시 자동 재생 (메인 창에서만 동작)
+if (lofiBgmState.enabled && !SETTINGS_WINDOW && !WIDGET_WINDOW && !REMOTE) {
   const onFirstAutoPlay = () => {
     window.removeEventListener('pointerdown', onFirstAutoPlay);
     window.removeEventListener('keydown', onFirstAutoPlay);
@@ -3894,6 +3919,7 @@ function toggleTurntableLofi(b) {
 }
 
 function startTurntableLofi(b) {
+  if (SETTINGS_WINDOW || WIDGET_WINDOW || REMOTE) return;
   if (b) lofiBgmState.furniturePos = { x: b.x, y: b.y };
   if (lofiBgmState.playing) stopTurntableLofi();
 
@@ -4400,6 +4426,11 @@ function advanceToNextLofiTrack() {
 
 function selectLofiTrack(trackId, immediatePlay = true) {
   lofiBgmState.curTrackId = trackId;
+  if (SETTINGS_WINDOW) {
+    send({ cmd: 'bgm-control', action: 'select-track', trackId });
+    updateLofiUiDisplay();
+    return;
+  }
   lofiBgmState.barIndex = 0;
   store.set('lofiCurTrack', trackId);
 
@@ -5062,8 +5093,8 @@ function updateSingleCat(cat, dt, ts) {
       } else if (isFurniturePlaced('cat_wheel') && Math.hypot(6 + 4 - cat.x, WALL_H + 102 - cat.y) < 5) {
         cat.state = 'loaf';
         cat.stateTimer = 4500;
-        cat.bubbleText = '🎡 캣휠 전력질주 우다다!';
-        cat.bubbleTimer = 2500;
+        cat.bubbleText = T('🎡 캣휠 전력질주\n우다다!', '🎡 Wheel sprint\nZoomies!');
+        cat.bubbleTimer = 3500;
       } else if (isFurniturePlaced('cat_tunnel') && Math.hypot(logicalW - 46 + 4 - cat.x, WALL_H + 52 - cat.y) < 5) {
         cat.state = 'inBox';
         cat.stateTimer = 6000;
@@ -5587,9 +5618,10 @@ function drawCatOverlays(t) {
   const state = (remoteShare?.cat) ? remoteShare.cat : officeCatState;
   if (!state.adopted || !isCatsEnabledGlobal()) return;
   const cats = getActiveCatSims();
+  const bubbleMaxW = Math.max(180, Math.round(CELL_W * U - 6));
   for (const cat of cats) {
     if (cat.bubbleText && cat.bubbleTimer > 0) {
-      drawBubble(cat.x * U, (cat.y - 8) * U, cat.bubbleText, BUBBLE.normal, t, 130);
+      drawBubble(cat.x * U, (cat.y - 8) * U, cat.bubbleText, BUBBLE.normal, t, bubbleMaxW);
     }
   }
 }
@@ -6558,23 +6590,23 @@ function drawAmbientLighting(t) {
     ctx.fillStyle = 'rgba(255, 120, 40, 0.08)';
     ctx.fillRect(0, 0, w, h);
   } else if (kind === 'night') {
-    // 🌙 야간/야근 모드: 전체적으로 차분한 어두운 앰비언트 필터
-    // 일하고 있는 책상과 모니터에만 따스하고 집중도 높은 원뿔 스포트라이트 조명
+    // 🌙 야간/야근 모드: 전체적으로 차분한 어두운 앰비언트 필터 유지
     ctx.fillStyle = 'rgba(10, 8, 24, 0.42)';
     ctx.fillRect(0, 0, w, h);
 
-    // 모니터 & 책상 스포트라이트 투과
-    ctx.globalCompositeOperation = 'destination-out';
+    // 책상 주변 따스한 노란빛 스포트라이트 (screen 블렌드로 바닥 파냄 없이 은은한 온기 연출)
+    ctx.globalCompositeOperation = 'screen';
     for (const d of desks) {
       const a = actOf(d.s);
+      const isAway = a.pose === 'away';
       const isWorking = a.busy || a.wait;
       const spotX = (d.x + 36) * U;
-      const spotY = (d.y + 36) * U;
-      const radius = (isWorking ? 56 : 38) * U;
-      const grad = ctx.createRadialGradient(spotX, spotY, 4, spotX, spotY, radius);
-      grad.addColorStop(0, isWorking ? 'rgba(0, 0, 0, 0.78)' : 'rgba(0, 0, 0, 0.45)');
-      grad.addColorStop(0.5, isWorking ? 'rgba(0, 0, 0, 0.40)' : 'rgba(0, 0, 0, 0.18)');
-      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      const spotY = (d.y + 34) * U;
+      const radius = (isWorking ? 56 : isAway ? 32 : 44) * U;
+      const grad = ctx.createRadialGradient(spotX, spotY, 2, spotX, spotY, radius);
+      grad.addColorStop(0, isWorking ? 'rgba(255, 230, 140, 0.48)' : isAway ? 'rgba(255, 215, 120, 0.16)' : 'rgba(255, 222, 130, 0.30)');
+      grad.addColorStop(0.45, isWorking ? 'rgba(255, 195, 80, 0.24)' : isAway ? 'rgba(255, 180, 60, 0.08)' : 'rgba(255, 190, 70, 0.14)');
+      grad.addColorStop(1, 'rgba(255, 160, 30, 0)');
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(spotX, spotY, radius, 0, Math.PI * 2);
@@ -6583,8 +6615,9 @@ function drawAmbientLighting(t) {
     if (isFurniturePlaced('arcade_cabinet')) {
       const ax = 15 * U, ay = (WALL_H + 16) * U, ar = 32 * U;
       const agrad = ctx.createRadialGradient(ax, ay, 2, ax, ay, ar);
-      agrad.addColorStop(0, 'rgba(0,0,0,0.6)');
-      agrad.addColorStop(1, 'rgba(0,0,0,0)');
+      agrad.addColorStop(0, 'rgba(120, 220, 255, 0.38)');
+      agrad.addColorStop(0.5, 'rgba(180, 110, 255, 0.18)');
+      agrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
       ctx.fillStyle = agrad;
       ctx.beginPath();
       ctx.arc(ax, ay, ar, 0, Math.PI * 2);
@@ -6726,7 +6759,7 @@ function drawBubble(cx, anchorY, text, st, t, maxW) {
   ctx.font = `600 ${fontBubble}px ${FONT}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  const padX = 8, h = fontBubble + 11;
+  const padX = 9;
 
   let iconData = null;
   let remainingText = text;
@@ -6744,12 +6777,51 @@ function drawBubble(cx, anchorY, text, st, t, maxW) {
   }
 
   const iconW = iconData ? 18 : 0;
-  const label = ellipsize(remainingText, maxW - padX * 2 - iconW);
-  const textW = label ? Math.ceil(ctx.measureText(label).width) : 0;
-  const w = padX * 2 + iconW + textW;
+  const contentMaxW = Math.max(48, (maxW || 180) - padX * 2 - iconW);
+
+  // 긴 멘트 2줄 분할 지원 (\n 줄바꿈 및 너비 초과 시 자동 2줄 줄바꿈)
+  let lines;
+  if (remainingText.includes('\n')) {
+    const rawLines = remainingText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    lines = rawLines.length > 2 ? [rawLines[0], rawLines.slice(1).join(' ')] : rawLines;
+  } else if (ctx.measureText(remainingText).width > contentMaxW) {
+    // 단일 행 한도를 넘으면 2줄로 단어/글자 단위 분할
+    const words = remainingText.split(' ');
+    if (words.length > 1) {
+      let bestIdx = 1, minMaxW = Infinity;
+      for (let i = 1; i < words.length; i++) {
+        const p1 = words.slice(0, i).join(' ');
+        const p2 = words.slice(i).join(' ');
+        const mw = Math.max(ctx.measureText(p1).width, ctx.measureText(p2).width);
+        if (mw < minMaxW) {
+          minMaxW = mw;
+          bestIdx = i;
+        }
+      }
+      lines = [words.slice(0, bestIdx).join(' '), words.slice(bestIdx).join(' ')];
+    } else {
+      const chars = Array.from(remainingText);
+      const mid = Math.ceil(chars.length / 2);
+      lines = [chars.slice(0, mid).join(''), chars.slice(mid).join('')];
+    }
+  } else {
+    lines = [remainingText];
+  }
+
+  // 각 줄을 contentMaxW 내로 맞춤 (초과 시 … 생략 처리)
+  lines = lines.map(line => ellipsize(line, contentMaxW)).filter(l => l.length > 0);
+  if (lines.length === 0) return;
+
+  const lineCount = lines.length;
+  const lineHeight = fontBubble + 4;
+  const padY = 6;
+  const h = lineCount === 1 ? (fontBubble + 12) : (padY * 2 + lineHeight * 2);
+
+  const textW = Math.max(...lines.map(line => Math.ceil(ctx.measureText(line).width)));
+  const w = Math.max(34, padX * 2 + iconW + textW);
   const lift = st.pulse ? Math.round(Math.abs(Math.sin(t / 220)) * 3) : 0;
   const x = clamp(Math.round(cx - w / 2), 4, Math.max(4, cssW - w - 4));
-  const y = Math.round(anchorY - h - 9 - lift);
+  const y = Math.max(4, Math.round(anchorY - h - 9 - lift));
 
   ctx.lineWidth = 2;
   ctx.strokeStyle = st.border;
@@ -6758,16 +6830,17 @@ function drawBubble(cx, anchorY, text, st, t, maxW) {
   ctx.fill();
   ctx.stroke();
 
+  const tailX = clamp(cx, x + 8, x + w - 8);
   if (st.thought) {
-    circle(cx - 2, y + h + 4, 3);
-    circle(cx - 5, y + h + 9, 2);
+    circle(tailX - 2, y + h + 4, 3);
+    circle(tailX - 5, y + h + 9, 2);
   } else {
     ctx.beginPath();
-    ctx.moveTo(cx - 5, y + h - 1); ctx.lineTo(cx - 1, y + h + 7); ctx.lineTo(cx + 4, y + h - 1);
+    ctx.moveTo(tailX - 5, y + h - 1); ctx.lineTo(tailX - 1, y + h + 7); ctx.lineTo(tailX + 4, y + h - 1);
     ctx.closePath();
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(cx - 5, y + h); ctx.lineTo(cx - 1, y + h + 7); ctx.lineTo(cx + 4, y + h);
+    ctx.moveTo(tailX - 5, y + h); ctx.lineTo(tailX - 1, y + h + 7); ctx.lineTo(tailX + 4, y + h);
     ctx.stroke();
   }
 
@@ -6779,9 +6852,14 @@ function drawBubble(cx, anchorY, text, st, t, maxW) {
     textStartX += iconW;
   }
 
-  if (label) {
-    ctx.fillStyle = st.fg;
-    ctx.fillText(label, textStartX, y + h / 2 + 1);
+  ctx.fillStyle = st.fg;
+  if (lineCount === 1) {
+    ctx.fillText(lines[0], textStartX, Math.round(y + h / 2 + 1));
+  } else {
+    const line1Y = Math.round(y + padY + lineHeight * 0.5);
+    const line2Y = Math.round(y + padY + lineHeight * 1.5);
+    ctx.fillText(lines[0], textStartX, line1Y);
+    ctx.fillText(lines[1], textStartX, line2Y);
   }
 }
 
@@ -6832,7 +6910,8 @@ function drawInternChips(d) {
 let lastFrame = 0;
 let windowHidden = false;   // PC 앱이 알림 영역으로 숨었을 때(true)는 캔버스를 그리지 않는다
 function frame(ts) {
-  requestAnimationFrame(frame);
+  initUpdateNews();
+requestAnimationFrame(frame);
   if (SETTINGS_WINDOW || windowHidden || document.visibilityState === 'hidden') return;
   if (ts - lastFrame < 33) return;   // 약 30fps면 충분
   lastFrame = ts;
@@ -6918,6 +6997,11 @@ function entryName(e) {
   if (e === 'claude-vscode') return 'VS Code';
   if (e === 'cursor') return 'Cursor';
   if (e === 'windsurf') return 'Windsurf';
+  if (e === 'antigravity') return 'Antigravity (Gemini)';
+  if (e === 'gemini') return 'Gemini';
+  if (e === 'chatgpt' || e === 'gpt') return 'ChatGPT';
+  if (e === 'deepseek') return 'DeepSeek';
+  if (e === 'ollama') return 'Ollama';
   if (e === 'aider') return 'Aider CLI';
   if (e === 'roo' || e === 'roo-code') return 'Roo Code';
   if (e === 'cli') return T('터미널', 'Terminal');
@@ -9048,6 +9132,868 @@ if (faqOpenMcpGuideBtn) {
     send({ cmd: 'open-mcp-guide' });
   });
 }
+
+// ➕ 새 AI 직원 & MCP 수동 연동 모달 제어
+let aiPlatforms = [];
+let aiMcpSnippet = '';
+
+const PRESET_AI_PLATFORMS = [
+  { id: 'cursor', name: 'Cursor 에디터', type: 'mcp', icon: '⚡', description: 'Cursor AI 에디터 MCP 연동 (~/.cursor/mcp.json)' },
+  { id: 'windsurf', name: 'Windsurf 에디터', type: 'mcp', icon: '🏄', description: 'Codeium Windsurf 에디터 MCP 연동' },
+  { id: 'chatgpt', name: 'ChatGPT (데스크톱/웹)', type: 'webhook', icon: '🟢', description: 'OpenAI ChatGPT 맞춤형 지침 및 웹훅 연동' },
+  { id: 'gemini', name: 'Google Gemini (웹/API)', type: 'webhook', icon: '✨', description: 'Google Gemini 웹 대화 및 REST API 웹훅 연동' },
+  { id: 'deepseek', name: 'DeepSeek / 로컬 LLM', type: 'webhook', icon: '🐬', description: 'DeepSeek 및 Ollama 등 내 PC 로컬 LLM 연동' },
+  { id: 'antigravity', name: 'Google Antigravity (Gemini)', type: 'mcp', icon: '✨', description: 'Google Antigravity IDE Gemini 에이전트 MCP 연동' }
+];
+
+function getHiddenPlatformIds() {
+  return new Set(store.get('hidden_ai_platforms', []));
+}
+
+function getAddedPlatformIds() {
+  return new Set(store.get('added_ai_platforms', []));
+}
+
+function getCustomPlatforms() {
+  return store.get('custom_ai_platforms', []);
+}
+
+function addPlatformToList(id) {
+  const added = store.get('added_ai_platforms', []);
+  if (!added.includes(id)) {
+    added.push(id);
+    store.set('added_ai_platforms', added);
+  }
+  let hidden = store.get('hidden_ai_platforms', []);
+  if (hidden.includes(id)) {
+    hidden = hidden.filter(x => x !== id);
+    store.set('hidden_ai_platforms', hidden);
+  }
+}
+
+function hidePlatform(id) {
+  const hidden = store.get('hidden_ai_platforms', []);
+  if (!hidden.includes(id)) {
+    hidden.push(id);
+    store.set('hidden_ai_platforms', hidden);
+  }
+  let added = store.get('added_ai_platforms', []);
+  if (added.includes(id)) {
+    added = added.filter(x => x !== id);
+    store.set('added_ai_platforms', added);
+  }
+  // If it was configured MCP/webhook, unconfigure it
+  send({ cmd: 'unconfigure-platform-mcp', id: id });
+  updateAiPlatformsGrid();
+  showToast(T('플랫폼을 목록에서 제거했습니다.', 'Platform removed from list.'), '🗑️', 2000);
+}
+
+function unhidePlatform(id) {
+  addPlatformToList(id);
+  updateAiPlatformsGrid();
+}
+
+function saveCustomPlatform(item) {
+  const custom = getCustomPlatforms();
+  const existingIdx = custom.findIndex(x => x.id === item.id);
+  if (existingIdx >= 0) {
+    custom[existingIdx] = { ...custom[existingIdx], ...item };
+  } else {
+    custom.push(item);
+  }
+  store.set('custom_ai_platforms', custom);
+  updateAiPlatformsGrid();
+  showToast(T(`'${item.name}' 플랫폼이 저장되었습니다.`, `'${item.name}' saved.`), '✅', 2500);
+}
+
+function deleteCustomPlatform(id) {
+  let custom = getCustomPlatforms();
+  const target = custom.find(x => x.id === id);
+  custom = custom.filter(x => x.id !== id);
+  store.set('custom_ai_platforms', custom);
+  updateAiPlatformsGrid();
+  showToast(T(`'${target?.name || id}' 플랫폼을 삭제했습니다.`, `'${target?.name || id}' deleted.`), '🗑️', 2000);
+}
+
+function getVisiblePlatforms() {
+  const hidden = getHiddenPlatformIds();
+  const added = getAddedPlatformIds();
+  const custom = getCustomPlatforms().map(p => ({
+    ...p,
+    isCustom: true,
+    isInstalled: true,
+    isConfigured: p.isConfigured !== undefined ? !!p.isConfigured : (p.type !== 'mcp')
+  }));
+
+  // From scanned auto platforms: include if installed, configured, or explicitly added by user, and not hidden
+  const autoList = (aiPlatforms || [])
+    .filter(p => (p.isInstalled || p.isConfigured || added.has(p.id)) && !hidden.has(p.id))
+    .map(p => ({ ...p, isCustom: false }));
+
+  const autoIds = new Set(autoList.map(p => p.id));
+  const customIds = new Set(custom.map(p => p.id));
+
+  // Fallback for presets added before C# scan arrives or in browser preview mode
+  for (const id of added) {
+    if (!hidden.has(id) && !autoIds.has(id) && !customIds.has(id)) {
+      const preset = PRESET_AI_PLATFORMS.find(x => x.id === id);
+      if (preset) {
+        autoList.push({
+          ...preset,
+          isInstalled: true,
+          isConfigured: false,
+          isCustom: false
+        });
+      }
+    }
+  }
+
+  return [...autoList, ...custom].filter(p => p.id !== 'claude-desktop');
+}
+
+function updateAiPlatformsGrid() {
+  if (typeof window._renderAiPlatformsGrid === 'function') {
+    window._renderAiPlatformsGrid();
+  }
+  renderPresetGrid();
+  if (typeof refreshSettings === 'function') {
+    refreshSettings();
+  }
+}
+
+let userTriggeredScan = false;
+
+function onAiPlatforms(platforms, snippet, silent = false) {
+  aiPlatforms = Array.isArray(platforms) ? platforms.map(p => ({
+    id: p.id || p.Id,
+    name: p.name || p.Name,
+    type: p.type || p.Type,
+    icon: p.icon || p.Icon,
+    isInstalled: !!(p.isInstalled ?? p.IsInstalled),
+    isConfigured: !!(p.isConfigured ?? p.IsConfigured),
+    configPath: p.configPath || p.ConfigPath,
+    description: p.description || p.Description,
+    instructionsPrompt: p.instructionsPrompt || p.InstructionsPrompt,
+    isCustom: !!p.isCustom
+  })) : [];
+  if (snippet) aiMcpSnippet = snippet;
+  const snippetEl = $('mcpJsonSnippetCode');
+  if (snippetEl && aiMcpSnippet) snippetEl.textContent = aiMcpSnippet;
+  updateAiPlatformsGrid();
+
+  if (userTriggeredScan) {
+    userTriggeredScan = false;
+    const visibleList = getVisiblePlatforms().filter(p => p.id !== 'claude-desktop');
+    const detected = visibleList.filter(p => p.isInstalled || p.isConfigured);
+    const unseated = detected.filter(p => {
+      return !(data.sessions || []).some(s => {
+        if (s.act === 'away') return false;
+        const entry = (s.entry || '').toLowerCase();
+        const team = (s.team || '').toLowerCase();
+        const pId = p.id.toLowerCase();
+        if (entry.includes(pId) || team.includes(pId)) return true;
+        if (pId === 'antigravity' && (entry === 'antigravity' || entry === 'gemini')) return true;
+        if (pId === 'gemini' && (entry === 'gemini' || entry === 'antigravity')) return true;
+        return false;
+      });
+    });
+
+    if (unseated.length > 0) {
+      const count = unseated.length;
+      const names = unseated.map(p => p.name).join(', ');
+      const question = count === 1
+        ? T(`${names} 1건을 찾았습니다.\r\n사무실 메인화면에 직원을 추가(출근)할까요?`,
+            `Found 1 platform (${names}).\r\nAdd this employee to the office now?`)
+        : T(`${count}건(${names})을 찾았습니다.\r\n사무실 메인화면에 직원을 추가(출근)할까요?`,
+            `Found ${count} platforms (${names}).\r\nAdd these employees to the office now?`);
+
+      if (confirm(question)) {
+        for (const p of unseated) {
+          addPlatformToList(p.id);
+          const shortName = p.id === 'antigravity' ? 'Antigravity' : p.id === 'gemini' ? 'Gemini' : p.name.split(' ')[0];
+          send({
+            cmd: 'test-clock-in',
+            ai: p.id,
+            session: shortName,
+            status: 'idle',
+            silent: false,
+            message: T(`${shortName} 직원이 출근했습니다 ✨`, `${shortName} employee clocked in ✨`)
+          });
+          if (!p.isConfigured) {
+            send({ cmd: 'configure-platform-mcp', id: p.id, path: p.configPath || '' });
+          }
+        }
+
+        if (pickMode === 'manual') {
+          pickMode = 'recent';
+          store.set('pickMode', 'recent');
+        }
+        if (maxShown < (data.sessions || []).length + unseated.length) {
+          maxShown = Math.min(30, (data.sessions || []).length + unseated.length + 2);
+          store.set('maxShown', maxShown);
+        }
+        if (waitOnly) {
+          waitOnly = false;
+          store.set('waitOnly', false);
+        }
+
+        if (SETTINGS_WINDOW) {
+          send({ cmd: 'pet-open-office' });
+        }
+        setSettingsOpen(false);
+        showToast(T(`${names} 직원이 메인 화면에 출근했습니다! 🎉`, `${names} employee(s) clocked in! 🎉`), '🎉', 3500);
+        return;
+      }
+    } else if (detected.length > 0) {
+      showToast(T(`검색된 AI 직원(${detected.map(p => p.name).join(', ')})이 이미 메인화면에 출근해 있습니다.`, `All detected AI employees are already clocked in.`), 'ℹ️', 3000);
+      return;
+    } else {
+      showToast(T('새로 감지된 AI 플랫폼이 없습니다.', 'No new AI platforms detected.'), '🔍', 2500);
+      return;
+    }
+  }
+
+  // 연동 완료 또는 사용자가 추가한 AI 플랫폼이 메인화면 세션에 없으면 자동 출근 등록
+  const addedIds = getAddedPlatformIds();
+  const visibleList = getVisiblePlatforms().filter(p => p.id !== 'claude-desktop');
+  const configuredOrAdded = visibleList.filter(p => p.isConfigured || addedIds.has(p.id));
+  for (const p of configuredOrAdded) {
+    const isAlreadySeated = (data.sessions || []).some(s => {
+      if (s.act === 'away') return false;
+      const entry = (s.entry || '').toLowerCase();
+      const team = (s.team || '').toLowerCase();
+      const pId = p.id.toLowerCase();
+      if (entry.includes(pId) || team.includes(pId)) return true;
+      if (pId === 'antigravity' && (entry === 'antigravity' || entry === 'gemini')) return true;
+      if (pId === 'gemini' && (entry === 'gemini' || entry === 'antigravity')) return true;
+      return false;
+    });
+    if (!isAlreadySeated) {
+      const shortName = p.id === 'antigravity' ? 'Antigravity' : p.id === 'gemini' ? 'Gemini' : p.name.split(' ')[0];
+      send({
+        cmd: 'test-clock-in',
+        ai: p.id,
+        session: shortName,
+        status: 'idle',
+        silent: true,
+        message: T(`${shortName} 직원이 대기 중입니다 ✨`, `${shortName} standing by ✨`)
+      });
+    }
+  }
+
+  if (!silent) {
+    const visibleCount = getVisiblePlatforms().length;
+    showToast(T(`AI 플랫폼 검색 완료 (${visibleCount}개 연동 감지됨)`, `AI platforms scanned (${visibleCount} detected)`), '🔍', 2500);
+  }
+}
+
+const addAiModalEl = $('addAiModal');
+const addAiCloseBtn = $('addAiClose');
+const addAiCloseBottomBtn = $('addAiCloseBottom');
+const tabAddAiPresets = $('tabAddAiPresets');
+const tabAddAiManual = $('tabAddAiManual');
+const tabAddAiMcp = $('tabAddAiMcp');
+const tabAddAiWebhook = $('tabAddAiWebhook');
+
+const secAddAiPresets = $('secAddAiPresets');
+const secAddAiManual = $('secAddAiManual');
+const secAddAiMcp = $('secAddAiMcp');
+const secAddAiWebhook = $('secAddAiWebhook');
+
+const btnCopyMcpJson = $('btnCopyMcpJson');
+const btnTestClockInGemini = $('btnTestClockInGemini');
+const btnTestClockInGpt = $('btnTestClockInGpt');
+
+// Custom AI Form Elements
+const customAiEditId = $('customAiEditId');
+const inputCustomAiName = $('inputCustomAiName');
+const selectCustomAiIcon = $('selectCustomAiIcon');
+const selectCustomAiType = $('selectCustomAiType');
+const inputCustomAiPath = $('inputCustomAiPath');
+const inputCustomAiDesc = $('inputCustomAiDesc');
+const btnSaveCustomAi = $('btnSaveCustomAi');
+const btnCancelCustomAi = $('btnCancelCustomAi');
+const customAiStatus = $('customAiStatus');
+const customAiFormDesc = $('customAiFormDesc');
+
+function switchAddAiTab(tab) {
+  if (tabAddAiPresets) tabAddAiPresets.classList.toggle('active', tab === 'presets');
+  if (tabAddAiManual) tabAddAiManual.classList.toggle('active', tab === 'manual');
+  if (tabAddAiMcp) tabAddAiMcp.classList.toggle('active', tab === 'mcp');
+  if (tabAddAiWebhook) tabAddAiWebhook.classList.toggle('active', tab === 'webhook');
+
+  if (secAddAiPresets) secAddAiPresets.hidden = (tab !== 'presets');
+  if (secAddAiManual) secAddAiManual.hidden = (tab !== 'manual');
+  if (secAddAiMcp) secAddAiMcp.hidden = (tab !== 'mcp');
+  if (secAddAiWebhook) secAddAiWebhook.hidden = (tab !== 'webhook');
+
+  if (tab === 'presets') renderPresetGrid();
+}
+
+function renderPresetGrid() {
+  const container = $('aiPresetsGrid');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const visibleList = getVisiblePlatforms();
+  const visibleIds = new Set(visibleList.map(p => p.id));
+
+  for (const preset of PRESET_AI_PLATFORMS) {
+    const card = elem('div', 'ai-preset-card');
+    const left = elem('div', 'ai-preset-left');
+    const icon = elem('span', 'ai-preset-icon', preset.icon);
+    const info = elem('div', 'ai-preset-info');
+    const name = elem('span', 'ai-preset-name', preset.name);
+    const desc = elem('span', 'ai-preset-desc', preset.description);
+    info.append(name, desc);
+    left.append(icon, info);
+
+    const isAlreadyAdded = visibleIds.has(preset.id);
+    const btnAdd = elem('button', 'btn-preset-add' + (isAlreadyAdded ? ' btn-preset-added' : ''), isAlreadyAdded ? T('✓ 추가됨', '✓ Added') : T('+ 목록에 추가', '+ Add to List'));
+    if (!isAlreadyAdded) {
+      btnAdd.addEventListener('click', () => {
+        addPlatformToList(preset.id);
+        send({ cmd: 'configure-platform-mcp', id: preset.id, path: preset.configPath || '' });
+        updateAiPlatformsGrid();
+        showToast(T(`'${preset.name}'이(가) 연동 목록에 추가되었습니다.`, `'${preset.name}' added to list.`), '✅', 2500);
+      });
+    }
+    card.append(left, btnAdd);
+    container.append(card);
+  }
+}
+
+function resetCustomAiForm() {
+  if (customAiEditId) customAiEditId.value = '';
+  if (inputCustomAiName) inputCustomAiName.value = '';
+  if (selectCustomAiIcon) selectCustomAiIcon.value = '✨';
+  if (selectCustomAiType) selectCustomAiType.value = 'webhook';
+  if (inputCustomAiPath) inputCustomAiPath.value = '';
+  if (inputCustomAiDesc) inputCustomAiDesc.value = '';
+  if (btnCancelCustomAi) btnCancelCustomAi.hidden = true;
+  if (customAiStatus) customAiStatus.textContent = '';
+  if (customAiFormDesc) customAiFormDesc.textContent = T('나만의 AI 에이전트, 사내 AI 도구, 또는 커스텀 MCP/웹훅 직원을 등록하고 편집합니다:', 'Register or edit a custom AI employee:');
+}
+
+function openEditCustomAiModal(item) {
+  openAddAiModal('manual');
+  if (customAiEditId) customAiEditId.value = item.id;
+  if (inputCustomAiName) inputCustomAiName.value = item.name || '';
+  if (selectCustomAiIcon) selectCustomAiIcon.value = item.icon || '🤖';
+  if (selectCustomAiType) selectCustomAiType.value = item.type || 'webhook';
+  if (inputCustomAiPath) inputCustomAiPath.value = item.configPath || '';
+  if (inputCustomAiDesc) inputCustomAiDesc.value = item.description || '';
+  if (btnCancelCustomAi) btnCancelCustomAi.hidden = false;
+  if (customAiFormDesc) customAiFormDesc.textContent = T(`'${item.name}' 플랫폼 정보 수정:`, `Edit platform '${item.name}':`);
+}
+
+function openAddAiModal(defaultTab = 'presets') {
+  if (!addAiModalEl) return;
+  if (defaultTab !== 'manual') resetCustomAiForm();
+  switchAddAiTab(defaultTab);
+  if (aiMcpSnippet) {
+    const codeEl = $('mcpJsonSnippetCode');
+    if (codeEl) codeEl.textContent = aiMcpSnippet;
+  }
+  addAiModalEl.hidden = false;
+  if (WIDGET_WINDOW) syncPetHeight();
+}
+
+function closeAddAiModal() {
+  if (!addAiModalEl) return;
+  addAiModalEl.hidden = true;
+  resetCustomAiForm();
+  if (WIDGET_WINDOW) {
+    if (petMode === 'island') syncPetHeight();
+    else send({ cmd: 'pet-restore-height' });
+  }
+}
+
+if (addAiCloseBtn) addAiCloseBtn.addEventListener('click', closeAddAiModal);
+if (addAiCloseBottomBtn) addAiCloseBottomBtn.addEventListener('click', closeAddAiModal);
+if (addAiModalEl) {
+  addAiModalEl.addEventListener('click', (e) => {
+    if (e.target === addAiModalEl) closeAddAiModal();
+  });
+}
+if (tabAddAiPresets) tabAddAiPresets.addEventListener('click', () => switchAddAiTab('presets'));
+if (tabAddAiManual) tabAddAiManual.addEventListener('click', () => switchAddAiTab('manual'));
+if (tabAddAiMcp) tabAddAiMcp.addEventListener('click', () => switchAddAiTab('mcp'));
+if (tabAddAiWebhook) tabAddAiWebhook.addEventListener('click', () => switchAddAiTab('webhook'));
+
+if (btnCancelCustomAi) {
+  btnCancelCustomAi.addEventListener('click', () => {
+    resetCustomAiForm();
+    switchAddAiTab('presets');
+  });
+}
+
+if (btnSaveCustomAi) {
+  btnSaveCustomAi.addEventListener('click', () => {
+    const nameVal = inputCustomAiName?.value?.trim();
+    if (!nameVal) {
+      if (customAiStatus) {
+        customAiStatus.style.color = '#f87171';
+        customAiStatus.textContent = T('AI 플랫폼 이름을 입력해 주세요.', 'Please enter an AI name.');
+      }
+      return;
+    }
+
+    const editId = customAiEditId?.value?.trim();
+    const id = editId || `custom-${Date.now()}`;
+    const icon = selectCustomAiIcon?.value || '🤖';
+    const type = selectCustomAiType?.value || 'webhook';
+    const path = inputCustomAiPath?.value?.trim() || '';
+    const desc = inputCustomAiDesc?.value?.trim() || T('커스텀 연동 AI 직원', 'Custom AI Employee');
+
+    saveCustomPlatform({
+      id,
+      name: nameVal,
+      icon,
+      type,
+      configPath: path,
+      description: desc
+    });
+
+    if (type === 'mcp' && path) {
+      send({ cmd: 'configure-platform-mcp', id, path });
+    }
+
+    closeAddAiModal();
+  });
+}
+
+if (btnCopyMcpJson) {
+  btnCopyMcpJson.addEventListener('click', async () => {
+    const textToCopy = aiMcpSnippet || $('mcpJsonSnippetCode')?.textContent || '';
+    if (!textToCopy) return;
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      const original = btnCopyMcpJson.textContent;
+      btnCopyMcpJson.textContent = T('✓ 복사 완료!', '✓ Copied!');
+      setTimeout(() => { btnCopyMcpJson.textContent = original; }, 2000);
+    } catch {
+      showToast(T('클립보드 복사에 실패했습니다.', 'Failed to copy to clipboard.'), '⚠️', 2000);
+    }
+  });
+}
+
+if (btnTestClockInGemini) {
+  btnTestClockInGemini.addEventListener('click', () => {
+    send({ cmd: 'test-clock-in', ai: 'gemini', session: '이미지 디자인', message: '배경 그래픽 및 시안 생성 중 ✨' });
+    showToast(T('제미나이 테스트 출근 신호를 전송했습니다! ✨', 'Sent Gemini clock-in signal! ✨'), '✨', 3000);
+  });
+}
+
+if (btnTestClockInGpt) {
+  btnTestClockInGpt.addEventListener('click', () => {
+    send({ cmd: 'test-clock-in', ai: 'chatgpt', session: '데이터 분석', message: '파이썬 코드 분석 및 보고서 작성 중 🟢' });
+    showToast(T('ChatGPT 테스트 출근 신호를 전송했습니다! 🟢', 'Sent ChatGPT clock-in signal! 🟢'), '🟢', 3000);
+  });
+}
+
+// 📢 업데이트 뉴스 (Changelog & Announcement Board)
+const UPDATE_NEWS = [
+  {
+    id: 'v1.9.29',
+    ver: 'v1.9.29',
+    date: '2026-11-16',
+    title: '멀티 AI 연동(Google Antigravity·Cursor·Windsurf·ChatGPT) & 직접 창 전달 & 경량 MCP HTTP 지원',
+    enTitle: 'Multi-AI Integration (Google Antigravity, Cursor, ChatGPT) & Direct Window Delivery',
+    items: [
+      '⚡ Google Antigravity, Cursor, Windsurf, ChatGPT Desktop 등 멀티 AI 플랫폼 자동 검색 및 연동',
+      '💬 가상 사무실에서 외부 AI 창으로 원클릭 창 전환 및 메시지/지시 직접 전달 (Ctrl+V 자동 입력)',
+      '🌐 프로세스 누수 없는 로컬 HTTP 스트리밍 MCP 서버(/mcp) 및 지시 큐(/mcp/say) 탑재',
+      '🚀 앱 시작 시 등록된 AI 플랫폼 자동 출근 및 상태 동기화'
+    ],
+    enItems: [
+      '⚡ Multi-AI platform support: Google Antigravity, Cursor, Windsurf, and ChatGPT Desktop',
+      '💬 Direct message/instruction delivery from virtual office to external AI windows (auto Ctrl+V)',
+      '🌐 Leak-free lightweight HTTP streaming MCP server (/mcp) and instruction queue (/mcp/say)',
+      '🚀 Auto clock-in on launch for configured AI platforms and live status sync'
+    ]
+  },
+  {
+    id: 'v1.9.28',
+    ver: 'v1.9.28',
+    date: '2026-11-13',
+    title: '세션 문제 해결 가이드 & 전용 Q&A 모달 탑재',
+    enTitle: 'Session Troubleshooting Guide & Dedicated Q&A Modal',
+    items: [
+      '❓ Claude 데스크톱/Code 세션이 안 보일 때의 원인별 점검 및 자동 해결 가이드 모달 제공',
+      '📋 MCP 연동 지침 원클릭 복사 및 실시간 프롬프트 검증 강화'
+    ],
+    enItems: [
+      '❓ Q&A modal for troubleshooting missing Claude Desktop / Code sessions',
+      '📋 One-click copy for MCP integration instructions & prompt validation'
+    ]
+  },
+  {
+    id: 'v1.9.27',
+    ver: 'v1.9.27',
+    date: '2026-11-13',
+    title: 'Claude 데스크톱 MCP 실시간 양방향 연동 & 가이드 창 지원',
+    enTitle: 'Claude Desktop MCP Real-time Integration & Guide Window',
+    items: [
+      '🖥️ Claude 데스크톱(MCP) 연동으로 데스크톱 앱에서 작업 중인 대화가 오피스에 실시간 출근',
+      '🌐 원클릭 설치 및 브라우저 호환성 향상'
+    ],
+    enItems: [
+      '🖥️ Real-time office attendance for Claude Desktop conversations via MCP',
+      '🌐 One-click installer and browser compatibility improvements'
+    ]
+  },
+  {
+    id: 'v1.9.25',
+    ver: 'v1.9.25',
+    date: '2026-11-12',
+    title: '일일 활성 사용자(DAU) 익명 집계 & 모바일 하트비트 연동',
+    enTitle: 'Anonymous Daily Active Users (DAU) & Mobile Heartbeat',
+    items: [
+      '📊 안전한 익명 식별자 기반 일일 활성 사용자(DAU) 통계 연동',
+      '📱 모바일 웹 리모트 하트비트 실시간 안정성 개선'
+    ],
+    enItems: [
+      '📊 Safe anonymous identifier-based Daily Active User (DAU) metric',
+      '📱 Mobile web remote heartbeat real-time stability improvements'
+    ]
+  },
+  {
+    id: 'v1.9.24',
+    ver: 'v1.9.24',
+    date: '2026-11-11',
+    title: '레트로 CRT 스캔라인 효과 복원 & 모바일 소개 페이지 최적화',
+    enTitle: 'Retro CRT Scanline Effect & Mobile Intro Page Optimization',
+    items: [
+      '📺 향수를 자극하는 레트로 브라운관(CRT) 스캔라인 및 픽셀 블룸 효과 탑재',
+      '📱 모바일 환경 반응형 뷰포트 배율 최적화'
+    ],
+    enItems: [
+      '📺 Retro CRT scanlines and pixel bloom effect toggles',
+      '📱 Mobile responsive viewport scale optimization'
+    ]
+  },
+  {
+    id: 'v1.9.21',
+    ver: 'v1.9.21',
+    date: '2026-11-09',
+    title: '산책 모드 신규 자율 모션 3종(손흔들기·궁리하기·콧노래) 추가',
+    enTitle: 'Walk Mode 3 New Autonomous Motions (Wave, Think, Hum)',
+    items: [
+      '🚶 바탕화면을 자유롭게 돌아다니는 산책 모드 이동 경로 및 속도 최적화',
+      '👋 작업 중 반갑게 손 흔들기, 깊은 생각에 잠겨 궁리하기, 기분 좋게 콧노래 부르기 모션 추가'
+    ],
+    enItems: [
+      '🚶 Pathfinding and movement speed tuning for desktop Walk Mode',
+      '👋 Added waving hand, deep thinking, and humming melody motions'
+    ]
+  },
+  {
+    id: 'v1.9.20',
+    ver: 'v1.9.20',
+    date: '2026-11-08',
+    title: '대표 반려묘(Companion Cat) 시스템 도입 & 산책 모드 쓰다듬기',
+    enTitle: 'Companion Cat System & Walk Mode Petting Interaction',
+    items: [
+      '🐱 입양한 고양이 중 한 마리를 대표 반려묘로 지정하여 바탕화면 산책 동행',
+      '💕 클릭하여 쓰다듬기(Petting) 시 골골송 및 하트 이펙트 상호작용'
+    ],
+    enItems: [
+      '🐱 Designate a companion cat from adopted pets to accompany your desktop',
+      '💕 Click to pet with purring and floating heart effects'
+    ]
+  },
+  {
+    id: 'v1.9.19',
+    ver: 'v1.9.19',
+    date: '2026-11-07',
+    title: '오피스 배경 테마 6종 대폭 확장 & 여성 헤어스타일 10종 다양화',
+    enTitle: '6 New Office Background Themes & 10 Female Hairstyles',
+    items: [
+      '🎨 사이버펑크, 벚꽃 정원, 노을 테라스, 레트로 아케이드 등 상점 배경 6종 추가',
+      '💇‍♀️ 여성 직원 픽셀 헤어스타일 10종 다양화 및 맞춤 커스터마이징'
+    ],
+    enItems: [
+      '🎨 Cyberpunk, Cherry Blossom, Sunset Terrace, Retro Arcade background themes',
+      '💇‍♀️ 10 diverse pixel hairstyles for female employees'
+    ]
+  },
+  {
+    id: 'v1.9.17',
+    ver: 'v1.9.17',
+    date: '2026-11-05',
+    title: '산책 모드 8대 힐링 인터랙션(커피 한잔·기지개·바닥앉기 등) 탑재',
+    enTitle: 'Walk Mode 8 Healing Interactions (Coffee, Stretch, Floor Sit)',
+    items: [
+      '☕ 따뜻한 커피 한 잔의 여유, 시원한 기지개 켜기, 바닥에 주저앉아 휴식하기 등 힐링 모션 대거 추가',
+      '👀 마우스 커서를 따라 좌우를 쳐다보는 생동감 넘치는 시선 추적'
+    ],
+    enItems: [
+      '☕ Coffee break, stretching, sitting on the floor relaxing motions',
+      '👀 Responsive eye-tracking following the mouse cursor left and right'
+    ]
+  },
+  {
+    id: 'v1.9.15',
+    ver: 'v1.9.15',
+    date: '2026-11-03',
+    title: '백그라운드 자동 업데이트 파이프라인 도입',
+    enTitle: 'Seamless Background Auto-Update Pipeline',
+    items: [
+      '🔄 새 버전 출시 시 방해 없이 백그라운드에서 신속하게 자동 갱신',
+      '🚀 PC 부팅 시 자동 시작 및 원활한 백그라운드 상주'
+    ],
+    enItems: [
+      '🔄 Unobtrusive background auto-updater for new releases',
+      '🚀 Windows startup integration and background residency'
+    ]
+  },
+  {
+    id: 'v1.9.12',
+    ver: 'v1.9.12',
+    date: '2026-10-30',
+    title: 'YouTube 코딩 로파이 연동 & 4대 악기 스택 믹서 BGM 시스템',
+    enTitle: 'YouTube Coding Lo-Fi & 4-Instrument Realtime Stack Mixer',
+    items: [
+      '🎧 유튜브 인기 코딩 음악 스트리밍 및 자체 8비트/16비트 레트로 로파이 음원 탑재',
+      '📻 악기별 사운드를 직접 켜고 끄는 실시간 4대 악기 스택 믹서 지원'
+    ],
+    enItems: [
+      '🎧 YouTube coding music streaming and built-in retro chiptune lo-fi tracks',
+      '📻 Real-time 4-channel instrument toggle mixer'
+    ]
+  },
+  {
+    id: 'v1.9.7',
+    ver: 'v1.9.7',
+    date: '2026-10-25',
+    title: '대규모 콘텐츠 확장: 전사 업적 도감 & 오락실 & 연말 결산 Wrapped',
+    enTitle: 'Major Content Pack: Achievements, Arcade & Office Wrapped',
+    items: [
+      '🏆 20여 종의 다채로운 코딩 업적 도감 및 직원 직급 랭킹 시스템',
+      '🕹️ 사무실 한편의 레트로 오락기 미니게임 탑재',
+      '📊 한 해 동안의 코딩 여정을 돌아보는 오피스 랩드(Wrapped)'
+    ],
+    enItems: [
+      '🏆 20+ coding achievements & employee rank leaderboard',
+      '🕹️ Retro arcade mini-games in the office corner',
+      '📊 End-of-year coding stats in Office Wrapped'
+    ]
+  },
+  {
+    id: 'v1.8.6',
+    ver: 'v1.8.6',
+    date: '2026-10-18',
+    title: '3대 화면 모드(오피스·미니위젯·산책) 통합 전환 시스템',
+    enTitle: 'Integrated 3 View Modes (Office, MiniWidget, Desktop Walk)',
+    items: [
+      '🪟 풀 오피스 모드, 화면 구석에 쏙 들어가는 미니위젯, 바탕화면을 거니는 산책 모드 원클릭 전환'
+    ],
+    enItems: [
+      '🪟 Full Office, compact corner MiniWidget, and desktop Walk Mode switcher'
+    ]
+  },
+  {
+    id: 'v1.7.1',
+    ver: 'v1.7.1',
+    date: '2026-10-10',
+    title: '고양이 3단계 성장 시스템 (아깽이 🍼 ➔ 캣초딩 ⚡ ➔ 성묘 👑)',
+    enTitle: 'Cat 3-Stage Growth System (Kitten -> Junior -> Adult)',
+    items: [
+      '🐟 밥 주기와 놀아주기를 통해 하루하루 자라나는 반려묘 육성 시뮬레이션',
+      '🛋️ 캣타워, 캣휠, 스크래쳐, 터널 등 고양이 놀이 기구 8종 연동'
+    ],
+    enItems: [
+      '🐟 Pet care simulation: feed, clean litter, and watch cats grow daily',
+      '🛋️ 8 interactive cat play furniture items (cat tower, wheel, scratcher, tunnel)'
+    ]
+  },
+  {
+    id: 'v1.6.0',
+    ver: 'v1.6.0',
+    date: '2026-10-01',
+    title: '스마트폰 원격 웹 컨트롤러(Remote Web) 실시간 동기화',
+    enTitle: 'Smartphone Remote Web Controller Real-time Sync',
+    items: [
+      '📱 QR 코드로 휴대폰과 연결하여 언제 어디서나 Claude에게 원격 지시 및 도구 승인',
+      '🛋️ 사무실 가구 및 고양이 배치 실시간 모바일 동기화'
+    ],
+    enItems: [
+      '📱 Connect via QR code to remotely instruct and approve Claude tools from mobile',
+      '🛋️ Real-time mobile sync for office furniture and pets'
+    ]
+  }
+];
+
+const newsModalEl = $('newsModal');
+const btnNewsEl = $('btnNews');
+const newsCloseBtn = $('newsClose');
+const btnNewsCloseBottom = $('btnNewsCloseBottom');
+const btnMarkAllNewsRead = $('btnMarkAllNewsRead');
+
+function getReadNewsIds() {
+  const arr = store.get('readNewsIds', []);
+  return new Set(Array.isArray(arr) ? arr : []);
+}
+
+function saveReadNewsIds(readSet) {
+  store.set('readNewsIds', Array.from(readSet));
+  updateNewsBadges();
+}
+
+function getUnreadNewsCount() {
+  const readSet = getReadNewsIds();
+  return UPDATE_NEWS.filter(n => !readSet.has(n.id)).length;
+}
+
+function updateNewsBadges() {
+  const unreadCount = getUnreadNewsCount();
+  const btnMoreBadge = $('btnMoreNewsBadge');
+  const btnNewsBadge = $('btnNewsMenuBadge');
+
+  if (btnMoreBadge) {
+    btnMoreBadge.hidden = unreadCount === 0;
+  }
+  if (btnNewsBadge) {
+    btnNewsBadge.hidden = unreadCount === 0;
+    btnNewsBadge.textContent = unreadCount > 9 ? '9+' : String(unreadCount);
+  }
+  const summaryEl = $('newsUnreadCount');
+  if (summaryEl) {
+    summaryEl.textContent = unreadCount > 0
+      ? T(`안읽은 공지 ${unreadCount}개`, `${unreadCount} unread`)
+      : T('모든 공지를 확인했습니다 ✨', 'All caught up! ✨');
+  }
+}
+
+function renderNewsList() {
+  const listEl = $('newsList');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  const readSet = getReadNewsIds();
+  const isEn = (typeof lang !== 'undefined' && lang === 'en');
+
+  UPDATE_NEWS.forEach((news) => {
+    let isUnread = !readSet.has(news.id);
+
+    const itemEl = document.createElement('div');
+    itemEl.className = `news-item ${isUnread ? 'unread' : 'read'}`;
+    itemEl.dataset.id = news.id;
+
+    const rowEl = document.createElement('div');
+    rowEl.className = 'news-item-row';
+
+    const badgeCol = document.createElement('div');
+    badgeCol.className = 'nb-col nb-badge-col';
+    const badge = document.createElement('span');
+    badge.className = `news-badge ${isUnread ? 'badge-new' : 'badge-read'}`;
+    badge.textContent = isUnread ? 'N' : '✓';
+    badgeCol.appendChild(badge);
+
+    const verCol = document.createElement('div');
+    verCol.className = 'nb-col nb-ver-col';
+    const verTag = document.createElement('span');
+    verTag.className = 'news-ver-tag';
+    verTag.textContent = news.ver;
+    verCol.appendChild(verTag);
+
+    const titleCol = document.createElement('div');
+    titleCol.className = 'nb-col nb-title-col';
+    const titleTxt = document.createElement('span');
+    titleTxt.className = 'news-title-txt';
+    titleTxt.textContent = T(news.title, news.enTitle);
+    const arrow = document.createElement('span');
+    arrow.className = 'news-item-arrow';
+    arrow.textContent = '▶';
+    titleCol.appendChild(titleTxt);
+    titleCol.appendChild(arrow);
+
+    const dateCol = document.createElement('div');
+    dateCol.className = 'nb-col nb-date-col';
+    const dateTxt = document.createElement('span');
+    dateTxt.className = 'news-date-txt';
+    dateTxt.textContent = news.date;
+    dateCol.appendChild(dateTxt);
+
+    rowEl.appendChild(badgeCol);
+    rowEl.appendChild(verCol);
+    rowEl.appendChild(titleCol);
+    rowEl.appendChild(dateCol);
+
+    const detailsEl = document.createElement('div');
+    detailsEl.className = 'news-item-details';
+    const ul = document.createElement('ul');
+    ul.className = 'news-details-list';
+    const items = (isEn && news.enItems) ? news.enItems : news.items;
+    items.forEach(it => {
+      const li = document.createElement('li');
+      li.textContent = it;
+      ul.appendChild(li);
+    });
+    detailsEl.appendChild(ul);
+
+    rowEl.addEventListener('click', () => {
+      const willOpen = !itemEl.classList.contains('open');
+      itemEl.classList.toggle('open', willOpen);
+
+      if (isUnread) {
+        const curRead = getReadNewsIds();
+        curRead.add(news.id);
+        saveReadNewsIds(curRead);
+        isUnread = false;
+
+        itemEl.classList.remove('unread');
+        itemEl.classList.add('read');
+        badge.className = 'news-badge badge-read';
+        badge.textContent = '✓';
+      }
+    });
+
+    itemEl.appendChild(rowEl);
+    itemEl.appendChild(detailsEl);
+    listEl.appendChild(itemEl);
+  });
+
+  updateNewsBadges();
+}
+
+function openNewsModal() {
+  if (!newsModalEl) return;
+  renderNewsList();
+  newsModalEl.hidden = false;
+  if (WIDGET_WINDOW) syncPetHeight();
+}
+
+function closeNewsModal() {
+  if (!newsModalEl) return;
+  newsModalEl.hidden = true;
+  if (WIDGET_WINDOW) {
+    if (petMode === 'island') syncPetHeight();
+    else send({ cmd: 'pet-restore-height' });
+  }
+}
+
+function markAllNewsRead() {
+  const allIds = new Set(UPDATE_NEWS.map(n => n.id));
+  saveReadNewsIds(allIds);
+  renderNewsList();
+  showToast(T('📢 모든 업데이트 뉴스를 읽음 처리했습니다.', '📢 Marked all update news as read.'), '✓');
+}
+
+function initUpdateNews() {
+  if (btnNewsEl) btnNewsEl.addEventListener('click', openNewsModal);
+  if (newsCloseBtn) newsCloseBtn.addEventListener('click', closeNewsModal);
+  if (btnNewsCloseBottom) btnNewsCloseBottom.addEventListener('click', closeNewsModal);
+  if (btnMarkAllNewsRead) btnMarkAllNewsRead.addEventListener('click', markAllNewsRead);
+  if (newsModalEl) {
+    newsModalEl.addEventListener('click', (e) => {
+      if (e.target === newsModalEl) closeNewsModal();
+    });
+  }
+  updateNewsBadges();
+}
+
 
 function applyConnectGuideLang() {
   if (!connectGuideEl) return;
@@ -11411,6 +12357,22 @@ function sendPetSay() {
   send({ cmd: 'pet-say', sid: s.id, text: text.slice(0, 1000) });
   recordDailyQuestProgress('daily_prompt', 1);
   playRetroSound('send');
+  const isVirtualAi = s && (s.isVirtual || s.id?.startsWith('mcp_') || (s.entry && s.entry !== 'cli' && s.entry !== 'terminal'));
+  if (isVirtualAi) {
+    s.text = text.slice(0, 100);
+    s.lastSay = { text, t: Date.now() };
+    if (remoteState && remoteState.s) {
+      remoteState.s[s.id] = {
+        said: { text: text.slice(0, 1000), t: Date.now(), state: 'delivered' }
+      };
+    }
+    const msg = T(`✅ "${text.slice(0, 24)}" 지시를 전달했어요!`, `✅ Sent "${text.slice(0, 24)}"`);
+    petNote = { sid: s.id, at: Date.now(), text: msg };
+    remoteNote = { sid: s.id, at: Date.now(), text: msg };
+    renderPet();
+    if (selectedId) renderPanel();
+    return;
+  }
   const r = remoteOf(s.id);
   const listening = r && r.listen;
   const connected = DEMO || claudeConnected();
@@ -11610,27 +12572,30 @@ function renderPet() {
       }
     }
 
-    const connected = DEMO || claudeConnected();
+    const isVirtualAi = s && (s.isVirtual || s.id?.startsWith('mcp_') || (s.entry && s.entry !== 'cli' && s.entry !== 'terminal'));
+    const connected = DEMO || isVirtualAi || claudeConnected();
     petInputEl.disabled = !connected;
     petSendBtn.disabled = !connected;
     const isQueued = connected && r.said && r.said.state === 'queued';
     petCancelBtn.hidden = !isQueued;
-    if (petWakeBtn) petWakeBtn.hidden = !(isQueued && !r.listen);
-    if (petGuideBtn) petGuideBtn.hidden = !(isQueued && !r.listen);
+    if (petWakeBtn) petWakeBtn.hidden = isVirtualAi || !(isQueued && !r.listen);
+    if (petGuideBtn) petGuideBtn.hidden = isVirtualAi || !(isQueued && !r.listen);
     if (!connected) {
       petNoteEl.textContent = T('🔕 지시·승인을 쓰려면 메인 설정(⚙️)에서 [Claude Code 연결]을 켜 주세요.',
         '🔕 Connect to Claude Code in ⚙️ Settings to send instructions or approve.');
     } else if (petNote && petNote.sid === s.id && Date.now() - petNote.at < 25000) {
       if (r.said && r.said.t > petNote.at) petNote = null;
-      petNoteEl.textContent = petNote ? petNote.text : saidText(r.said, a.busy || asks.length > 0);
+      petNoteEl.textContent = petNote ? petNote.text : saidText(r.said, a.busy || asks.length > 0, isVirtualAi);
     } else if (r.said) {
-      petNoteEl.textContent = saidText(r.said, a.busy || asks.length > 0);
+      petNoteEl.textContent = saidText(r.said, a.busy || asks.length > 0, isVirtualAi);
     } else {
-      petNoteEl.textContent = r.listen
-        ? T('📡 대기 중 — 바로 이 대화에 지시를 던질 수 있어요', '📡 Ready — send an instruction to continue this conversation')
-        : a.busy
-          ? T('💻 작업 중 — 보내면 지금 작업이 끝나는 대로 전달돼요', '💻 Working — delivered right after the current work ends')
-          : T('⏳ 대기 연결 전 — 터미널에서 한 번 응답을 마치면 바로 연결돼요', '⏳ Not listening yet — finishes connecting after next reply in terminal');
+      petNoteEl.textContent = isVirtualAi
+        ? T('✨ 실시간 연동 중 — 지시를 보내면 AI가 확인해요', '✨ Connected — instructions will be received by AI')
+        : (r.listen
+          ? T('📡 대기 중 — 바로 이 대화에 지시를 던질 수 있어요', '📡 Ready — send an instruction to continue this conversation')
+          : a.busy
+            ? T('💻 작업 중 — 보내면 지금 작업이 끝나는 대로 전달돼요', '💻 Working — delivered right after the current work ends')
+            : T('⏳ 대기 연결 전 — 터미널에서 한 번 응답을 마치면 바로 연결돼요', '⏳ Not listening yet — finishes connecting after next reply in terminal'));
     }
   }
 
@@ -12624,6 +13589,12 @@ All current session employee genders and looks will be reset.`
       { type: 'teams', pcOnly: true },
     ],
   },
+  {
+    tab: 'staff', title: T('연동 AI 직원 & 가상 팀 현황', 'Connected AI Staff & Teams'),
+    items: [
+      { type: 'ai_staff_status' },
+    ],
+  },
 
   // 🛋️ 5. 인테리어 & 펫 (Interior & Pets)
   {
@@ -12693,7 +13664,7 @@ All current session employee genders and looks will be reset.`
     ],
   },
   {
-    tab: 'notify', title: T('휴대폰 원격 연결', 'Mobile Connection'),
+    tab: 'phone', title: T('휴대폰 원격 연결', 'Mobile Connection'),
     items: [
       { type: 'action', name: T('휴대폰 연결', 'Phone connection'), pcOnly: true,
         desc: T('밖에서도 휴대폰으로 사무실을 보고, 자리를 비웠을 때 승인하거나 다음 지시를 보냅니다. [켜기] 후 QR만 한 번 찍으면 되며 로그인·계정이 필요 없습니다. 🔒 무료 서버(화면: GitHub · 전달: Google Firebase)를 거치지만 내 PC와 내 휴대폰만 아는 열쇠로 암호화해 서버도 다른 사람도 볼 수 없고, 대화 원본은 전송하지 않습니다.',
@@ -12706,7 +13677,7 @@ All current session employee genders and looks will be reset.`
     ],
   },
   {
-    tab: 'notify', title: T('자리를 비웠을 때 (원격 지시·승인)', "While you're away"),
+    tab: 'phone', title: T('자리를 비웠을 때 (원격 지시·승인)', "While you're away"),
     items: [
       { type: 'action', name: T('Claude Code 연결이 필요해요', 'Connect to Claude Code first'), pcOnly: true, shown: () => !DEMO && !!remoteState && !remoteState.installed,
         desc: T('자리를 비운 동안 휴대폰에서 지시·승인을 하려면 먼저 Claude Code와 연결해야 합니다(⚙️ → 🖥️ 시스템의 연결과 같음).', 'To instruct and approve from the phone, connect to Claude Code (same button as ⚙️ → 🖥️ System).'),
@@ -12723,7 +13694,7 @@ All current session employee genders and looks will be reset.`
     ],
   },
   {
-    tab: 'notify', title: T('휴대폰 고급 설정', 'Mobile Advanced'),
+    tab: 'phone', title: T('휴대폰 고급 설정', 'Mobile Advanced'),
     items: [
       { type: 'toggle', name: T('휴대폰에서 별명·메모 고치기', 'Edit nicknames & memos on the phone'), pcOnly: true, shown: () => !DEMO && !!cloud?.configured,
         desc: T('휴대폰의 직원 상세 화면에서 별명이나 메모를 고치면 몇 초 안에 PC에도 그대로 반영됩니다(같은 열쇠로 암호화).', "Nicknames and memos edited in the phone's employee details reach the PC within seconds (locked with the same key)."),
@@ -12731,28 +13702,19 @@ All current session employee genders and looks will be reset.`
     ],
   },
 
-  // 🖥️ 7. 시스템 & 연동 (System & Integration)
+  // ⚡ 7. AI & MCP 연동 (AI & Integrations)
   {
-    tab: 'system', title: T('Claude Code 연동', 'Claude Code Connection'),
+    tab: 'integration', title: T('AI 플랫폼 & MCP 연동 허브', 'AI Platforms & MCP Integration Hub'),
     items: [
-      { type: 'action', name: T('클로드(채팅 및 프로젝트) 연동하기', 'Connect Claude (Chat & Projects)'), pcOnly: true,
-      desc: T('Claude 데스크톱 앱의 일반 채팅 및 프로젝트(Project) 세션을 사무실 화면에 출근시키고, PC 및 모바일에서 실시간 양방향 지시를 내리는 상세 연동 가이드 창을 엽니다.',
-              'Open the step-by-step guide window to connect Claude Desktop chats and Projects to Pixel Office with bidirectional instructions.'),
-      label: () => T('연동 가이드 열기', 'Open Guide'),
-      run: () => { send({ cmd: 'open-mcp-guide' }); }
-    },
-    { type: 'action', name: T('Claude MCP 연동 해제 (설정 삭제)', 'Remove Claude MCP Integration'), pcOnly: true,
-      desc: T('Claude 데스크톱 앱 설정(claude_desktop_config.json)에서 Pixel Office MCP 서버 등록을 삭제합니다. 삭제 후 Claude 프로젝트의 [지침]에 넣었던 문구도 함께 지워주시고 Claude를 재시작해 주세요.',
-              'Remove Pixel Office MCP server registration from Claude Desktop config. Restart Claude to complete removal.'),
-      label: () => T('연동 삭제', 'Delete Integration'),
-      run: () => { send({ cmd: 'uninstall-mcp' }); }
-    },
-    { type: 'action', name: T('❓ 세션이 안 보여요 (문제 해결 & Q&A)', '❓ Session missing? (Troubleshoot & FAQ)'), pcOnly: false,
-      desc: T('Claude 데스크톱 MCP 도구 출근 확인, Claude Code 첫 질문 전송, 표시 기간 설정 등 세션이 보이지 않는 원인별 해결책을 안내합니다.',
-              'Guide to resolve missing sessions: Claude Desktop MCP tool reporting, first prompt requirement, display window settings, etc.'),
-      label: () => T('Q&A 보기', 'View FAQ'),
-      run: openSessionFaqModal },
-    { type: 'action', name: T('Claude Code 연결', 'Connect to Claude Code'), pcOnly: true,
+      {
+        type: 'ai_hub',
+      },
+      { type: 'action', name: T('❓ 세션이 안 보여요 (문제 해결 & Q&A)', '❓ Session missing? (Troubleshoot & FAQ)'), pcOnly: false,
+        desc: T('Claude 데스크톱 MCP 도구 출근 확인, Claude Code 첫 질문 전송, 표시 기간 설정 등 세션이 보이지 않는 원인별 해결책을 안내합니다.',
+                'Guide to resolve missing sessions: Claude Desktop MCP tool reporting, first prompt requirement, display window settings, etc.'),
+        label: () => T('Q&A 보기', 'View FAQ'),
+        run: openSessionFaqModal },
+      { type: 'action', name: T('Claude Code 연결', 'Connect to Claude Code'), pcOnly: true,
         desc: T('Claude가 승인을 기다리거나 질문하면 직원이 즉시 손을 들고, 세션을 닫으면 바로 퇴근합니다. 휴대폰 지시·승인도 이 연결을 통해 동작합니다. Claude Code 설정(~/.claude/settings.json)에 연결 줄을 추가하므로 확인 창이 먼저 뜹니다(끊으면 추가한 줄만 제거).',
           'Employees raise a hand the moment Claude waits for an approval or asks a question, and go home as soon as a session closes. Phone instructions and approvals come through this too. It adds a few lines to the Claude Code settings file, so you confirm first (disconnecting removes only those lines).'),
         label: () => (claudeConnected() ? T('연결 끊기', 'Disconnect') : data.hooks && data.hooks.state !== 'off' ? T('다시 연결', 'Reconnect') : T('연결하기', 'Connect')),
@@ -13468,25 +14430,308 @@ const RENDER = {
       }
     };
   },
-};
+
+  ai_staff_status(it, row) {
+    row.classList.add('stack');
+    const wrap = elem('div', 'ai-staff-wrap');
+    row.append(wrap);
+
+    return () => {
+      wrap.innerHTML = '';
+      const list = getVisiblePlatforms();
+      if (!list || list.length === 0) {
+        wrap.append(elem('div', 'desc dim', T('등록된 외부 AI 플랫폼이 없습니다.', 'No AI platforms registered.')));
+        return;
+      }
+
+      const descBox = elem('div', 'ai-info-banner');
+      descBox.style.marginBottom = '10px';
+      descBox.innerHTML = T(
+        '💡 외부 AI는 연동 완료 후 <strong>실제 대화가 시작되거나 [출근 호출]</strong>을 누르면 오피스 책상 및 팀 목록에 즉시 나타납니다.',
+        '💡 External AIs appear at desks and in teams when <strong>conversations start or [Clock In] is clicked</strong>.'
+      );
+      wrap.append(descBox);
+
+      const grid = elem('div', 'ai-staff-grid');
+      for (const p of list) {
+        const item = elem('div', 'ai-staff-card');
+        const left = elem('div', 'ai-staff-left');
+        const icon = elem('span', 'ai-plat-icon', p.icon || '🤖');
+        const meta = elem('div', 'ai-staff-meta');
+        const name = elem('div', 'ai-staff-name', p.name);
+
+        const activeSess = (data.sessions || []).find(s =>
+          (s.entry && s.entry.toLowerCase().includes(p.id.toLowerCase())) ||
+          (s.team && s.team.toLowerCase().includes(p.id.toLowerCase())) ||
+          (p.id === 'antigravity' && (s.entry === 'antigravity' || s.entry === 'gemini')) ||
+          (p.id === 'claude-desktop' && (s.entry === 'claude-desktop' || s.team === 'Claude Desktop'))
+        );
+
+        const sub = elem('div', 'ai-staff-sub');
+        if (activeSess) {
+          sub.className = 'ai-staff-sub active';
+          sub.textContent = T(`🟢 출근 중 (${activeSess.title || activeSess.name || '작업 중'})`, `🟢 Working (${activeSess.title || activeSess.name || 'Active'})`);
+        } else if (p.isConfigured) {
+          sub.className = 'ai-staff-sub configured';
+          sub.textContent = T('✓ 연동 완료 (대기 중)', '✓ Connected (Idle)');
+        } else if (p.isInstalled) {
+          sub.className = 'ai-staff-sub detected';
+          sub.textContent = T('⚠️ 감지됨 (미연동)', '⚠️ Detected (Not connected)');
+        } else {
+          sub.className = 'ai-staff-sub uninstalled';
+          sub.textContent = T('미연동', 'Not Connected');
+        }
+
+        meta.append(name, sub);
+        left.append(icon, meta);
+
+        const right = elem('div', 'ai-staff-right');
+        if (activeSess) {
+          const btnView = elem('button', 'btn-plat-action btn-plat-ghost', T('🔍 자리 보기', '🔍 View'));
+          btnView.addEventListener('click', () => {
+            if (SETTINGS_WINDOW) {
+              send({ cmd: 'pet-open-office', id: activeSess.id });
+            } else {
+              selectSession(activeSess.id);
+            }
+            setSettingsOpen(false);
+          });
+          right.append(btnView);
+        } else if (p.isConfigured) {
+          const btnClockIn = elem('button', 'btn-plat-action btn-plat-test', T('🚀 출근 호출', '🚀 Clock In'));
+          btnClockIn.addEventListener('click', () => {
+            const shortName = p.name.split(' ')[0];
+            send({
+              cmd: 'test-clock-in',
+              ai: p.id,
+              session: shortName,
+              message: T(`${shortName} 직원이 출근했습니다 ✨`, `${shortName} employee clocked in ✨`)
+            });
+            setTimeout(() => { if (typeof refreshSettings === 'function') refreshSettings(); }, 300);
+          });
+          right.append(btnClockIn);
+        } else {
+          const btnConnect = elem('button', 'btn-plat-action btn-plat-config', T('⚡ 원클릭 연동', '⚡ 1-Click Connect'));
+          btnConnect.addEventListener('click', () => {
+            if (p.isCustom) {
+              saveCustomPlatform({ ...p, isConfigured: true });
+            }
+            send({ cmd: 'configure-platform-mcp', id: p.id, path: p.configPath || '' });
+          });
+          right.append(btnConnect);
+        }
+
+        item.append(left, right);
+        grid.append(item);
+      }
+      wrap.append(grid);
+    };
+  },
+
+  ai_hub(it, row) {
+    row.classList.add('stack');
+    const headerRow = elem('div', 'btnbar');
+    const btnScan = elem('button', 'act ghost', T('🔄 AI 플랫폼 다시 검색', '🔄 Re-scan AI Platforms'));
+    btnScan.addEventListener('click', () => {
+      userTriggeredScan = true;
+      send({ cmd: 'scan-ai-platforms', silent: false });
+      btnScan.textContent = T('🔍 검색 중...', '🔍 Scanning...');
+      setTimeout(() => { btnScan.textContent = T('🔄 AI 플랫폼 다시 검색', '🔄 Re-scan AI Platforms'); }, 1500);
+    });
+    const btnAdd = elem('button', 'act', T('➕ 새 AI 추가 / 편집', '➕ Add / Edit AI'));
+    btnAdd.addEventListener('click', () => {
+      openAddAiModal('presets');
+    });
+    headerRow.append(btnScan, btnAdd);
+
+    const infoBanner = elem('div', 'ai-info-banner');
+    infoBanner.innerHTML = T(
+      '💡 <strong>연동 완료된 AI</strong>는 실제 대화나 작업이 시작될 때 오피스 책상으로 자동 출근합니다.<br>지금 바로 일하는 모습을 확인하시려면 각 카드의 <strong>[🚀 출근 테스트]</strong> 버튼을 눌러보세요!',
+      '💡 <strong>Connected AIs</strong> automatically clock in to desks when conversations start.<br>Click <strong>[🚀 Test Clock-In]</strong> to view an employee working immediately!'
+    );
+
+    const grid = elem('div', 'ai-platforms-grid');
+    grid.id = 'aiPlatformsGrid';
+    row.append(headerRow, infoBanner, grid);
+
+    function renderGrid() {
+      grid.innerHTML = '';
+      const list = getVisiblePlatforms();
+
+      if (!list || list.length === 0) {
+        const emptyWrap = elem('div', 'empty-ai-box');
+        const emptyMsg = elem('div', 'desc mono center', T('감지되었거나 등록된 AI 플랫폼이 없습니다. [➕ 새 AI 추가] 버튼을 눌러 등록해 보세요.', 'No AI platforms registered. Click [➕ Add AI] to add one.'));
+        const emptyBtn = elem('button', 'btn-plat-action btn-plat-config', T('⚡ 추천 AI 추가하기', '⚡ Add Recommended AI'));
+        emptyBtn.style.margin = '10px auto 0';
+        emptyBtn.style.display = 'block';
+        emptyBtn.addEventListener('click', () => openAddAiModal('presets'));
+        emptyWrap.append(emptyMsg, emptyBtn);
+        grid.append(emptyWrap);
+        return;
+      }
+
+      for (const p of list) {
+        const card = elem('div', 'ai-plat-card');
+        const left = elem('div', 'ai-plat-left');
+        const icon = elem('span', 'ai-plat-icon', p.icon || '🤖');
+        const info = elem('div', 'ai-plat-info');
+        const titleRow = elem('div', 'ai-plat-title-row');
+        const name = elem('span', 'ai-plat-title', p.name);
+        titleRow.append(name);
+        if (p.isCustom) {
+          const customTag = elem('span', 'ai-badge-status', T('수동 등록', 'Custom'));
+          customTag.style.background = 'rgba(168, 85, 247, 0.15)';
+          customTag.style.color = '#c084fc';
+          titleRow.append(customTag);
+        }
+
+        const desc = elem('div', 'ai-plat-desc', p.description);
+        info.append(titleRow, desc);
+        left.append(icon, info);
+
+        const right = elem('div', 'ai-plat-right');
+
+        const activeSess = (data.sessions || []).find(s =>
+          (s.entry && s.entry.toLowerCase().includes(p.id.toLowerCase())) ||
+          (s.team && s.team.toLowerCase().includes(p.id.toLowerCase())) ||
+          (p.id === 'antigravity' && (s.entry === 'antigravity' || s.entry === 'gemini')) ||
+          (p.id === 'claude-desktop' && (s.entry === 'claude-desktop' || s.team === 'Claude Desktop'))
+        );
+
+        let badgeClass = 'ai-badge-uninstalled';
+        let badgeText = T('미연동', 'Not Connected');
+        if (activeSess) {
+          badgeClass = 'ai-badge-configured';
+          badgeText = T(`🟢 출근 중 (${activeSess.title || activeSess.name || '작업 중'})`, `🟢 Working (${activeSess.title || activeSess.name || 'Active'})`);
+        } else if (p.isConfigured) {
+          badgeClass = 'ai-badge-configured';
+          badgeText = T('✓ 연동 완료 (대기 중)', '✓ Connected (Idle)');
+        } else if (p.isInstalled) {
+          badgeClass = 'ai-badge-detected';
+          badgeText = T('⚠️ 감지됨 (연동 가능)', '⚠️ Detected (Ready)');
+        } else if (p.type === 'webhook' || p.type === 'universal') {
+          badgeClass = 'ai-badge-ready';
+          badgeText = T('웹훅 지원', 'Webhook Ready');
+        }
+        const badge = elem('span', 'ai-badge-status ' + badgeClass, badgeText);
+        right.append(badge);
+
+        if (activeSess) {
+          const btnView = elem('button', 'btn-plat-action btn-plat-ghost', T('🔍 자리 보기', '🔍 View'));
+          btnView.addEventListener('click', () => {
+            if (SETTINGS_WINDOW) {
+              send({ cmd: 'pet-open-office', id: activeSess.id });
+            } else {
+              selectSession(activeSess.id);
+            }
+            setSettingsOpen(false);
+          });
+          right.append(btnView);
+        }
+
+        if (p.isConfigured) {
+          // 출근 테스트 버튼
+          const btnTest = elem('button', 'btn-plat-action btn-plat-test', T('🚀 출근 테스트', '🚀 Test Clock-In'));
+          btnTest.title = T('오피스 책상에 즉시 테스트 직원을 출근시킵니다.', 'Clocks in a test employee immediately.');
+          btnTest.addEventListener('click', () => {
+            const shortName = p.name.split(' ')[0];
+            send({
+              cmd: 'test-clock-in',
+              ai: p.id,
+              session: shortName,
+              message: T(`${shortName} 작업을 진행하고 있습니다 ✨`, `Working on ${shortName} ✨`)
+            });
+          });
+          right.append(btnTest);
+
+          if (p.id === 'claude-desktop') {
+            const btnGuide = elem('button', 'btn-plat-action btn-plat-ghost', T('📖 가이드', '📖 Guide'));
+            btnGuide.addEventListener('click', () => send({ cmd: 'open-mcp-guide' }));
+            right.append(btnGuide);
+          } else if (p.type === 'webhook' || p.type === 'universal') {
+            const btnHook = elem('button', 'btn-plat-action btn-plat-ghost', T('📖 웹훅 안내', '📖 Webhook Info'));
+            btnHook.addEventListener('click', () => openAddAiModal('webhook'));
+            right.append(btnHook);
+          }
+
+          const btnRemove = elem('button', 'btn-plat-action btn-plat-unconfig', T('연동 해제', 'Disconnect'));
+          btnRemove.addEventListener('click', () => {
+            if (p.isCustom) {
+              saveCustomPlatform({ ...p, isConfigured: false });
+            }
+            send({ cmd: 'unconfigure-platform-mcp', id: p.id, path: p.configPath || '' });
+          });
+          right.append(btnRemove);
+        } else {
+          const btnConfig = elem('button', 'btn-plat-action btn-plat-config', T('⚡ 원클릭 연동', '⚡ 1-Click Connect'));
+          btnConfig.addEventListener('click', () => {
+            if (p.isCustom) {
+              saveCustomPlatform({ ...p, isConfigured: true });
+            }
+            send({ cmd: 'configure-platform-mcp', id: p.id, path: p.configPath || '' });
+          });
+          right.append(btnConfig);
+
+          if (p.id === 'claude-desktop') {
+            const btnGuide = elem('button', 'btn-plat-action btn-plat-ghost', T('📖 가이드', '📖 Guide'));
+            btnGuide.addEventListener('click', () => send({ cmd: 'open-mcp-guide' }));
+            right.append(btnGuide);
+          } else if (p.type === 'webhook' || p.type === 'universal') {
+            const btnHook = elem('button', 'btn-plat-action btn-plat-ghost', T('📖 웹훅 안내', '📖 Webhook Info'));
+            btnHook.addEventListener('click', () => openAddAiModal('webhook'));
+            right.append(btnHook);
+          }
+        }
+
+        // Edit button for custom platforms
+        if (p.isCustom) {
+          const btnEdit = elem('button', 'btn-plat-action btn-plat-edit', T('✏️ 편집', '✏️ Edit'));
+          btnEdit.addEventListener('click', () => openEditCustomAiModal(p));
+          right.append(btnEdit);
+        }
+
+        // Delete / Hide button
+        const btnDelete = elem('button', 'btn-plat-action btn-plat-delete', T('🗑️ 삭제', '🗑️ Delete'));
+        btnDelete.title = T('목록에서 제거합니다.', 'Remove from list.');
+        btnDelete.addEventListener('click', () => {
+          if (p.isCustom) {
+            deleteCustomPlatform(p.id);
+          } else {
+            hidePlatform(p.id);
+          }
+        });
+        right.append(btnDelete);
+
+        card.append(left, right);
+        grid.append(card);
+      }
+    }
+
+    renderGrid();
+    window._renderAiPlatformsGrid = renderGrid;
+    return () => renderGrid();
+  }};
 
 // 설정 팝업의 탭. dot(): 이 탭에 볼 것이 있으면 점을 찍는다
 const SETTINGS_TABS = [
   { id: 'display', icon: '🏢', name: T('화면 & 테마', 'Display & Theme') },
   { id: 'widget', icon: '🪟', name: T('바탕화면 위젯', 'Desktop Widget') },
+  { id: 'interior', icon: '🛋️', name: T('인테리어 & 펫', 'Interior & Pets') },
   { id: 'music', icon: '🎵', name: T('코딩 BGM', 'Coding BGM') },
   { id: 'staff', icon: '👥', name: T('직원 & 팀', 'Staff & Teams') },
-  { id: 'interior', icon: '🛋️', name: T('인테리어 & 펫', 'Interior & Pets') },
-  { id: 'notify', icon: '🔔', name: T('알림 & 휴대폰', 'Alerts & Mobile'), dot: () => !!cloud?.enabled && cloud.state === 'error' },
-  { id: 'system', icon: '🖥️', name: T('시스템 & 연동', 'System & Integration'), dot: () => !!appSettings?.update?.newer },
+  { id: 'notify', icon: '🔔', name: T('알림 & 효과음', 'Alerts & Sounds') },
+  { id: 'integration', icon: '⚡', name: T('AI & MCP 연동', 'AI & Integrations') },
+  { id: 'phone', icon: '📱', name: T('휴대폰 원격', 'Mobile Remote'), dot: () => !!cloud?.enabled && cloud.state === 'error' },
+  { id: 'system', icon: '⚙️', name: T('시스템 & 환경', 'System & Environment'), dot: () => !!appSettings?.update?.newer },
 ];
 
 const settingRows = [];
 const settingTabs = new Map();   // 탭 id → { tab, btn, pane }
 let settingsTab = store.get('settingsTab', 'display');   // 마지막에 본 탭
 if (settingsTab === 'office') settingsTab = 'display';
-else if (settingsTab === 'phone') settingsTab = 'notify';
 else if (settingsTab === 'general' || settingsTab === 'about') settingsTab = 'system';
+else if (settingsTab === 'ai' || settingsTab === 'mcp') settingsTab = 'integration';
+else if (settingsTab === 'mobile') settingsTab = 'phone';
 
 function buildSettings() {
   for (const tab of SETTINGS_TABS) {
@@ -13527,9 +14772,12 @@ function buildSettings() {
 
 function showSettingsTab(id, remember = true) {
   if (id === 'office') id = 'display';
-  else if (id === 'phone') id = 'notify';
+  else if (id === 'ai' || id === 'mcp') id = 'integration';
+  else if (id === 'mobile') id = 'phone';
   else if (id === 'general' || id === 'about') id = 'system';
-  if (!settingTabs.has(id)) return;
+  if (!settingTabs.has(id)) {
+    id = settingTabs.keys().next().value || 'display';
+  }
   settingsTab = id;
   if (remember) store.set('settingsTab', id);
   for (const [key, { btn, pane }] of settingTabs) {
@@ -13612,6 +14860,7 @@ function setSettingsOpen(open, tab) {
   if (open) {
     tooltipEl.hidden = true;
     if (tab) showSettingsTab(tab);
+    if (!DEMO && !REMOTE) send({ cmd: 'scan-ai-platforms', silent: true });
   }
   refreshSettings();
   // 새 버전 확인은 12시간마다라, 설정을 열 때 10분 넘게 지났으면 한 번 더 물어본다(새 버전 알림을 켜 둔 경우만)
@@ -13989,6 +15238,8 @@ if (hudSearchEl) {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const msModal = modeSelectModal;
+    if (newsModalEl && !newsModalEl.hidden) { closeNewsModal(); return; }
+    if (addAiModalEl && !addAiModalEl.hidden) { closeAddAiModal(); return; }
     if (sessionFaqModalEl && !sessionFaqModalEl.hidden) { closeSessionFaqModal(); return; }
     if (petModeMenuEl && !petModeMenuEl.hidden) { closePetModeMenu(); return; }
     if (msModal && !msModal.hidden) { msModal.hidden = true; return; }
@@ -14665,7 +15916,7 @@ async function postInbox(msg) {
 // 휴대폰은 지시(say)·승인(ok)·거절(no)·자리 비움(away)을 postInbox 로 보낸다.
 // 자리 비움은 손으로 켜지 않는다 — PC가 입력 없음·화면 잠금으로 켜고, 휴대폰은 PC를 아무도 안 쓸 때(idle)만 켤 수 있다(화면을 보고 있거나 지시를 보내면 저절로).
 // 돌아와 입력하거나 잠금을 풀면 꺼진다.
-const remoteOf =(id) => (remoteState?.installed ? remoteState.s?.[id] || {} : null);
+const remoteOf = (id) => (remoteState?.s?.[id] || (remoteState?.installed ? {} : null));
 const answered = new Map();      // 휴대폰에서 답한 승인 요청 → 누른 시각(PC에서 사라질 때까지 버튼을 잠근다)
 const askEls = new Map();        // 승인 요청 → 그 칸(다시 그려도 거절 이유 칸에 쓰던 글이 남게)
 const rAsksEl = $('rAsks'), sayEl = $('rSay'), rVoiceBtn = $('rVoice');
@@ -14716,15 +15967,18 @@ let rCancelBtn = null, rWakeBtn = null, rGuideBtn = null;
  */
 function renderRemote(s) {
   const r = remoteOf(s.id) || {};
-  const connected = DEMO || claudeConnected();
+  const isVirtual = s && (s.isVirtual || s.id?.startsWith('mcp_') || (s.entry && s.entry !== 'cli' && s.entry !== 'terminal'));
+  const connected = DEMO || isVirtual || claudeConnected();
   // 메인 창 상세 페이지에서는 지시·승인 창을 상시 노출하여 바로 지시할 수 있게 한다
   $('pRemote').hidden = false;
   const h3 = $('pRemote').querySelector('h3');
   if (h3) h3.textContent = REMOTE ? T('📱 휴대폰 지시·승인', '📱 Instruct & approve from the phone') : T('💬 지시 · 승인', '💬 Instruct & approve');
 
-  const away = !!remoteState.away, idle = !!remoteState.idle;
+  const away = !!remoteState?.away, idle = !!remoteState?.idle;
   const asks = r.asks || [];
-  $('rStatus').textContent = !REMOTE
+  $('rStatus').textContent = isVirtual
+    ? T('✨ 실시간 AI 연동 세션 — 지시를 보내면 AI 에이전트에게 전달됩니다.', '✨ Connected AI session — instructions sent here are delivered to the AI agent.')
+    : !REMOTE
     ? (asks.length ? T(`✋ 지금 확인·답변을 기다리는 요청이 ${asks.length}건 있어요.`, `✋ ${asks.length} request(s) waiting for your approval or answer.`)
       : actOf(s).busy ? T('💻 일하는 중 — 보낸 지시는 지금 작업이 끝나는 대로 이어서 전달됩니다.',
         '💻 Working — an instruction will be delivered right after the current work ends.')
@@ -14782,9 +16036,9 @@ function renderRemote(s) {
   $('rSayWrap').hidden = REMOTE && !(away || idle);
   if (sayFor !== s.id) { sayFor = s.id; sayEl.value = ''; }
   $('rQuickChips')?.remove();
-  if (remoteNote && r.said && r.said.t > remoteNote.at && remoteNote.sid === s.id) remoteNote = null;   // PC가 처리했다
+  if (remoteNote && r.said && r.said.t > remoteNote.at && remoteNote.sid === s.id && (!isVirtual || r.said.state === 'delivered')) remoteNote = null;   // PC가 처리했다
   $('rSaid').textContent = remoteNote && remoteNote.sid === s.id && Date.now() - remoteNote.at < 30000 ? remoteNote.text
-    : saidText(r.said, actOf(s).busy || asks.length > 0);
+    : saidText(r.said, actOf(s).busy || asks.length > 0, isVirtual);
   if (!rCancelBtn) {
     const rSaidEl = $('rSaid');
     rCancelBtn = elem('button', 'cancel-q', T('취소', 'Cancel'));
@@ -14806,8 +16060,8 @@ function renderRemote(s) {
   }
   const isQueued = r.said && r.said.state === 'queued';
   rCancelBtn.hidden = !isQueued;
-  if (rWakeBtn) rWakeBtn.hidden = !(isQueued && !r.listen);
-  if (rGuideBtn) rGuideBtn.hidden = !(isQueued && !r.listen);
+  if (rWakeBtn) rWakeBtn.hidden = isVirtual || !(isQueued && !r.listen);
+  if (rGuideBtn) rGuideBtn.hidden = isVirtual || !(isQueued && !r.listen);
 
   // Claude 의 마지막 답(Stop 훅이 알려 준 것 또는 대화 기록의 마지막 답변 요약 중 더 최신인 것)
   const useStopReply = r.reply && r.reply.text && (!s.reply || (r.reply.t || 0) >= (s.last || 0));
@@ -14821,9 +16075,13 @@ function renderRemote(s) {
 }
 
 /** 마지막 지시의 처리 상태. working: 그 세션이 일하는 중(아니면 못 건넨 까닭은 세션이 아직 연결 전이라서). */
-function saidText(d, working) {
+function saidText(d, working, isVirtual) {
   if (!d) return '';
   const when = fmtTime(d.t);
+  if (isVirtual) {
+    return d.state === 'delivered' ? T(`✅ 지시 전달 완료 · ${when}`, `✅ Delivered · ${when}`)
+      : T(`⏳ 지시 대기 중 · ${when}`, `⏳ Waiting · ${when}`);
+  }
   const connected = DEMO || (typeof claudeConnected === 'function' && claudeConnected());
   return d.state === 'delivered' ? T(`✅ 지시 전달 완료 · ${when}`, `✅ Delivered · ${when}`)
     : d.state === 'queued' ? (working || connected
@@ -14969,6 +16227,27 @@ async function sendSay() {
     }
     send({ cmd: 'pet-say', sid, text: text.slice(0, 1000) });
     playRetroSound('send');
+    const s = data.sessions.find((x) => x.id === sid);
+    const isVirtualAi = s && (s.isVirtual || sid.startsWith('mcp_') || (s.entry && s.entry !== 'cli' && s.entry !== 'terminal'));
+    if (isVirtualAi) {
+      if (s) {
+        s.text = text.slice(0, 100);
+        s.lastSay = { text, t: Date.now() };
+      }
+      if (remoteState && remoteState.s) {
+        remoteState.s[sid] = {
+          said: { text: text.slice(0, 1000), t: Date.now(), state: 'delivered' }
+        };
+      }
+      remoteNote = {
+        sid,
+        at: Date.now(),
+        text: T(`✅ "${text.slice(0, 24)}" 지시를 전달했어요! (AI 도구/응답 시 처리)`, `✅ Sent "${text.slice(0, 24)}" (handled on next tool call)`)
+      };
+      renderPanel();
+      if (petOn()) renderPet();
+      return;
+    }
     const r = remoteOf(sid);
     const listening = r && r.listen;
     const connected = DEMO || claudeConnected();
@@ -15336,6 +16615,15 @@ if (REMOTE) {
     }
     else if (m?.type === 'settings') {
       setSettingsOpen(true, m.tab);
+    }
+    else if (m?.type === 'ai-platforms') {
+      onAiPlatforms(m.platforms, m.snippet, !!m.silent);
+    }
+    else if (m?.type === 'bgm-control') {
+      if (m.action === 'set-playing') setBgmPlaying(m.value);
+      else if (m.action === 'set-source') setBgmSource(m.source);
+      else if (m.action === 'select-track') selectLofiTrack(m.trackId);
+      else if (m.action === 'select-yt-track') selectYtTrack(m.trackId);
     }
     else if (m?.type === 'pet-topmost') {
       if (appSettings) appSettings.petTopmost = !!m.value;

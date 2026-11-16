@@ -9,11 +9,11 @@
 [![Release](https://img.shields.io/github/v/release/jibong614/claude-pixel-office?color=7c3aed&label=Release)](https://github.com/jibong614/claude-pixel-office/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078d4)](https://github.com/jibong614/claude-pixel-office)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512bd4)](https://dotnet.microsoft.com/download/dotnet/8.0)
-[![Tests](https://img.shields.io/badge/Tests-52%20Passed-brightgreen)](tests/ClaudeOffice.Tests)
+[![Tests](https://img.shields.io/badge/Tests-71%20Passed-brightgreen)](tests/ClaudeOffice.Tests)
 [![License](https://img.shields.io/github/license/jibong614/claude-pixel-office?color=green)](LICENSE)
 
-**See at a glance what Claude Code is doing and whether it's waiting for your approval — as a retro pixel-art office on Windows.**  
-*Features procedural Lo-Fi turntable & popular YouTube coding music, cozy cat adoption, desktop MiniWidget, and mobile remote control.*
+**See at a glance what Claude Code, Google Antigravity, Cursor, Windsurf, ChatGPT, and other AI coding assistants are doing — as a retro pixel-art office on Windows with direct instruction delivery.**  
+*Features multi-AI auto clock-in & direct window focus/delivery, lightweight HTTP MCP server, procedural Lo-Fi turntable & popular YouTube coding music, cozy cat adoption, desktop MiniWidget, and mobile remote control.*
 
 [🚀 Quick Start](#-quick-start) · [✨ Key Features](#-key-features) · [📸 Screenshots](#-screenshots) · [🎮 Controls](#-shortcuts--controls) · [📱 Mobile Remote Control](#-mobile-remote-control-optional) · [📖 FAQ](#-frequently-asked-questions-faq)
 
@@ -73,8 +73,10 @@
 
 ## ✨ Key Features
 
-### 1. 🧑‍💻 Intuitive Multi-Session Visualization & Business Mode
-- **Session = Agent, Folder = Team Area (Rug), Subagent = Intern**: Keep track of multiple terminal sessions at a glance without switching windows.
+### 1. 🧑‍💻 Intuitive Multi-AI Session Visualization & Business Mode
+- **Multi-AI Platform Integration (Claude Code, Antigravity, Cursor, Windsurf, ChatGPT)**: Visualizes various AI tools as distinct pixel-art agents in a unified retro office without bouncing between terminals.
+- **Direct AI Window Focus & Instruction Delivery**: Send instructions from the virtual office directly into external AI windows with auto-focus and clipboard keystroke injection (`Ctrl+V` + `Enter`).
+- **Leak-Free Lightweight HTTP Streaming MCP Server (`/mcp`)**: Connects seamlessly to Antigravity, Cursor, and modern MCP clients via loopback HTTP (`http://127.0.0.1:47821/mcp`) with zero dangling background processes.
 - **Real-Time Action Speech Bubbles**: Shows reading (`Read`), searching (`Grep/Glob`), writing code (`Edit/Write`), running commands (`Bash/PowerShell`), and web queries in clear speech bubbles.
 - **Modern Clean Dashboard (`Shortcut O`)**: Switch between the retro pixel office and an enterprise-ready card grid view with a unified dark background (`#0d0f17`).
 
@@ -211,7 +213,7 @@ src/ClaudeOffice/
   ├── SettingsWindow.cs Tray-exclusive 720×640 standalone transparent settings modal
   ├── MainWindow.xaml Main WebView2 host and tray management
   └── wwwroot/        Pure HTML5 Canvas pixel rendering engine (office.js, office.css)
-tests/ClaudeOffice.Tests/ 45 automated unit tests (rendering, hooks, crypto, layout)
+tests/ClaudeOffice.Tests/ 71 automated unit tests (rendering, hooks, crypto, layout)
 ```
 
 ---

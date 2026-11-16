@@ -155,7 +155,35 @@ public partial class MainWindow : Window
         _tray?.Dispose();
         _nativeBigIcon?.Dispose();
         _nativeSmallIcon?.Dispose();
+        TerminateSiblingMcpProcesses();
         Application.Current.Shutdown();
+    }
+
+    /// <summary>
+    /// 사용자가 트레이에서 '끝내기'를 눌렀을 때, 외부 AI 클라이언트(Antigravity, Claude 등)가
+    /// 백그라운드 stdio 통신용으로 띄워 둔 ClaudeOffice.exe --mcp 보조 프로세스까지 함께 종료하여
+    /// 작업 관리자에 찌꺼기 프로세스가 남지 않도록 깨끗이 정리한다.
+    /// </summary>
+    private static void TerminateSiblingMcpProcesses()
+    {
+        try
+        {
+            var selfPid = Environment.ProcessId;
+            foreach (var p in Process.GetProcessesByName("ClaudeOffice"))
+            {
+                if (p.Id == selfPid) continue;
+                try
+                {
+                    p.Kill();
+                }
+                catch { }
+                finally
+                {
+                    p.Dispose();
+                }
+            }
+        }
+        catch { }
     }
 
     /// <summary>
@@ -227,6 +255,7 @@ public partial class MainWindow : Window
         _cloud.SetLanguage(L.Code);   // 휴대폰도 PC와 같은 언어로
         _cloud.Start();
         _watcher.Start();
+        EnsureConfiguredAiPlatformsClockedIn();
 
         _updates.Checked += () => Dispatcher.InvokeAsync(OnUpdateChecked);
         _updater.Changed += () => Dispatcher.InvokeAsync(() => Post(AppSettingsJson()));   // 받는 중 진행률
@@ -367,6 +396,7 @@ public partial class MainWindow : Window
     private void OnRemoteChanged()
     {
         var json = _remote.StateJson();
+        SendAiPlatforms(silent: true);
         _cloud.OnRemote(json, RemoteHub.Installed, _remote.Away);
         Dispatcher.InvokeAsync(() => Post("{\"type\":\"remote\",\"data\":" + json + "}"));
     }
@@ -994,6 +1024,7 @@ public partial class MainWindow : Window
                         // 저장해 둔 별명·메모를 화면에 돌려준다(화면이 자기 것과 합친 뒤 다시 share 로 보낸다)
                         Post("{\"type\":\"share\",\"data\":" + (LoadShare() is { } saved && IsJsonObject(saved) ? saved : "null") + "}");
                         Post("{\"type\":\"remote\",\"data\":" + _remote.StateJson() + "}");
+                        SendAiPlatforms(silent: true);
                     }
                     if (sender != null && _pendingSelect is { } sel) { _pendingSelect = null; SelectSession(sel); }
                     if (sender != null && _pendingSettings is { } setTab) { _pendingSettings = null; OpenSettings(setTab); }
@@ -1273,6 +1304,11 @@ public partial class MainWindow : Window
                         && saySid.GetString() is { Length: > 0 } sId && sayTxt.GetString() is { Length: > 0 } sText)
                     {
                         _remote.SayFromPc(sId, sText);
+                        if (sId.StartsWith("mcp_"))
+                        {
+                            _watcher.ApplyVirtualInstruction(sId, sText);
+                            _ = DeliverToExternalAiWindowAsync(sId, sText);
+                        }
                     }
                     break;
                 case "broadcast-say":
@@ -1292,6 +1328,10 @@ public partial class MainWindow : Window
                                     if (!string.IsNullOrEmpty(sid) && act != "away")
                                     {
                                         _remote.SayFromPc(sid, broadcastText);
+                                        if (sid.StartsWith("mcp_"))
+                                        {
+                                            _watcher.ApplyVirtualInstruction(sid, broadcastText);
+                                        }
                                         sentCount++;
                                     }
                                 }
@@ -1418,6 +1458,68 @@ public partial class MainWindow : Window
                     break;
                 case "open-mcp-guide": ShowMcpGuideWindow(); break;
                 case "uninstall-mcp": UninstallMcpFromSettings(); break;
+                case "scan-ai-platforms":
+                    {
+                        bool silent = root.TryGetProperty("silent", out var sProp) && sProp.ValueKind == JsonValueKind.True;
+                        SendAiPlatforms(silent);
+                    }
+                    break;
+                                case "bgm-control":
+                    {
+                        var bgmAct = root.TryGetProperty("action", out var aProp) ? aProp.GetString() : null;
+                        var bgmVal = root.TryGetProperty("value", out var vProp) && vProp.GetBoolean();
+                        var bgmSrc = root.TryGetProperty("source", out var sProp) ? sProp.GetString() : null;
+                        int? bgmTrk = root.TryGetProperty("trackId", out var tProp) ? tProp.GetInt32() : null;
+                        Web.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(new
+                        {
+                            type = "bgm-control",
+                            action = bgmAct,
+                            value = bgmVal,
+                            source = bgmSrc,
+                            trackId = bgmTrk
+                        }));
+                    }
+                    break;
+                case "configure-platform-mcp":
+                    if (root.TryGetProperty("id", out var platIdProp))
+                    {
+                        var platId = platIdProp.GetString() ?? "";
+                        var customPath = root.TryGetProperty("path", out var pProp) ? pProp.GetString() : null;
+                        var ok = Mcp.AiPlatformManager.ConfigurePlatform(platId, customPath);
+                        if (ok)
+                        {
+                            SendAiPlatforms(silent: true);
+                            Post(JsonSerializer.Serialize(new { type = "toast", msg = L.T($"{platId} 연동이 등록되었습니다!", $"{platId} integration configured!"), icon = "✅", duration = 4000 }));
+                        }
+                    }
+                    break;
+                case "unconfigure-platform-mcp":
+                    if (root.TryGetProperty("id", out var unPlatIdProp))
+                    {
+                        var platId = unPlatIdProp.GetString() ?? "";
+                        var customPath = root.TryGetProperty("path", out var pProp) ? pProp.GetString() : null;
+                        var ok = Mcp.AiPlatformManager.UnconfigurePlatform(platId, customPath);
+                        if (ok)
+                        {
+                            SendAiPlatforms(silent: true);
+                            Post(JsonSerializer.Serialize(new { type = "toast", msg = L.T($"{platId} 연동이 해제되었습니다.", $"{platId} integration removed."), icon = "ℹ️", duration = 4000 }));
+                        }
+                    }
+                    break;
+                case "test-clock-in":
+                    {
+                        var ai = root.TryGetProperty("ai", out var aProp) ? aProp.GetString() : "gemini";
+                        var sess = root.TryGetProperty("session", out var sProp) ? sProp.GetString() : "테스트 대화";
+                        var msg = root.TryGetProperty("message", out var mProp) ? mProp.GetString() : "출근 테스트 중입니다 ✨";
+                        var status = root.TryGetProperty("status", out var stProp) ? stProp.GetString() : "idle";
+                        bool silent = root.TryGetProperty("silent", out var silProp) && silProp.ValueKind == JsonValueKind.True;
+                        _hooks.TriggerMcpUpdate((ai?.ToUpperInvariant() ?? "AI") + " Studio", sess ?? "테스트", status ?? "idle", msg ?? "대기 중", null, ai);
+                        if (!silent)
+                        {
+                            Post(JsonSerializer.Serialize(new { type = "toast", msg = L.T($"{ai} 테스트 직원이 출근했습니다!", $"{ai} test employee clocked in!"), icon = "🎉", duration = 4000 }));
+                        }
+                    }
+                    break;
                 case "hooks":   // Claude Code 연결·해제(상태 알림과 휴대폰 지시·승인을 한 번에)
                     if (!App.DemoMode) ToggleHooks();
                     break;
@@ -1565,11 +1667,147 @@ public partial class MainWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
     private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    private const byte VK_CONTROL = 0x11;
+    private const byte VK_V = 0x56;
+    private const byte VK_RETURN = 0x0D;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
+
     private static readonly HashSet<string> TerminalOrIdeProcesses = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Code", "Cursor", "Windsurf", "WindowsTerminal", "pwsh", "powershell", "cmd",
+        "Antigravity", "Code", "Cursor", "Windsurf", "ChatGPT", "WindowsTerminal", "pwsh", "powershell", "cmd",
         "mintty", "wezterm-gui", "alacritty", "wt", "devenv", "rider64", "idea64", "claude", "aider", "node",
     };
+
+    /// <summary>
+    /// 외부 AI 세션(Antigravity, Cursor, Windsurf, ChatGPT 등)에 지시를 보냈을 때,
+    /// 실행 중인 해당 AI 프로그램 창을 활성화하고 클립보드 붙여넣기(Ctrl+V) 및 전송(Enter)을 수행하여
+    /// 대기 중인 채팅 세션에 지시 메시지가 즉시 입력되도록 전달한다.
+    /// </summary>
+    private async Task DeliverToExternalAiWindowAsync(string sid, string text)
+    {
+        if (App.Offscreen || string.IsNullOrWhiteSpace(text)) return;
+
+        string? entry = null;
+        string? cwd = null;
+        if (_watcher.LastSnapshot is { } snap)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(snap);
+                foreach (var s in doc.RootElement.GetProperty("sessions").EnumerateArray())
+                {
+                    if (s.GetProperty("id").GetString() == sid)
+                    {
+                        entry = s.TryGetProperty("entry", out var e) ? e.GetString() : null;
+                        cwd = s.TryGetProperty("cwd", out var c) ? c.GetString() : null;
+                        break;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        var targetProc = (entry?.ToLowerInvariant()) switch
+        {
+            "antigravity" or "gemini" => "Antigravity",
+            "cursor" => "Cursor",
+            "windsurf" => "Windsurf",
+            "chatgpt" => "ChatGPT",
+            "claude-desktop" => "Claude",
+            _ => "Antigravity"
+        };
+
+        uint selfPid = (uint)Environment.ProcessId;
+        IntPtr bestHwnd = IntPtr.Zero;
+        int bestScore = 0;
+        var sb = new System.Text.StringBuilder(512);
+
+        EnumWindows((hWnd, _) =>
+        {
+            if (!IsWindowVisible(hWnd)) return true;
+            GetWindowThreadProcessId(hWnd, out uint pid);
+            if (pid == 0 || pid == selfPid) return true;
+            sb.Clear();
+            if (GetWindowText(hWnd, sb, sb.Capacity) <= 0) return true;
+            var wTitle = sb.ToString();
+
+            string procName = "";
+            try { procName = Process.GetProcessById((int)pid).ProcessName; }
+            catch { return true; }
+
+            if (!procName.Equals(targetProc, StringComparison.OrdinalIgnoreCase)) return true;
+
+            int score = 100;
+            if (wTitle.Contains("Antigravity", StringComparison.OrdinalIgnoreCase) ||
+                wTitle.Contains("ClaudeOffice", StringComparison.OrdinalIgnoreCase))
+                score += 50;
+            if (!string.IsNullOrWhiteSpace(cwd) && wTitle.Contains(cwd, StringComparison.OrdinalIgnoreCase))
+                score += 40;
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestHwnd = hWnd;
+            }
+            return true;
+        }, IntPtr.Zero);
+
+        if (bestHwnd == IntPtr.Zero) return;
+
+        try
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                try { Clipboard.SetDataObject(text, true); } catch { }
+            });
+
+            uint targetThread = GetWindowThreadProcessId(bestHwnd, out _);
+            uint curThread = GetCurrentThreadId();
+            bool attached = false;
+            if (targetThread != 0 && targetThread != curThread)
+                attached = AttachThreadInput(curThread, targetThread, true);
+
+            try
+            {
+                if (IsIconic(bestHwnd)) ShowWindow(bestHwnd, 9); // SW_RESTORE
+                SetForegroundWindow(bestHwnd);
+                BringWindowToTop(bestHwnd);
+            }
+            finally
+            {
+                if (attached) AttachThreadInput(curThread, targetThread, false);
+            }
+
+            await Task.Delay(220);
+
+            // Ctrl + V
+            keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
+            keybd_event(VK_V, 0, 0, UIntPtr.Zero);
+            await Task.Delay(40);
+            keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+            keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+
+            await Task.Delay(120);
+
+            // Enter
+            keybd_event(VK_RETURN, 0, 0, UIntPtr.Zero);
+            await Task.Delay(40);
+            keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        }
+        catch { }
+    }
 
     /// <summary>세션의 작업 폴더명·세션명·실행 위치(VS Code/Claude 데스크톱/터미널)를 바탕으로 해당 실행 창을 찾아 맨 앞으로 활성화한다.</summary>
     private void FocusSessionWindow(string? id)
@@ -1824,6 +2062,42 @@ public partial class MainWindow : Window
 
     private Mcp.McpGuideWindow? _mcpGuideWindow;
 
+    private static string GetPlatformDisplayName(string id, string fallbackName) => id.ToLowerInvariant() switch
+    {
+        "antigravity" => "Antigravity",
+        "gemini" => "Gemini",
+        "chatgpt" => "ChatGPT",
+        "cursor" => "Cursor",
+        "windsurf" => "Windsurf",
+        "deepseek" => "DeepSeek",
+        _ => fallbackName.Split(' ')[0]
+    };
+
+    private void EnsureConfiguredAiPlatformsClockedIn()
+    {
+        try
+        {
+            var platforms = Mcp.AiPlatformManager.ScanAll();
+            foreach (var p in platforms)
+            {
+                if (p.IsConfigured && p.Id != "claude-desktop")
+                {
+                    var shortName = GetPlatformDisplayName(p.Id, p.Name);
+                    _hooks.TriggerMcpUpdate((p.Id.ToUpperInvariant()) + " Studio", shortName, "idle", L.T("대기 중 ✨", "Standing by ✨"), null, p.Id);
+                }
+            }
+        }
+        catch { }
+    }
+
+    private void SendAiPlatforms(bool silent = false)
+    {
+        var list = Mcp.AiPlatformManager.ScanAll();
+        var snippet = Mcp.AiPlatformManager.GetMcpServerJsonSnippet();
+        var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        Post(JsonSerializer.Serialize(new { type = "ai-platforms", platforms = list, snippet, silent }, opts));
+    }
+
     public void ShowMcpGuideWindow()
     {
         Dispatcher.Invoke(() =>
@@ -1837,7 +2111,11 @@ public partial class MainWindow : Window
             }
             var owner = IsVisible ? this : null;
             _mcpGuideWindow = new Mcp.McpGuideWindow(owner);
-            _mcpGuideWindow.Closed += (_, _) => _mcpGuideWindow = null;
+            _mcpGuideWindow.Closed += (_, _) =>
+            {
+                _mcpGuideWindow = null;
+                SendAiPlatforms(silent: true);
+            };
             _mcpGuideWindow.Show();
         });
     }
@@ -1854,6 +2132,7 @@ public partial class MainWindow : Window
         if (res != MessageBoxResult.Yes) return;
 
         bool ok = Mcp.McpSetup.Uninstall();
+        SendAiPlatforms(silent: true);
         if (ok)
         {
             MessageBox.Show(this,

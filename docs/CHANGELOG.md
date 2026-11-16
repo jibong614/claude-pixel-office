@@ -2,6 +2,22 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.29 — 2026-11-16
+- **⚡ 멀티 AI 플랫폼(Google Antigravity·Cursor·Windsurf·ChatGPT·DeepSeek) 자동 감지 & 통합 연동**:
+  - Claude Code 외에도 다양한 AI 코딩 어시스턴트(Google Antigravity, Cursor, Windsurf, ChatGPT Desktop, DeepSeek/Ollama 등)를 자동 감지하고 수동 추가/편집 지원
+  - 등록된 AI 플랫폼은 앱 시작 시 가상 오피스에 자동 출근(Activity.Idle, 전용 배지 ✨, 🟢 등)하여 바로 지시를 수신할 수 있도록 연동
+  - 첫 실행 시 불필요한 검색 토스트 알림을 억제하고 직관적인 감지 개수 표시((X개 연동 감지됨))로 사용자 경험 정돈
+- **💬 가상 오피스 ➔ 외부 AI 창 직접 포커스 & 프롬프트 전달 (DeliverToExternalAiWindowAsync)**:
+  - 오피스 UI 또는 모바일 원격에서 특정 AI 직원에게 지시/메시지를 보낼 때, 대상 AI 프로세스/창을 최상위로 포커스하고 클립보드 복사 후 Ctrl+V + Enter 키 스트로크를 주입하여 프롬프트를 즉시 전달
+  - 수동으로 창을 찾아 복사-붙여넣기할 필요 없이 오피스에서 곧바로 작업 지시 가능
+- **🌐 경량 로컬 HTTP 스트리밍 MCP 서버(/mcp) 및 지시 큐(/mcp/say) 구현**:
+  - 기존 stdio 기반 persistent 프로세스(ClaudeOffice.exe --mcp) 생성으로 인한 프로세스 잔여 문제 해결
+  - HookServer 내부에서 로컬 루프백(http://127.0.0.1:47821/mcp) 기반의 Streamable HTTP MCP 프로토콜을 직접 제공하여 Antigravity, Cursor 등 최신 MCP 클라이언트와 완벽 호환
+  - /mcp/say 엔드포인트를 통해 토큰 인증 기반 실시간 지시 전달 큐 지원
+  - 작업표시줄 트레이 종료 시 모든 하위 리소스 및 통신 스레드가 깔끔하게 종료되도록 보장
+- **🧪 AI 플랫폼 및 MCP 연동 자동화 단위 테스트 추가**:
+  - AiPlatformManagerTests 등 19개 신규 단위 테스트 추가 (총 71개 테스트 전원 통과)
+
 ## 1.9.28 — 2026-11-14
 - **❓ 설정 창 내 [세션이 안 보여요] 도움말 버튼 & 전용 Q&A 모달 탑재**:
   - 설정 창 헤더 및 관련 탭(`👥 직원 & 팀`, `🖥️ 시스템 & 연동`)에 상시 접근 가능한 `[❓ 세션이 안 보여요]` 바로가기 버튼 추가

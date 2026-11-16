@@ -91,9 +91,16 @@ internal static class McpServer
         };
     }
 
+    private static string? _lastClientName;
+
     private static string BuildInitializeResponse(object id, JsonObject? @params)
     {
         var protocolVersion = @params?["protocolVersion"]?.ToString() ?? "2024-11-05";
+        var clientName = @params?["clientInfo"]?["name"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(clientName))
+        {
+            _lastClientName = clientName;
+        }
         var result = new JsonObject
         {
             ["protocolVersion"] = protocolVersion,
@@ -224,6 +231,39 @@ internal static class McpServer
         return BuildError(id, -32602, "Unknown tool: " + toolName);
     }
 
+    private static void EnsureAiProviderArg(JsonObject args)
+    {
+        if (args.ContainsKey("ai") && !string.IsNullOrWhiteSpace(args["ai"]?.ToString())) return;
+
+        if (!string.IsNullOrWhiteSpace(_lastClientName))
+        {
+            var lower = _lastClientName.ToLowerInvariant();
+            if (lower.Contains("antigravity") || lower.Contains("aion") || lower.Contains("idx")) { args["ai"] = "antigravity"; return; }
+            if (lower.Contains("gemini")) { args["ai"] = "gemini"; return; }
+            if (lower.Contains("cursor")) { args["ai"] = "cursor"; return; }
+            if (lower.Contains("windsurf") || lower.Contains("codeium") || lower.Contains("cascade")) { args["ai"] = "windsurf"; return; }
+            if (lower.Contains("chatgpt") || lower.Contains("openai")) { args["ai"] = "chatgpt"; return; }
+            if (lower.Contains("deepseek")) { args["ai"] = "deepseek"; return; }
+        }
+
+        // 부모 프로세스나 연동 설정 상태로 추론 (예: Antigravity language_server)
+        try
+        {
+            var configured = AiPlatformManager.ScanAll().Where(p => p.IsConfigured && p.Id != "claude-desktop").ToList();
+            if (configured.Count == 1)
+            {
+                args["ai"] = configured[0].Id;
+                return;
+            }
+            if (configured.Any(p => p.Id == "antigravity"))
+            {
+                args["ai"] = "antigravity";
+                return;
+            }
+        }
+        catch { }
+    }
+
     private static (bool, string) SendUpdateToOffice(JsonObject args)
     {
         try
@@ -235,6 +275,7 @@ internal static class McpServer
             {
                 client.DefaultRequestHeaders.Add("X-ClaudeOffice-Token", token);
             }
+            EnsureAiProviderArg(args);
             var content = new StringContent(args.ToJsonString(JsonOpts), Encoding.UTF8, "application/json");
             var res = client.PostAsync($"http://127.0.0.1:{port}/mcp/update", content).GetAwaiter().GetResult();
             if (res.IsSuccessStatusCode)
@@ -282,6 +323,7 @@ internal static class McpServer
             {
                 client.DefaultRequestHeaders.Add("X-ClaudeOffice-Token", token);
             }
+            EnsureAiProviderArg(args);
             var content = new StringContent(args.ToJsonString(JsonOpts), Encoding.UTF8, "application/json");
             var res = client.PostAsync($"http://127.0.0.1:{port}/mcp/instruction", content).GetAwaiter().GetResult();
             if (res.IsSuccessStatusCode)
