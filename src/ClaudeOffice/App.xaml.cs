@@ -142,6 +142,7 @@ public partial class App : Application
         try { _single?.ReleaseMutex(); } catch (ApplicationException) { }
         _single?.Dispose();
         base.OnExit(e);
+        Environment.Exit(0);
     }
 
     private void OnUnhandled(object sender, DispatcherUnhandledExceptionEventArgs e)

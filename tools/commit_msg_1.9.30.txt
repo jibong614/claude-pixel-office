@@ -1,0 +1,6 @@
+1.9.30 트레이 종료 시 완전 종료 & MCP 보조 프로세스 누수 방지
+
+- 작업 트레이 [끝내기] 시 ExitApp 및 OnExit에서 Environment.Exit(0) 호출로 백그라운드 스레드 좀비 프로세스 방지
+- TerminateSiblingMcpProcesses에서 Process.Kill(true) 및 WaitForExit 적용하여 보조 프로세스 확실한 정리
+- McpServer.Run에 IsMainOfficeRunning 백그라운드 모니터 스레드 탑재하여 메인 오피스 미실행 시 5초 내 자체 종료
+- MainWindow 시작 시 claude_desktop_config.json 묵시적 자동 주입 제거 (설정 창 명시적 연동 방식으로 전환)

@@ -134,6 +134,7 @@ public partial class MainWindow : Window
         PrepareExit();
         Cleanup();   // 한 번도 띄우지 않은 창은 닫아도 Closed 가 안 올 수 있어 직접 정리(여기서 Shutdown 도 부른다)
         Close();
+        Environment.Exit(0);
     }
 
     private void Cleanup()
@@ -174,7 +175,8 @@ public partial class MainWindow : Window
                 if (p.Id == selfPid) continue;
                 try
                 {
-                    p.Kill();
+                    p.Kill(true);
+                    p.WaitForExit(1000);
                 }
                 catch { }
                 finally
@@ -205,8 +207,7 @@ public partial class MainWindow : Window
                 else
                     HookSetup.UpgradeRemote();
 
-                if (Mcp.McpSetup.IsClaudeDesktopInstalled() && !Mcp.McpSetup.IsInstalled())
-                    Mcp.McpSetup.Install();
+                // MCP 설정은 사용자가 설정 창에서 명시적으로 연동할 때만 설치하도록 하여 불필요한 백그라운드 프로세스 생성을 방지한다.
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException) { }
         }

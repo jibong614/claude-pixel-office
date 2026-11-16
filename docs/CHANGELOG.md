@@ -2,6 +2,16 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.30 — 2026-11-16
+- **🛑 작업 트레이 [끝내기] 시 프로세스 즉시 완전 종료 보장 (`Environment.Exit`)**:
+  - 트레이 아이콘 우클릭 후 [끝내기] 클릭 시 `ExitApp()` 및 `OnExit`에서 `Environment.Exit(0)`을 호출하여, 백그라운드 스레드나 WebView2 대기로 인한 좀비 프로세스 잔여 현상 원천 차단
+  - `TerminateSiblingMcpProcesses()`에서 `Process.Kill(entireProcessTree: true)` 및 `WaitForExit(1000)`을 적용하여 다른 보조 프로세스까지 확실하게 정리
+- **🛡️ Claude 데스크톱 MCP 보조 프로세스(`--mcp`) 고아 잔여 방지 & 자동 종료 모니터링 탑재**:
+  - Claude 데스크톱 등 외부 클라이언트가 실행한 `ClaudeOffice.exe --mcp` 프로세스가 메인 ClaudeOffice 앱이 종료되었거나 실행 중이지 않은 상태일 때 5초 후 자동으로 자체 종료되도록 `IsMainOfficeRunning` 모니터 스레드 탑재
+  - 메인 프로그램이 꺼져 있을 때 작업 관리자에 보조 프로세스가 무한 대기하며 남아있던 문제 완전 해결
+- **⚙️ 앱 시작 시 Claude Desktop config 불필요한 자동 등록 억제**:
+  - `MainWindow` 시작 시 `claude_desktop_config.json`에 `claude-pixel-office`를 묵시적으로 자동 주입하던 코드를 제거하고, 사용자가 설정 창 또는 MCP 가이드 창에서 필요 시 명시적으로 연동하도록 개선
+
 ## 1.9.29 — 2026-11-16
 - **⚡ 멀티 AI 플랫폼(Google Antigravity·Cursor·Windsurf·ChatGPT·DeepSeek) 자동 감지 & 통합 연동**:
   - Claude Code 외에도 다양한 AI 코딩 어시스턴트(Google Antigravity, Cursor, Windsurf, ChatGPT Desktop, DeepSeek/Ollama 등)를 자동 감지하고 수동 추가/편집 지원

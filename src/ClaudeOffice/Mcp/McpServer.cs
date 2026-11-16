@@ -34,6 +34,21 @@ internal static class McpServer
         }
         catch { }
 
+        // 메인 ClaudeOffice 앱이 종료되거나 실행 중이지 않으면 이 MCP 보조 프로세스도 함께 종료하여 프로세스 잔여를 원천 방지한다.
+        var monitorThread = new System.Threading.Thread(() =>
+        {
+            System.Threading.Thread.Sleep(5000);
+            while (true)
+            {
+                if (!IsMainOfficeRunning())
+                {
+                    Environment.Exit(0);
+                }
+                System.Threading.Thread.Sleep(2000);
+            }
+        }) { IsBackground = true };
+        monitorThread.Start();
+
         using var reader = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
         using var writer = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
 
@@ -55,6 +70,18 @@ internal static class McpServer
                 Debug.WriteLine($"[ClaudeOffice.Mcp] 요청 처리 오류: {ex.Message}");
             }
         }
+    }
+
+    private static bool IsMainOfficeRunning()
+    {
+        try
+        {
+            var selfPid = Environment.ProcessId;
+            var others = Process.GetProcessesByName("ClaudeOffice");
+            if (others.Any(p => p.Id != selfPid)) return true;
+        }
+        catch { }
+        return false;
     }
 
     /// <summary>

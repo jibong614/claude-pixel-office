@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.29';
+const PAGE_VERSION = '1.9.30';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -9594,6 +9594,23 @@ if (btnTestClockInGpt) {
 
 // 📢 업데이트 뉴스 (Changelog & Announcement Board)
 const UPDATE_NEWS = [
+  {
+    id: 'v1.9.30',
+    ver: 'v1.9.30',
+    date: '2026-11-16',
+    title: '트레이 종료 시 프로세스 완전 종료 & MCP 보조 프로세스 누수 방지',
+    enTitle: 'Clean Process Exit & MCP Daemon Leak Prevention',
+    items: [
+      '🛑 작업 트레이 [끝내기] 시 메인 GUI 및 보조 프로세스 즉시 완전 종료 (Environment.Exit & 프로세스 트리 강제 정리)',
+      '🛡️ 메인 오피스 미실행 시 Claude 데스크톱의 MCP 보조 프로세스(--mcp) 자동 유휴 방지 및 5초 내 자동 종료',
+      '⚙️ 앱 시작 시 Claude Desktop config 불필요한 자동 등록 제거 (설정 창 명시적 연동 방식으로 전환)'
+    ],
+    enItems: [
+      '🛑 Guaranteed full process exit on tray Quit (Environment.Exit & process tree kill)',
+      '🛡️ Auto-terminate orphaned MCP helper processes (--mcp) when main office is not running',
+      '⚙️ Removed unwanted silent auto-registration into Claude Desktop config on startup'
+    ]
+  },
   {
     id: 'v1.9.29',
     ver: 'v1.9.29',
