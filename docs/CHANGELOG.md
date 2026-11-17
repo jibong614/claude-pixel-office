@@ -2,6 +2,15 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.43 — 2026-11-17
+- **🐬 DeepSeek 및 외부 AI 직원의 작업창 이동 시 Claude 데스크톱으로 오작동하던 현상 수정**:
+  - DeepSeek / 로컬 LLM(Ollama, Local AI Studio 등) 및 외부 AI(Antigravity, Cursor, Windsurf, ChatGPT) 직원의 위젯/패널에서 `[작업창으로 이동]` 클릭 시, 전용 창 타이틀 매칭 부재로 인해 fallback 로직이 Claude 데스크톱 창을 오인 활성화(`claude://` 호출)하던 버그 해결
+  - `FocusSessionWindow`: 외부 AI 세션(`isExternalAi`)인 경우 Claude 점수 부여 및 데스크톱 프로토콜 호출을 원천 차단하고, `Local AI Studio`, `DeepSeek`, `Ollama` 등 실제 로컬 AI 실행 프로세스 및 창 타이틀을 우선 탐색하도록 개선
+  - 실행 중인 외부 AI 전용 창이 감지되지 않을 때 엉뚱한 창으로 튀지 않고 `"실행 중인 {AI이름} 작업창을 찾을 수 없습니다"` 토스트 알림을 메인 화면 및 위젯에 노출
+  - `DeliverToExternalAiWindowAsync`: DeepSeek/Ollama 대상 창 타겟에 `Local AI Studio`, `DeepSeek`, `ollama` 추가
+- **🛡️ Claude 데스크톱 MCP 보조 프로세스(`--mcp`) 상호 생존 및 빌드 시 파일 잠금 방지**:
+  - `McpServer.IsMainOfficeRunning`: 프로세스 이름 비교 대신 메인 오피스 고유 Mutex 탐지 방식을 적용하여, 복수의 `--mcp` 프로세스가 서로를 메인 오피스로 오인해 데드락으로 살아남던 버그 해결 (메인 앱 종료 시 즉시 자동 정리)
+
 ## 1.9.42 — 2026-11-17
 - **📐 미니위젯 크기 설정 변경 시 창 흔들림(진동) 및 그래픽(도트/책상) 비정상 확대 버그 수정**:
   - `v1.9.40`의 위젯 높이 동기화(`syncPetHeight`)에서 하드코딩된 `width: 360` 속성이 매 프레임 C#으로 전송되어, 사용자가 설정한 위젯 크기(작게 260px / 보통 300px)를 무시하고 창 너비가 강제로 360px로 고정되던 문제 해결

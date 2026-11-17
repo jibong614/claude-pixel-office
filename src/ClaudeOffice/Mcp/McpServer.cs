@@ -76,9 +76,12 @@ internal static class McpServer
     {
         try
         {
-            var selfPid = Environment.ProcessId;
-            var others = Process.GetProcessesByName("ClaudeOffice");
-            if (others.Any(p => p.Id != selfPid)) return true;
+            var name = "ClaudeOffice-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(App.DataDir.ToLowerInvariant())))[..16];
+            if (System.Threading.Mutex.TryOpenExisting(name, out var m))
+            {
+                m.Dispose();
+                return true;
+            }
         }
         catch { }
         return false;

@@ -1728,7 +1728,7 @@ public partial class MainWindow : Window
     private static readonly HashSet<string> TerminalOrIdeProcesses = new(StringComparer.OrdinalIgnoreCase)
     {
         "Antigravity", "Code", "Cursor", "Windsurf", "ChatGPT", "WindowsTerminal", "pwsh", "powershell", "cmd",
-        "mintty", "wezterm-gui", "alacritty", "wt", "devenv", "rider64", "idea64", "claude", "aider", "node",
+        "mintty", "wezterm-gui", "alacritty", "wt", "devenv", "rider64", "idea64", "claude", "aider", "node", "Local AI Studio", "DeepSeek", "ollama",
     };
 
     /// <summary>
@@ -1760,15 +1760,17 @@ public partial class MainWindow : Window
             catch { }
         }
 
-        var targetProc = (entry?.ToLowerInvariant()) switch
+        var targetProcNames = (entry?.ToLowerInvariant()) switch
         {
-            "antigravity" or "gemini" => "Antigravity",
-            "cursor" => "Cursor",
-            "windsurf" => "Windsurf",
-            "chatgpt" => "ChatGPT",
-            "claude-desktop" => "Claude",
-            _ => "Antigravity"
+            "antigravity" or "gemini" => new[] { "Antigravity" },
+            "cursor" => new[] { "Cursor" },
+            "windsurf" => new[] { "Windsurf" },
+            "chatgpt" => new[] { "ChatGPT" },
+            "deepseek" or "ollama" => new[] { "Local AI Studio", "DeepSeek", "ollama" },
+            "claude-desktop" => new[] { "Claude" },
+            _ => new[] { "Antigravity" }
         };
+        string targetProc = targetProcNames[0];
 
         uint selfPid = (uint)Environment.ProcessId;
         IntPtr bestHwnd = IntPtr.Zero;
@@ -1779,12 +1781,15 @@ public partial class MainWindow : Window
         var targetPids = new HashSet<uint>();
         try
         {
-            foreach (var p in Process.GetProcessesByName(targetProc))
-                targetPids.Add((uint)p.Id);
+            foreach (var pName in targetProcNames)
+            {
+                foreach (var p in Process.GetProcessesByName(pName))
+                    targetPids.Add((uint)p.Id);
+            }
         }
         catch { }
 
-        _remote.Log("deliver-start", sid, $"target={targetProc}, pids={targetPids.Count}");
+        _remote.Log("deliver-start", sid, $"target={string.Join(",", targetProcNames)}, pids={targetPids.Count}");
 
         EnumWindows((hWnd, _) =>
         {
@@ -1812,6 +1817,9 @@ public partial class MainWindow : Window
                 score += 100;
 
             if (wTitle.Contains("Antigravity", StringComparison.OrdinalIgnoreCase) ||
+                wTitle.Contains("Local AI", StringComparison.OrdinalIgnoreCase) ||
+                wTitle.Contains("DeepSeek", StringComparison.OrdinalIgnoreCase) ||
+                wTitle.Contains("ChatGPT", StringComparison.OrdinalIgnoreCase) ||
                 wTitle.Contains("ClaudeOffice", StringComparison.OrdinalIgnoreCase) ||
                 wTitle.Contains("Claude", StringComparison.OrdinalIgnoreCase))
                 score += 50;
@@ -1891,7 +1899,7 @@ public partial class MainWindow : Window
         catch { }
     }
 
-    /// <summary>세션의 작업 폴더명·세션명·실행 위치(VS Code/Claude 데스크톱/터미널)를 바탕으로 해당 실행 창을 찾아 맨 앞으로 활성화한다.</summary>
+    /// <summary>세션의 작업 폴더명·세션명·실행 위치(VS Code/Claude 데스크톱/터미널/외부 AI)를 바탕으로 해당 실행 창을 찾아 맨 앞으로 활성화한다.</summary>
     private void FocusSessionWindow(string? id)
     {
         if (string.IsNullOrEmpty(id) || _watcher.LastSnapshot is not { } snap) return;
@@ -1915,15 +1923,28 @@ public partial class MainWindow : Window
             : (!string.IsNullOrWhiteSpace(team) ? team.Split('/').LastOrDefault() : null);
 
         var pref = App.Settings.SessionTarget?.ToLowerInvariant() ?? "auto";
-        bool isVsCodeEntry = entry != null && entry.Contains("vscode", StringComparison.OrdinalIgnoreCase);
-        bool isDesktopEntry = entry != null && (entry.Contains("desktop", StringComparison.OrdinalIgnoreCase)
+        var entryLower = entry?.ToLowerInvariant() ?? "";
+        bool isClaudeSession = string.IsNullOrWhiteSpace(entryLower)
+            || entryLower.StartsWith("claude", StringComparison.OrdinalIgnoreCase)
+            || entryLower.StartsWith("vscode", StringComparison.OrdinalIgnoreCase)
+            || entryLower.StartsWith("cli", StringComparison.OrdinalIgnoreCase);
+        bool isExternalAi = !isClaudeSession;
+
+        bool isDeepSeek = entryLower is "deepseek" or "ollama";
+        bool isAntigravity = entryLower is "antigravity" or "gemini";
+        bool isCursor = entryLower is "cursor";
+        bool isWindsurf = entryLower is "windsurf";
+        bool isChatGpt = entryLower is "chatgpt";
+
+        bool isVsCodeEntry = !isExternalAi && entry != null && entry.Contains("vscode", StringComparison.OrdinalIgnoreCase);
+        bool isDesktopEntry = !isExternalAi && entry != null && (entry.Contains("desktop", StringComparison.OrdinalIgnoreCase)
                                             || entry.Contains("app", StringComparison.OrdinalIgnoreCase)
                                             || entry.Equals("claude", StringComparison.OrdinalIgnoreCase));
-        bool isCliEntry = entry != null && entry.Contains("cli", StringComparison.OrdinalIgnoreCase);
+        bool isCliEntry = !isExternalAi && entry != null && entry.Contains("cli", StringComparison.OrdinalIgnoreCase);
 
-        bool preferDesktop = pref == "desktop" || (pref == "auto" && isDesktopEntry);
-        bool preferVsCode = pref == "vscode" || (pref == "auto" && isVsCodeEntry);
-        bool preferTerminal = pref == "terminal" || (pref == "auto" && isCliEntry);
+        bool preferDesktop = !isExternalAi && (pref == "desktop" || (pref == "auto" && isDesktopEntry));
+        bool preferVsCode = !isExternalAi && (pref == "vscode" || (pref == "auto" && isVsCodeEntry));
+        bool preferTerminal = !isExternalAi && (pref == "terminal" || (pref == "auto" && isCliEntry));
 
         uint selfPid = (uint)Environment.ProcessId;
         IntPtr bestHwnd = IntPtr.Zero;
@@ -1948,37 +1969,77 @@ public partial class MainWindow : Window
             bool isClaudeProc = procName.Equals("Claude", StringComparison.OrdinalIgnoreCase);
             bool isVsCodeProc = procName is "Code" or "Cursor" or "Windsurf";
             bool isTermProc = procName is "WindowsTerminal" or "pwsh" or "powershell" or "cmd" or "mintty" or "wezterm-gui" or "alacritty" or "wt";
+            bool isDeepSeekProc = procName is "Local AI Studio" or "DeepSeek" or "ollama";
 
             int score = 0;
 
-            if (!string.IsNullOrWhiteSpace(cwd) && wTitle.Contains(cwd, StringComparison.OrdinalIgnoreCase))
-                score += 100;
-            if (!string.IsNullOrWhiteSpace(leaf) && leaf.Length >= 2 && wTitle.Contains(leaf, StringComparison.OrdinalIgnoreCase))
-                score += 60;
-            if (!string.IsNullOrWhiteSpace(name) && name.Length >= 2 && wTitle.Contains(name, StringComparison.OrdinalIgnoreCase))
-                score += 45;
-            if (!string.IsNullOrWhiteSpace(title) && title.Length >= 2 && wTitle.Contains(title, StringComparison.OrdinalIgnoreCase))
-                score += 35;
-
-            if (isTermOrIde)
+            if (isExternalAi)
             {
-                score += 20;
-
-                if (preferDesktop && isClaudeProc) score += 50;
-                else if (preferVsCode && isVsCodeProc) score += 50;
-                else if (preferTerminal && isTermProc) score += 50;
-                else if (pref == "auto")
+                if (isDeepSeek)
                 {
-                    if (isVsCodeProc && isVsCodeEntry) score += 25;
-                    else if (isClaudeProc && (isDesktopEntry || wTitle.Contains("Claude", StringComparison.OrdinalIgnoreCase))) score += 25;
-                    else if (isTermProc && isCliEntry) score += 25;
+                    if (isDeepSeekProc) score += 100;
+                    if (wTitle.Contains("Local AI", StringComparison.OrdinalIgnoreCase) ||
+                        wTitle.Contains("DeepSeek", StringComparison.OrdinalIgnoreCase) ||
+                        wTitle.Contains("Ollama", StringComparison.OrdinalIgnoreCase))
+                        score += 80;
+                }
+                else if (isAntigravity)
+                {
+                    if (procName.Equals("Antigravity", StringComparison.OrdinalIgnoreCase)) score += 100;
+                    if (wTitle.Contains("Antigravity", StringComparison.OrdinalIgnoreCase)) score += 80;
+                }
+                else if (isCursor)
+                {
+                    if (procName.Equals("Cursor", StringComparison.OrdinalIgnoreCase)) score += 100;
+                    if (wTitle.Contains("Cursor", StringComparison.OrdinalIgnoreCase)) score += 80;
+                }
+                else if (isWindsurf)
+                {
+                    if (procName.Equals("Windsurf", StringComparison.OrdinalIgnoreCase)) score += 100;
+                    if (wTitle.Contains("Windsurf", StringComparison.OrdinalIgnoreCase)) score += 80;
+                }
+                else if (isChatGpt)
+                {
+                    if (procName.Equals("ChatGPT", StringComparison.OrdinalIgnoreCase)) score += 100;
+                    if (wTitle.Contains("ChatGPT", StringComparison.OrdinalIgnoreCase)) score += 80;
+                }
+                else
+                {
+                    if (procName.Equals(entryLower, StringComparison.OrdinalIgnoreCase)) score += 100;
+                    if (wTitle.Contains(entryLower, StringComparison.OrdinalIgnoreCase)) score += 80;
                 }
             }
-
-            if (isClaudeProc && (preferDesktop || (pref == "auto" && !preferVsCode)))
+            else
             {
-                if (wTitle.Contains("Claude", StringComparison.OrdinalIgnoreCase))
-                    score += 25;
+                if (!string.IsNullOrWhiteSpace(cwd) && wTitle.Contains(cwd, StringComparison.OrdinalIgnoreCase))
+                    score += 100;
+                if (!string.IsNullOrWhiteSpace(leaf) && leaf.Length >= 2 && wTitle.Contains(leaf, StringComparison.OrdinalIgnoreCase))
+                    score += 60;
+                if (!string.IsNullOrWhiteSpace(name) && name.Length >= 2 && wTitle.Contains(name, StringComparison.OrdinalIgnoreCase))
+                    score += 45;
+                if (!string.IsNullOrWhiteSpace(title) && title.Length >= 2 && wTitle.Contains(title, StringComparison.OrdinalIgnoreCase))
+                    score += 35;
+
+                if (isTermOrIde)
+                {
+                    score += 20;
+
+                    if (preferDesktop && isClaudeProc) score += 50;
+                    else if (preferVsCode && isVsCodeProc) score += 50;
+                    else if (preferTerminal && isTermProc) score += 50;
+                    else if (pref == "auto")
+                    {
+                        if (isVsCodeProc && isVsCodeEntry) score += 25;
+                        else if (isClaudeProc && (isDesktopEntry || wTitle.Contains("Claude", StringComparison.OrdinalIgnoreCase))) score += 25;
+                        else if (isTermProc && isCliEntry) score += 25;
+                    }
+                }
+
+                if (isClaudeProc && (preferDesktop || (pref == "auto" && !preferVsCode)))
+                {
+                    if (wTitle.Contains("Claude", StringComparison.OrdinalIgnoreCase))
+                        score += 25;
+                }
             }
 
             if (score > bestScore)
@@ -2000,7 +2061,7 @@ public partial class MainWindow : Window
             catch { }
         }
         // 2. Claude 데스크톱 프로토콜 호출 (Claude 데스크톱이 우선이거나 자동 감지에서 데스크톱 세션인 경우)
-        else if (preferDesktop || (pref == "auto" && bestProcName.Equals("Claude", StringComparison.OrdinalIgnoreCase)))
+        else if (preferDesktop || (!isExternalAi && pref == "auto" && bestProcName.Equals("Claude", StringComparison.OrdinalIgnoreCase)))
         {
             try
             {
@@ -2013,6 +2074,19 @@ public partial class MainWindow : Window
         {
             if (IsIconic(bestHwnd)) ShowWindow(bestHwnd, 9);   // SW_RESTORE
             SetForegroundWindow(bestHwnd);
+        }
+        else if (isExternalAi)
+        {
+            string aiName = isDeepSeek ? "DeepSeek / Local AI" : isAntigravity ? "Antigravity" : isChatGpt ? "ChatGPT" : isCursor ? "Cursor" : isWindsurf ? "Windsurf" : (entry ?? "외부 AI");
+            var toastMsg = JsonSerializer.Serialize(new
+            {
+                type = "toast",
+                msg = L.T($"실행 중인 {aiName} 작업창을 찾을 수 없습니다.", $"No running {aiName} window found."),
+                icon = isDeepSeek ? "🐬" : "✨",
+                duration = 3500
+            });
+            Post(toastMsg);
+            _widgetWindow?.Post(toastMsg);
         }
         else if (preferDesktop)
         {
