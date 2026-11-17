@@ -81,6 +81,10 @@ public sealed class TranscriptWatcher : IDisposable
     }
 
     /// <summary>훅을 넣거나 뺀 직후 설치 상태를 바로 다시 읽게 한다.</summary>
+    internal Remote.RemoteHub? Remote { get; set; }
+    internal IEnumerable<TranscriptState> States => _states.Values;
+
+    /// <summary>훅을 넣거나 뺀 직후 설치 상태를 바로 다시 읽게 한다.</summary>
     public void RefreshHookStatus() => _hookCheckNow = true;
 
     /// <summary>표시 기간: 마지막 대화가 이 안에 있는 세션만 사무실에 띄운다.</summary>
@@ -177,6 +181,7 @@ public sealed class TranscriptWatcher : IDisposable
         while (_hookQueue.TryDequeue(out var ev)) _hookBacklog.Add(ev);
         _hookBacklog.RemoveAll(ev => TryApply(ev, now) || now - ev.Utc > HookBacklogKeep);
         foreach (var s in _states.Values) HookApplier.Settle(s, now);
+        Remote?.SettleApprovals(_states.Values);
     }
 
     /// <summary>훅 이벤트를 해당 세션(또는 인턴)에 반영한다. 그 기록 파일을 아직 못 찾았으면 false → 다음 틱에 다시.</summary>

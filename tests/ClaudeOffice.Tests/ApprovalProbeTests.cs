@@ -38,4 +38,33 @@ public class ApprovalProbeTests
             Assert.True(tokens[0].Length >= tokens[1].Length);
         }
     }
+
+    [Fact]
+    public async Task RemoteHub_SettleApprovals_ClearsCompletedQuestion()
+    {
+        var hub = new ClaudeOffice.Remote.RemoteHub(null);
+        hub.SetPet(true, "sess-1");
+
+        var hookJson = """{"hook_event_name":"PermissionRequest","session_id":"sess-1","tool_name":"AskUserQuestion","tool_input":{"question":"테스트 질문?"}}""";
+        var approveTask = hub.HandleAsync("approve", System.Text.Encoding.UTF8.GetBytes(hookJson), default);
+
+        await Task.Delay(50);
+        var stateJsonBefore = hub.StateJson();
+        Assert.Contains("질문에 답해주세요", stateJsonBefore);
+
+        // 시뮬레이션: 터미널에서 사용자가 답변하여 transcript 상에서 도구 결과가 처리되고 다음 활동(thinking)으로 넘어감
+        var state = new TranscriptState("/path/to/test.jsonl", "sess-1", null);
+        state.ResolvedUtc["AskUserQuestion"] = DateTime.UtcNow;
+        state.BaseActivity = Activity.Thinking;
+        state.LastEventUtc = DateTime.UtcNow.AddSeconds(1);
+
+        hub.SettleApprovals([state]);
+
+        var stateJsonAfter = hub.StateJson();
+        Assert.DoesNotContain("질문에 답해주세요", stateJsonAfter);
+
+        // approveTask도 즉시 완료되어야 함
+        var result = await approveTask.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.NotNull(result);
+    }
 }

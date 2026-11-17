@@ -226,10 +226,12 @@ public partial class MainWindow : Window
                 await DeliverToExternalAiWindowAsync(sid, text);
             });
         };
+        _watcher.Remote = _remote;
         _hooks.Start();
         _watcher.AttachHooks(_hooks);
         _watcher.SnapshotChanged += json =>
         {
+            _remote.SettleApprovals(_watcher.States);
             _cloud.OnSnapshot(json);   // 휴대폰 보기를 켰으면 암호화해 올린다(꺼져 있으면 아무것도 안 함)
             List<Notice> notices;
             try { notices = _notifier.OnSnapshot(json, NameOf); }

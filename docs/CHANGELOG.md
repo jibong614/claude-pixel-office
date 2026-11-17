@@ -2,6 +2,13 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.39 — 2026-11-17
+- **❓ 클로드 질문(`AskUserQuestion`) 및 승인 대기 항목 자동 완료 감지 & 실시간 정리**:
+  - 터미널이나 VS Code 등에서 사용자가 Claude의 질문에 직접 답변하거나 작업을 승인하여 대화가 이어진 경우, 미니위젯 및 모바일 상세 패널에 `[❓ 질문: 질문에 답해주세요!]` 카드가 계속 남아있던 문제 해결
+  - `RemoteHub.SettleApprovals`: 대화 기록 감시 엔진(`TranscriptWatcher`)의 도구 결과(`tool_result`) 수신, 상태 전환(`thinking`, `working`, `idle` 등), 또는 새 활동 타임스탬프를 감지하여 대기 중이던 승인/질문 항목 즉시 정리 및 대기 HTTP 소켓 정상 해제
+  - 후속 도구 실행(`PreToolUse`) 및 턴 종료(`Stop`) 훅 도착 시에도 잔류 질문/승인 자동 정리
+  - 프론트엔드(`activeAsksOf`): 세션이 더 이상 대기 상태가 아닐 때 잔여 대기 카드가 화면에 남아있지 않도록 즉각 정리 및 다른 직원 전환 배지(`[전환>]`) 오표시 방지
+
 ## 1.9.38 — 2026-11-17
 - **🏷️ 클로드 외 파견/외부 AI 직원 책상 우측 하단 `[파견]` 배지 표시**:
   - Claude(Claude Desktop, Claude Code CLI, Claude VS Code 등)를 제외한 외부 AI(Google Antigravity, Gemini, ChatGPT, Cursor, Windsurf, DeepSeek 등) 직원의 책상 앞면 우측 하단에 골드 앰버 테두리의 선명한 `[파견]` 배지 렌더링 (`drawDispatchedBadge`)

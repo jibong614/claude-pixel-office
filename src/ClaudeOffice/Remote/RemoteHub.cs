@@ -94,10 +94,20 @@ internal sealed class RemoteHub
     {
         if (!Installed || ParseHook(body) is not { } h) return Task.FromResult(Array.Empty<byte>());
         bool stopRequested;
+        List<Approval> toClear = [];
         lock (_lock)
         {
             stopRequested = _stopFlags.Remove(h.Sid);
+            // 새 도구가 실행되려 함: 이전 질문이나 완료된 다른 도구 승인은 터미널에서 이미 처리되었음
+            foreach (var (id, a) in _approvals.Where(kv => kv.Value.Sid == h.Sid && (kv.Value.Kind == "question" || kv.Value.Text != (h.ToolText ?? h.Tool))).ToList())
+            {
+                _approvals.Remove(id);
+                toClear.Add(a);
+            }
         }
+        foreach (var a in toClear) a.Tcs.TrySetResult(null);
+        if (toClear.Count > 0) Notify();
+
         if (stopRequested)
         {
             Log("pretool-stop", h.Sid, h.Tool ?? "-");
@@ -113,11 +123,19 @@ internal sealed class RemoteHub
         if (!Installed || ParseHook(body) is not { } h) return [];
         Listener me;
         string? now = null;
+        List<Approval> toClear = [];
         lock (_lock)
         {
             _stopFlags.Remove(h.Sid);
             if (h.Event == "Stop" && !string.IsNullOrWhiteSpace(h.LastMessage))
                 _replies[h.Sid] = new Said(ToolCatalog.ClipMultiline(h.LastMessage.Trim(), MaxReply), DateTime.UtcNow, "reply");
+
+            // 세션이 응답을 마쳤으므로(Stop), 대기 중이던 질문/승인은 터미널에서 이미 처리되었음
+            foreach (var (id, a) in _approvals.Where(kv => kv.Value.Sid == h.Sid).ToList())
+            {
+                _approvals.Remove(id);
+                toClear.Add(a);
+            }
 
             // 이 세션에 못 건넨 지시가 있으면 기다리지 않고 바로 — 일하는 중에 보낸 것은 일을 마치는 순간 이어서 받는다
             if (_queued.Remove(h.Sid, out var waiting) && waiting.Count > 0)
@@ -131,6 +149,7 @@ internal sealed class RemoteHub
             if (_listeners.Remove(h.Sid, out var old)) old.Tcs.TrySetResult(null);   // 같은 세션의 옛 훅은 놓아준다
             if (now is null) _listeners[h.Sid] = me;
         }
+        foreach (var a in toClear) a.Tcs.TrySetResult(null);
         Notify();
         if (now != null) return Encoding.UTF8.GetBytes(Instruction(now));
 
@@ -172,6 +191,51 @@ internal sealed class RemoteHub
         return decision is null ? [] : Encoding.ASCII.GetBytes(decision);
     }
 
+
+    /// <summary>
+    /// 세션들의 최신 대화 기록 상태(TranscriptWatcher)를 대조하여,
+    /// 터미널이나 VS Code 등에서 이미 답변/처리되어 완료된 질문(AskUserQuestion) 및 승인 대기 항목을 즉시 제거한다.
+    /// </summary>
+    public void SettleApprovals(IEnumerable<Monitoring.TranscriptState> states)
+    {
+        List<Approval> toClear = [];
+        lock (_lock)
+        {
+            if (_approvals.Count == 0) return;
+            var list = states.ToList();
+
+            foreach (var (id, a) in _approvals.ToList())
+            {
+                var s = list.FirstOrDefault(x => string.Equals(x.Id, a.Sid, StringComparison.OrdinalIgnoreCase)
+                                              || string.Equals(x.ParentId, a.Sid, StringComparison.OrdinalIgnoreCase));
+                if (s == null) continue;
+
+                // 1) 질문(AskUserQuestion) 대기 항목인데, transcript 상에서 결과(tool_result)를 받았거나 Pending 목록에서 사라진 경우
+                bool isQuestion = a.Kind == "question" || a.Text.Contains("질문");
+                bool toolResolved = s.ResolvedUtc.TryGetValue("AskUserQuestion", out var resUtc) && resUtc >= a.SinceUtc;
+                bool notInPending = !s.Pending.Values.Any(p => p.Name == "AskUserQuestion" || (a.Kind != "question" && p.Name == a.Text));
+                bool hasNewerActivity = s.LastActivityUtc > a.SinceUtc + TimeSpan.FromSeconds(1);
+                bool notWaiting = s.Wait == null && notInPending;
+
+                // 세션이 thinking, reading, writing, running, talking, idle 등 이미 다음 단계 작업을 수행 중이면 이미 질문에 답한 것임
+                if (toolResolved || (hasNewerActivity && notWaiting) || (s.Wait == null && notInPending && (DateTime.UtcNow - a.SinceUtc > TimeSpan.FromSeconds(3))))
+                {
+                    _approvals.Remove(id);
+                    toClear.Add(a);
+                    Log("settle-ask", a.Sid, $"Auto-cleared completed {a.Kind} (id={id}, text={a.Text})");
+                }
+            }
+        }
+
+        if (toClear.Count > 0)
+        {
+            foreach (var a in toClear)
+            {
+                a.Tcs.TrySetResult(null);
+            }
+            Notify();
+        }
+    }
     // ───────────────────────── 휴대폰·PC 미니펫·본창 상세 패널 쪽 ─────────────────────────
 
     /// <summary>바탕화면 미니펫 표시 여부와 대표 세션 ID 를 갱신한다. 미니펫이 켜져 있으면 모든 세션의 승인·질문을 미니펫/본창에서 처리할 수 있고, 미니펫을 끄면(자리 비움이 아닐 때) 대기 중이던 요청을 터미널로 돌려준다.</summary>

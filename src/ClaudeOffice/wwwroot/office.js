@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.38';
+const PAGE_VERSION = '1.9.39';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -12648,7 +12648,7 @@ function renderPet() {
   petEl.classList.toggle('nobg', noBg);
 
   // 다른 직원이 승인·질문 답변을 기다리고 있으면 상단에 원클릭 전환 배지를 띄운다
-  const otherWaiting = data.sessions.filter((x) => x.id !== s.id && x.act !== 'away' && (actOf(x).wait || (remoteOf(x.id)?.asks?.length > 0)));
+  const otherWaiting = data.sessions.filter((x) => x.id !== s.id && x.act !== 'away' && (actOf(x).wait || (activeAsksOf(x).length > 0)));
   if (otherWaiting.length > 0) {
     petAlertTargetId = otherWaiting[0].id;
     petAlertEl.hidden = false;
@@ -12672,7 +12672,7 @@ function renderPet() {
 
   // 승인 요청 카드 (접혀 있어도 승인 요청이 오면 바로 보여 준다)
   const r = remoteOf(s.id) || {};
-  const asks = r.asks || [];
+  const asks = activeAsksOf(s);
   petEl.classList.toggle('compact', compact && asks.length === 0);
 
   const keep = new Set(asks.map((x) => x.id));
@@ -16068,6 +16068,24 @@ async function postInbox(msg) {
 // 자리 비움은 손으로 켜지 않는다 — PC가 입력 없음·화면 잠금으로 켜고, 휴대폰은 PC를 아무도 안 쓸 때(idle)만 켤 수 있다(화면을 보고 있거나 지시를 보내면 저절로).
 // 돌아와 입력하거나 잠금을 풀면 꺼진다.
 const remoteOf = (id) => (remoteState?.s?.[id] || (remoteState?.installed ? {} : null));
+
+/**
+ * 현재 세션의 유효한 승인/질문 목록 반환.
+ * 세션이 이미 질문을 처리하고 다음 단계(생각 중, 작업 중, 대기, 퇴근 등)로 넘어간 경우,
+ * 완료된 과거 질문이 화면에 계속 남아있지 않도록 정리한다.
+ */
+function activeAsksOf(s) {
+  if (!s) return [];
+  const r = remoteOf(s.id);
+  if (!r || !Array.isArray(r.asks) || r.asks.length === 0) return [];
+  const waiting = s.act === 'waiting' || s.act === 'asking' || (typeof actOf === 'function' && actOf(s)?.wait);
+  return r.asks.filter(ask => {
+    if (!waiting) {
+      if (Date.now() - (ask.t || 0) > 3000) return false;
+    }
+    return true;
+  });
+}
 const answered = new Map();      // 휴대폰에서 답한 승인 요청 → 누른 시각(PC에서 사라질 때까지 버튼을 잠근다)
 const askEls = new Map();        // 승인 요청 → 그 칸(다시 그려도 거절 이유 칸에 쓰던 글이 남게)
 const rAsksEl = $('rAsks'), sayEl = $('rSay'), rVoiceBtn = $('rVoice');
@@ -16126,7 +16144,7 @@ function renderRemote(s) {
   if (h3) h3.textContent = REMOTE ? T('📱 휴대폰 지시·승인', '📱 Instruct & approve from the phone') : T('💬 지시 · 승인', '💬 Instruct & approve');
 
   const away = !!remoteState?.away, idle = !!remoteState?.idle;
-  const asks = r.asks || [];
+  const asks = activeAsksOf(s);
   $('rStatus').textContent = isVirtual
     ? T('✨ 실시간 AI 연동 세션 — 지시를 보내면 AI 에이전트에게 전달됩니다.', '✨ Connected AI session — instructions sent here are delivered to the AI agent.')
     : !REMOTE
