@@ -1263,9 +1263,15 @@ public partial class MainWindow : Window
                         Post(JsonSerializer.Serialize(new { type = "widget-size-mode", size = wsz }));
 
                     }
-
                     break;
-
+                case "zoom-setting":
+                    if (root.TryGetProperty("zoom", out var zElem) && zElem.TryGetInt32(out var zVal))
+                    {
+                        var zMsg = JsonSerializer.Serialize(new { type = "zoom-setting", zoom = zVal });
+                        if (!ReferenceEquals(sender, _settingsWindow)) _settingsWindow?.Post(zMsg);
+                        Post(zMsg);
+                    }
+                    break;
                 case "icon-style":
                     if (root.TryGetProperty("style", out var istElem) && istElem.GetString() is { Length: > 0 } ist)
                     {

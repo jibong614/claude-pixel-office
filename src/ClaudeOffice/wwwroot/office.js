@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.43';
+const PAGE_VERSION = '1.9.44';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -705,7 +705,42 @@ let teamOrder = store.get('teamOrder', []) || [];
 let seatOrder = store.get('seatOrder', []) || [];
 let teamRev = 0;   // 바뀌면 배치를 다시 한다
 let waitOnly = store.get('waitOnly', false);   // ✋ 기다리는 직원만 보기
+let layoutKey = '';
 let zoom = Math.max(-2, Math.min(2, Math.round(Number(store.get('zoom', 0)) || 0)));   // 사무실 크기: 화면에 맞춘 배율에서 몇 단계 작게(−)·크게(+)
+
+// 🔍 사무실 크기(배율) 동기화 채널 (설정 창과 메인 창 실시간 연동)
+const zoomBroadcast = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('co_zoom') : null;
+if (zoomBroadcast) {
+  zoomBroadcast.onmessage = (e) => {
+    if (e.data && typeof e.data.zoom === 'number' && e.data.zoom !== zoom) {
+      setOfficeZoom(e.data.zoom, true);
+    }
+  };
+}
+window.addEventListener('storage', (e) => {
+  if (e.key === STORE_PREFIX + 'zoom') {
+    const newZ = Math.max(-2, Math.min(2, Math.round(Number(store.get('zoom', 0)) || 0)));
+    if (newZ !== zoom) {
+      setOfficeZoom(newZ, true);
+    }
+  }
+});
+
+function setOfficeZoom(v, fromSync = false) {
+  const z = Math.max(-2, Math.min(2, Math.round(Number(v) || 0)));
+  zoom = z;
+  store.set('zoom', z);
+  layoutKey = '';
+  if (!fromSync) {
+    if (zoomBroadcast) {
+      try { zoomBroadcast.postMessage({ zoom: z }); } catch (_) {}
+    }
+    send({ cmd: 'zoom-setting', zoom: z });
+  }
+  if (typeof refreshSettings === 'function') {
+    refreshSettings();
+  }
+}
 let pinned = store.get('pinned', false);
 
 // 직원 표시: 최대 인원(maxShown)과 고르는 방식(pickMode: recent=최근 사용순 / manual=직접 고르기, pickedIds=체크한 세션)
@@ -1206,7 +1241,6 @@ const ZONE_PAD = 6, ZONE_HEAD = 15, ZONE_GAP = 8, ROW_GAP = 8, MAX_COLS = 5;
 let dpr = 1, K = 3, U = 3;            // K: 화면픽셀/아트픽셀(정수), U: CSS픽셀/아트픽셀
 let logicalW = 0, logicalH = 0, cssW = 0;
 let zones = [], desks = [];
-let layoutKey = '';
 let fontName = 12, fontSmall = 11, fontBubble = 12;
 let searchQuery = '';
 
@@ -1256,7 +1290,9 @@ function ensureLayout() {
   // 화면에 다 들어가는 가장 큰 배율을 고른다(아트 1픽셀 = 화면 k픽셀, k는 정수). 그래도 넘치면 세로 스크롤.
   // 고해상도(배율 125% 등)에서는 k를 1씩 내려가며 더 촘촘하게 맞춘다.
   let tight = null;
-  const kMax = Math.max(2, Math.round(4 * dpr)), kMin = Math.max(1, Math.round(2 * dpr) - 1);
+  const isMobile = (typeof REMOTE !== 'undefined' && REMOTE) || innerWidth <= 600;
+  const minScale = isMobile ? 1 : 2;
+  const kMax = Math.max(minScale, Math.round(4 * dpr)), kMin = Math.max(minScale, Math.round(minScale * dpr));
   for (let k = kMax; k >= kMin; k--) {
     const lw = Math.floor((vw * dpr) / k);
     const viewLh = Math.floor((innerHeight * dpr) / k);
@@ -1264,10 +1300,14 @@ function ensureLayout() {
     tight = { k, lw, viewLh, plan };
     if (plan.height <= viewLh) break;
   }
+  if (!tight) {
+    const lw = Math.floor((vw * dpr) / minScale);
+    tight = { k: minScale, lw, viewLh: Math.floor((innerHeight * dpr) / minScale), plan: planZones([...teams.entries()], lw, cellHFor(minScale)) };
+  }
 
-  // 너무 꽉 차지 않도록 1단계 여유 있는 '작게' 수준을 기본 맞춤(Fit, zoom=0)으로 설정
-  const baseK = Math.max(1, tight.k - 1);
-  const targetK = Math.max(1, baseK + zoom);
+  // 기본 맞춤(Fit, zoom=0)은 화면에 다 들어가는 최적 배율(tight.k)
+  const baseK = tight.k;
+  const targetK = Math.max(minScale, baseK + zoom);
   let best;
   if (targetK === tight.k) {
     best = tight;
@@ -13594,7 +13634,7 @@ const SETTINGS = [
       { type: 'choice', name: T('사무실 크기', 'Office size'),
         desc: T('화면에 맞춘 크기에서 작게·크게 바꿉니다. 크게 하면 넘치는 만큼 아래로 스크롤합니다.', 'Smaller or larger than fit-to-window. When larger, scroll down for the rest.'),
         options: [[-2, T('더 작게', 'Smallest')], [-1, T('작게', 'Smaller')], [0, T('맞춤', 'Fit')], [1, T('크게', 'Larger')], [2, T('더 크게', 'Largest')]],
-        get: () => zoom, set: (v) => { zoom = v; store.set('zoom', v); layoutKey = ''; refreshSettings(); } },
+        get: () => zoom, set: (v) => { setOfficeZoom(v); } },
       { type: 'choice', name: T('사무실 조명 (낮/밤)', 'Office Lighting'),
         shown: () => getAppMode() !== 'office',
         desc: T('실제 시간 연동 또는 원하는 감성의 오피스 조명 분위기를 선택합니다.', 'Choose ambient lighting mode (Auto synced with PC clock, day, dusk, night shift).'),
@@ -16887,6 +16927,11 @@ if (REMOTE) {
     else if (m?.type === 'widget-size-mode') {
       if (m.size && m.size !== widgetSize) {
         setWidgetSize(m.size, true);
+      }
+    }
+    else if (m?.type === 'zoom-setting') {
+      if (typeof m.zoom === 'number' && m.zoom !== zoom) {
+        setOfficeZoom(m.zoom, true);
       }
     }
     else if (m?.type === 'scanline-setting') {

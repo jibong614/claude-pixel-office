@@ -2,6 +2,15 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.44 — 2026-11-17
+- **🔍 메인화면 사무실 크기 극소화 현상 해결 및 기본 맞춤 배율 정상화**:
+  - `ensureLayout`의 `tight.k`에서 1단계가 중복 차감(`baseK = tight.k - 1`)되면서 일반 데스크톱 창 크기(1024x600 등)에서 픽셀 배율이 1배(K=1)로 떨어져 책상들이 상단에 손톱만하게 축소되고 바닥이 비정상적으로 넓어지던 버그 해결
+  - 데스크톱 환경(`!REMOTE && innerWidth > 600`)에서 픽셀 그래픽 식별성을 위해 최소 2배율(`minScale = 2`) 보장, `baseK = tight.k`로 바로 잡아 '맞춤(Fit, zoom=0)' 시 창 크기에 가장 꽉 차고 자연스러운 크기로 렌더링되도록 수정
+- **🎛️ 설정창의 사무실 크기 변경 시 메인화면 미반영 버그 수정 (창 간 실시간 동기화)**:
+  - 독립된 WebView2 설정 창(`SettingsWindow`)에서 '사무실 크기'(-2 ~ +2)를 변경해도 메인 윈도우(`MainWindow`)로 변경 이벤트가 전달되지 않아 반응하지 않던 문제 해결
+  - `setOfficeZoom`: 배율 변경 시 `BroadcastChannel('co_zoom')`, `storage` 이벤트, 및 C# 호스트 메시지(`cmd: 'zoom-setting'`)를 즉시 전파
+  - C# `MainWindow.xaml.cs`의 `OnWebMessage`: `zoom-setting` 메시지 라우팅을 추가하여 설정 창과 메인 창 간 실시간 배율 동기화 및 즉시 레이아웃 재계산 지원
+
 ## 1.9.43 — 2026-11-17
 - **🐬 DeepSeek 및 외부 AI 직원의 작업창 이동 시 Claude 데스크톱으로 오작동하던 현상 수정**:
   - DeepSeek / 로컬 LLM(Ollama, Local AI Studio 등) 및 외부 AI(Antigravity, Cursor, Windsurf, ChatGPT) 직원의 위젯/패널에서 `[작업창으로 이동]` 클릭 시, 전용 창 타이틀 매칭 부재로 인해 fallback 로직이 Claude 데스크톱 창을 오인 활성화(`claude://` 호출)하던 버그 해결
