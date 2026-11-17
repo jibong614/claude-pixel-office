@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.37';
+const PAGE_VERSION = '1.9.38';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -6569,6 +6569,7 @@ function drawOverlay(t) {
   for (const d of desks) drawNameplate(d);
   for (const d of desks) if (d.s.id === selectedId || d.s.id === hoverId) drawSelection(d, d.s.id === selectedId);
   for (const d of desks) drawInternChips(d);
+  for (const d of desks) drawDispatchedBadge(d);
   drawAmbientLighting(t);
   drawFloatingHearts(t);
   drawSnowflakes(t);
@@ -6666,6 +6667,119 @@ function drawNameplate(d) {
   ctx.fillText(status, cx + 1, y2 + 1);
   ctx.fillStyle = a.tone;
   ctx.fillText(status, cx, y2);
+}
+
+
+/**
+ * 클로드를 제외한 외부 AI / 파견 직원 여부 확인
+ * (Antigravity, Gemini, ChatGPT, Cursor, Windsurf, DeepSeek 등)
+ */
+function isDispatchedEmployee(s) {
+  if (!s) return false;
+  const e = (s.entry || '').trim().toLowerCase();
+  const tm = (s.team || '').toLowerCase();
+  const prov = (s.provider || '').toLowerCase();
+
+  // Claude 정직원인 경우 (Claude 데스크톱, Claude Code CLI, Claude VS Code 등)
+  if (e.startsWith('claude') || e === 'cli' || e === 'terminal' || tm.includes('claude') || prov.includes('claude')) {
+    return false;
+  }
+
+  // 외부 AI 플랫폼 식별 목록
+  const externalPlatforms = [
+    'antigravity', 'gemini', 'cursor', 'windsurf', 'chatgpt', 'gpt',
+    'deepseek', 'ollama', 'aider', 'roo', 'roo-code', 'copilot'
+  ];
+  if (externalPlatforms.some(p => e === p || e.startsWith(p) || prov.includes(p))) {
+    return true;
+  }
+
+  // 가상 MCP 연동 세션 (외부 AI 전용 세션)
+  if (s.isVirtual || (s.id && String(s.id).startsWith('mcp_'))) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * 책상 우측 하단에 [파견] 배지 렌더링 (메인 오피스 캔버스)
+ */
+function drawDispatchedBadge(d) {
+  if (!d || !d.s || !isDispatchedEmployee(d.s)) return;
+  // 책상 앞면 우측 끝: d.x + 58, 앞면 하단 끝: d.y + 49
+  const rx = (d.x + 58) * U;
+  const by = (d.y + 49) * U;
+  const text = T('[파견]', '[Dispatch]');
+  const fontSize = Math.max(9, Math.round(fontSmall * 0.95));
+  ctx.save();
+  ctx.font = `700 ${fontSize}px ${FONT}`;
+  const tw = ctx.measureText(text).width;
+  const padX = 3, padY = 1.5;
+  const bw = Math.round(tw + padX * 2);
+  const bh = Math.round(fontSize + padY * 2);
+  const bx = Math.round(rx - bw);
+  const ty = Math.round(by - bh);
+
+  // 세련된 레트로 다크 앰버 배경 및 테두리
+  ctx.fillStyle = 'rgba(26, 20, 36, 0.92)';
+  roundRect(bx, ty, bw, bh, 3);
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#e6a838';
+  ctx.stroke();
+
+  // [파견] 글자 및 그림자
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const cx = bx + bw / 2;
+  const cy = ty + bh / 2 + 0.5;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.fillText(text, cx + 0.5, cy + 0.5);
+  ctx.fillStyle = '#ffd666';
+  ctx.fillText(text, cx, cy);
+  ctx.restore();
+}
+
+/**
+ * 미니위젯 책상 우측 하단에 [파견] 배지 렌더링
+ */
+function drawPetDispatchedBadge(c, deskObj, scale) {
+  if (!deskObj || !deskObj.s || !isDispatchedEmployee(deskObj.s)) return;
+  const rx = (deskObj.x + 58) * scale;
+  const by = (deskObj.y + 49) * scale;
+  const text = T('[파견]', '[Dispatch]');
+  const fontSize = Math.max(8.5, Math.round(10 * 0.95));
+  c.save();
+  c.font = `700 ${fontSize}px ${FONT}`;
+  const tw = c.measureText(text).width;
+  const padX = 2.5, padY = 1;
+  const bw = Math.round(tw + padX * 2);
+  const bh = Math.round(fontSize + padY * 2);
+  const bx = Math.round(rx - bw);
+  const ty = Math.round(by - bh);
+
+  c.fillStyle = 'rgba(26, 20, 36, 0.92)';
+  if (typeof c.roundRect === 'function') {
+    c.beginPath();
+    c.roundRect(bx, ty, bw, bh, 2.5);
+    c.fill();
+    c.lineWidth = 1;
+    c.strokeStyle = '#e6a838';
+    c.stroke();
+  } else {
+    c.fillRect(bx, ty, bw, bh);
+  }
+
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  const cx = bx + bw / 2;
+  const cy = ty + bh / 2 + 0.5;
+  c.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  c.fillText(text, cx + 0.5, cy + 0.5);
+  c.fillStyle = '#ffd666';
+  c.fillText(text, cx, cy);
+  c.restore();
 }
 
 function drawSelection(d, selected) {
@@ -12905,6 +13019,9 @@ function drawPetFrame(ts) {
   petCtx.drawImage(art, 0, 0, PW, PH, 0, 0, PW * k, PH * k);
 
   drawPetCompanionHearts(petCtx, scale, ts);
+  if (isDispatchedEmployee(s)) {
+    drawPetDispatchedBadge(petCtx, deskObj, scale);
+  }
 
   // 말풍선(선명한 해상도로 위에 그리기, 꼬리가 직원 머리를 가리키도록)
   const a = actOf(s);

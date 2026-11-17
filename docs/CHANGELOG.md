@@ -2,6 +2,12 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.38 — 2026-11-17
+- **🏷️ 클로드 외 파견/외부 AI 직원 책상 우측 하단 `[파견]` 배지 표시**:
+  - Claude(Claude Desktop, Claude Code CLI, Claude VS Code 등)를 제외한 외부 AI(Google Antigravity, Gemini, ChatGPT, Cursor, Windsurf, DeepSeek 등) 직원의 책상 앞면 우측 하단에 골드 앰버 테두리의 선명한 `[파견]` 배지 렌더링 (`drawDispatchedBadge`)
+  - 데스크톱 미니위젯 모드(`renderPet`)에서도 파견 직원 책상 우측 하단에 일관된 `[파견]` 배지 표시 지원 (`drawPetDispatchedBadge`)
+  - 정직원(Claude)과 파견 직원(외부 AI)의 구분을 직관적으로 식별할 수 있도록 시각적 피드백 강화
+
 ## 1.9.37 — 2026-11-16
 - **✨ Google Antigravity 실시간 대화/작업 감시 엔진 탑재 & 모바일 zzz(수면) 오표시 해결**:
   - `TranscriptWatcher`에 Antigravity 대화 로그(`~/.gemini/antigravity/brain/**/transcript.jsonl`) 실시간 자동 감시 기능 추가
