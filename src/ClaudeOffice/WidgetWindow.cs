@@ -544,7 +544,13 @@ internal sealed class WidgetWindow : Window
             Left = curRight - targetW;
             return;
         }
-        Width = DefaultWidth;
+        double targetW2 = GetWidthForSize(_currentWidgetSize);
+        if (Math.Abs(Width - targetW2) > 0.5)
+        {
+            double curRight = Left + Width;
+            Width = targetW2;
+            Left = curRight - targetW2;
+        }
     }
 
     public void SetTopmost(bool on)

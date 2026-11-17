@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.41';
+const PAGE_VERSION = '1.9.42';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -12805,7 +12805,7 @@ function syncPetHeight() {
   if (guideOpen) {
     const box = connectGuideEl.querySelector('.cg-box');
     const h = box ? Math.ceil(box.getBoundingClientRect().height) + 16 : 460;
-    send({ cmd: 'pet-size', height: h, width: 360, hasAsks: false });
+    send({ cmd: 'pet-size', height: h, hasAsks: false });
     return;
   }
   if (petMode === 'island' || petMode === 'shimeji') return;
@@ -12817,7 +12817,7 @@ function syncPetHeight() {
   if (Math.abs(reqH - lastSyncedPetH) >= 4 || (hasAsks !== !!syncPetHeight._lastHasAsks)) {
     lastSyncedPetH = reqH;
     syncPetHeight._lastHasAsks = hasAsks;
-    send({ cmd: 'pet-size', height: reqH, width: 360, hasAsks });
+    send({ cmd: 'pet-size', height: reqH, hasAsks });
   }
   } catch (err) { }
 }

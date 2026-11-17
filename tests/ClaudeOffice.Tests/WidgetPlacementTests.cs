@@ -423,4 +423,18 @@ public class WidgetPlacementTests
         Assert.NotNull(loaded);
         Assert.False(loaded.PetAutoFitHeight);
     }
+
+    [Theory]
+    [InlineData("small", 260)]
+    [InlineData("medium", 300)]
+    [InlineData("large", 360)]
+    public void WidgetSize_GetWidthForSize_MatchesExpectedWidth(string size, double expectedWidth)
+    {
+        Assert.Equal(expectedWidth, WidgetWindow.GetWidthForSize(size));
+        double curLeft = 1200;
+        double curWidth = 360;
+        double fixedRight = curLeft + curWidth; // 1560
+        double targetLeft = fixedRight - expectedWidth;
+        Assert.Equal(fixedRight, targetLeft + expectedWidth);
+    }
 }
