@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.40';
+const PAGE_VERSION = '1.9.41';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -7357,7 +7357,7 @@ function applyPetState() {
 }
 
 let petDomBuilt = false, petSelIsOpen = false;
-let petSelEl = null, petBgBtn = null, petFoldBtn = null, petPinBtn = null, petModeBtn = null, petStopBtn = null, petAlertEl = null, petAlertTargetId = '';
+let petHeadEl = null, petSelEl = null, petBgBtn = null, petFoldBtn = null, petPinBtn = null, petModeBtn = null, petStopBtn = null, petAlertEl = null, petAlertTargetId = '';
 let petModeMenuEl = null;
 let petStageEl = null, petCanvasEl = null, petCtx = null;
 let petBarNm = null, petBarSt = null, petAsksEl = null, petFeedEl = null, petFeedHd = null, petFeedTx = null;
@@ -7418,7 +7418,8 @@ function ensurePetDom() {
   if (petDomBuilt) return;
   petDomBuilt = true;
 
-  const head = elem('div', 'pet-head');
+  petHeadEl = elem('div', 'pet-head');
+  const head = petHeadEl;
   petPinBtn = elem('button', 'pet-ibtn btn-pet-pin', '📌');
   petPinBtn.title = petTopmostOn()
     ? T('항상 위 고정됨 (클릭 시 고정 해제하여 다른 창 뒤에 숨김)', 'Always on top (click to unpin and allow hiding behind windows)')
@@ -12766,8 +12767,10 @@ function renderPet() {
  */
 function calcPetRequiredHeight() {
   if (!petEl || !WIDGET_WINDOW || petMode === 'island' || petMode === 'shimeji') return 0;
+  try {
   const isCompact = petEl.classList.contains('compact');
-  const headH = (!isCompact && petHeadEl && !petHeadEl.hidden) ? (petHeadEl.offsetHeight || 34) : 0;
+  const headEl = petHeadEl || (petEl ? petEl.querySelector('.pet-head') : null);
+  const headH = (!isCompact && headEl && !headEl.hidden) ? (headEl.offsetHeight || 34) : 0;
   const alertH = (petAlertEl && !petAlertEl.hidden) ? (petAlertEl.offsetHeight || 28) : 0;
   const stageH = (petStageEl && !petStageEl.hidden) ? (petStageEl.offsetHeight || 160) : 160;
   const emptyH = (petEmptyEl && !petEmptyEl.hidden) ? (petEmptyEl.offsetHeight || 40) : 0;
@@ -12791,11 +12794,13 @@ function calcPetRequiredHeight() {
   }
   const basePad = 22;
   return Math.ceil(headH + alertH + stageH + emptyH + asksH + feedH + cmdH + basePad);
+  } catch (err) { return 0; }
 }
 
 let lastSyncedPetH = 0;
 function syncPetHeight() {
   if (!WIDGET_WINDOW) return;
+  try {
   const guideOpen = connectGuideEl && !connectGuideEl.hidden;
   if (guideOpen) {
     const box = connectGuideEl.querySelector('.cg-box');
@@ -12814,6 +12819,7 @@ function syncPetHeight() {
     syncPetHeight._lastHasAsks = hasAsks;
     send({ cmd: 'pet-size', height: reqH, width: 360, hasAsks });
   }
+  } catch (err) { }
 }
 
 /** 바탕화면 구석의 작은 방(또는 배경 숨김 시 직원·의자·책상·컴퓨터만)을 그린다. */

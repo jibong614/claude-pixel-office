@@ -2,6 +2,13 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.41 — 2026-11-17
+- **🐛 미니위젯 최초 초기화 시 `petHeadEl` 참조 오류 및 '출근 직원 없음' 화면 멈춤 현상 수정**:
+  - `v1.9.40`의 위젯 높이 자동 조절 연산(`calcPetRequiredHeight`) 중 미선언 변수 `petHeadEl` 참조로 인해 발생하던 `ReferenceError` 예외 해결
+  - 스크립트 실행 초기 `applyPetState()` 단계에서 예외로 인해 `host.addEventListener('message')` 및 `ready` 신호 전송이 중단되어 화면이 '🏢 아직 출근한 직원이 없어요...' 상태로 고정되던 문제 완벽 수정
+  - `petHeadEl` 전역 선언 및 DOM 생성 시점 바인딩, `petEl.querySelector('.pet-head')` 안전 폴백 적용
+  - 높이 계산(`calcPetRequiredHeight`) 및 동기화(`syncPetHeight`) 전 구간 `try-catch` 안전 격리 적용으로 예외 발생 방지 강화
+
 ## 1.9.40 — 2026-11-17
 - **↕️ 미니위젯 컨텐츠 맞춤 높이 자동 조절 & 하단 고정 상단 확장 기능 탑재**:
   - 미니위젯에서 질문(`AskUserQuestion`)이나 승인 요청 카드가 나타났을 때 위젯 높이가 부족하여 질문 선택지, 하단 버튼(답변/승인/거절), 마지막 답변, 지시 입력칸 등이 가려지던 현상 해결
