@@ -409,4 +409,18 @@ public class WidgetPlacementTests
         App.Settings.WidgetSize = "large";
         App.Settings.MiniWidgetPlacement = null;
     }
+
+    [Fact]
+    public void PetAutoFitHeight_Setting_SerializesAndDefaultsToTrue()
+    {
+        var settings = new AppSettings();
+        Assert.True(settings.PetAutoFitHeight);
+
+        var json = JsonSerializer.Serialize(settings);
+        Assert.Contains("\"PetAutoFitHeight\":true", json);
+
+        var loaded = JsonSerializer.Deserialize<AppSettings>("""{"PetAutoFitHeight":false}""");
+        Assert.NotNull(loaded);
+        Assert.False(loaded.PetAutoFitHeight);
+    }
 }

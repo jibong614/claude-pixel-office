@@ -475,7 +475,7 @@ internal sealed class WidgetWindow : Window
     }
 
     /// <summary>미니위젯 내용 높이에 창 높이를 맞추되, 아래쪽 모서리를 고정해 바탕화면 오른쪽 아래 자리에서 위로만 늘어나고 줄어들게 한다.</summary>
-    public void FitHeight(double contentHeight)
+    public void FitHeight(double contentHeight, bool hasAsks = false)
     {
         if (WindowState != WindowState.Normal) return;
         if (App.Settings.PetIsland) return; // 미니바는 높이 고정(44px)
@@ -494,7 +494,26 @@ internal sealed class WidgetWindow : Window
             return;
         }
         double chrome = ActualHeight > 0 && _web.ActualHeight > 0 ? Math.Max(0, ActualHeight - _web.ActualHeight) : 0;
-        double target = Math.Clamp(Math.Ceiling(contentHeight + chrome), MinWidgetHeight, MaxWidgetHeight);
+        double baseSavedH = GetSavedWidgetHeight();
+        double req = Math.Ceiling(contentHeight + chrome);
+
+        double target;
+        if (App.Settings.PetAutoFitHeight)
+        {
+            // 사용자가 수동으로 위젯을 넉넉히 늘려두었으면 평소에는 그 크기를 존중하고,
+            // 질문 카드가 떠서 내용이 더 커지면 질문 내용과 버튼이 전부 보이도록 위로 확장
+            target = Math.Clamp(Math.Max(hasAsks ? req : Math.Max(req, baseSavedH), hasAsks ? req : MinWidgetHeight), MinWidgetHeight, MaxWidgetHeight);
+        }
+        else if (hasAsks)
+        {
+            // 자동 조절 옵션이 꺼져 있어도 질문이 가려지지 않도록 필요한 만큼만 일시 확장
+            target = Math.Clamp(Math.Max(baseSavedH, req), MinWidgetHeight, MaxWidgetHeight);
+        }
+        else
+        {
+            target = baseSavedH;
+        }
+
         if (Math.Abs(Height - target) < 1) return;
         Height = target;
         if (!App.Offscreen && bottom > 0)
@@ -502,7 +521,10 @@ internal sealed class WidgetWindow : Window
             var wa = SystemParameters.WorkArea;
             Top = Math.Clamp(bottom - target, wa.Top + 8, wa.Bottom - target - 8);
         }
-        SaveWidgetPlacement();
+        if (!hasAsks && App.Settings.PetAutoFitHeight)
+        {
+            SaveWidgetPlacement();
+        }
     }
 
     /// <summary>미니위젯 내용 너비에 창 너비를 맞춘다.</summary>

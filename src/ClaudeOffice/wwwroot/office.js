@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.39';
+const PAGE_VERSION = '1.9.40';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -7246,6 +7246,15 @@ let demoPetSessionId = store.get('petSessionId', '') || '';
 let demoPetCompact = store.get('petCompact', false);
 let demoPetNoBg = store.get('petNoBg', false);
 let demoPetTopmost = store.get('petTopmost', true);
+let demoPetAutoFitHeight = store.get('petAutoFitHeight', true);
+const petAutoFitHeightOn = () => (LOCAL_PET ? demoPetAutoFitHeight : (appSettings?.petAutoFitHeight ?? true));
+function setPetAutoFitHeight(v) {
+  const on = !!v;
+  demoPetAutoFitHeight = on;
+  store.set('petAutoFitHeight', on);
+  send({ cmd: 'pet-auto-fit-height', value: on });
+  if (WIDGET_WINDOW) syncPetHeight();
+}
 
 const petOn = () => (WIDGET_WINDOW ? true : LOCAL_PET ? demoPetOpen : !!appSettings?.pet);
 const petSessionPref = () => (LOCAL_PET ? demoPetSessionId : (appSettings?.petSessionId || ''));
@@ -12751,13 +12760,59 @@ function renderPet() {
   syncPetHeight();
 }
 
+/**
+ * 미니위젯의 모든 내용(헤더, 캔버스, 승인/질문 카드, 마지막 답변, 지시 입력칸)이
+ * 잘림 없이 표시되는데 필요한 총 세로 높이를 정확히 계산한다.
+ */
+function calcPetRequiredHeight() {
+  if (!petEl || !WIDGET_WINDOW || petMode === 'island' || petMode === 'shimeji') return 0;
+  const isCompact = petEl.classList.contains('compact');
+  const headH = (!isCompact && petHeadEl && !petHeadEl.hidden) ? (petHeadEl.offsetHeight || 34) : 0;
+  const alertH = (petAlertEl && !petAlertEl.hidden) ? (petAlertEl.offsetHeight || 28) : 0;
+  const stageH = (petStageEl && !petStageEl.hidden) ? (petStageEl.offsetHeight || 160) : 160;
+  const emptyH = (petEmptyEl && !petEmptyEl.hidden) ? (petEmptyEl.offsetHeight || 40) : 0;
+  let asksH = 0;
+  if (petAsksEl && !petAsksEl.hidden && petAsksEl.children.length > 0) {
+    for (const child of petAsksEl.children) {
+      asksH += (child.scrollHeight || child.offsetHeight || 0) + 6;
+    }
+  }
+  let feedH = 0;
+  if (petFeedEl && !petFeedEl.hidden && !isCompact) {
+    const feedHd = petFeedEl.querySelector('.hd');
+    const feedTx = petFeedEl.querySelector('.tx');
+    const hdH = feedHd ? (feedHd.offsetHeight || 16) : 16;
+    const txH = feedTx ? Math.min(120, Math.max(32, feedTx.scrollHeight || feedTx.offsetHeight || 32)) : 36;
+    feedH = hdH + txH + 8;
+  }
+  let cmdH = 0;
+  if (petCmdWrap && !petCmdWrap.hidden && !isCompact) {
+    cmdH = petCmdWrap.scrollHeight || petCmdWrap.offsetHeight || 56;
+  }
+  const basePad = 22;
+  return Math.ceil(headH + alertH + stageH + emptyH + asksH + feedH + cmdH + basePad);
+}
+
+let lastSyncedPetH = 0;
 function syncPetHeight() {
   if (!WIDGET_WINDOW) return;
   const guideOpen = connectGuideEl && !connectGuideEl.hidden;
   if (guideOpen) {
     const box = connectGuideEl.querySelector('.cg-box');
     const h = box ? Math.ceil(box.getBoundingClientRect().height) + 16 : 460;
-    send({ cmd: 'pet-size', height: h, width: 360 });
+    send({ cmd: 'pet-size', height: h, width: 360, hasAsks: false });
+    return;
+  }
+  if (petMode === 'island' || petMode === 'shimeji') return;
+  const s = resolvePetSession();
+  const asks = activeAsksOf(s);
+  const hasAsks = asks.length > 0;
+  const reqH = calcPetRequiredHeight();
+  if (reqH <= 0) return;
+  if (Math.abs(reqH - lastSyncedPetH) >= 4 || (hasAsks !== !!syncPetHeight._lastHasAsks)) {
+    lastSyncedPetH = reqH;
+    syncPetHeight._lastHasAsks = hasAsks;
+    send({ cmd: 'pet-size', height: reqH, width: 360, hasAsks });
   }
 }
 
@@ -13578,6 +13633,15 @@ const SETTINGS = [
     tab: 'widget',
     items: [
       { type: 'petcfg', pcOnly: true, enabled: () => LOCAL_PET || appReady() },
+      {
+        type: 'toggle',
+        name: T('↕️ 내용 맞춤 높이 자동 조절', '↕️ Auto-fit height to content'),
+        pcOnly: true,
+        desc: T('승인·질문 카드나 답변 내용에 맞춰 미니위젯 높이를 자동으로 늘리고 줄입니다. 바탕화면 하단 모서리를 고정한 채 위쪽으로만 확장되어 작업표시줄이나 화면 바깥으로 벗어나지 않습니다.',
+          'Automatically expands and shrinks the mini-widget height to fit question cards and replies. Anchored at the bottom edge so it grows upward without overflowing the screen.'),
+        get: petAutoFitHeightOn,
+        set: (v) => { setPetAutoFitHeight(v); refreshSettings(); }
+      },
       {
         type: 'choice',
         name: T('위젯 크기', 'Widget size'),
@@ -14459,14 +14523,28 @@ const RENDER = {
     swTop.addEventListener('click', () => setPetTopmost(!petTopmostOn()));
     lineTop.append(topLeft, swTop);
 
-    sub.append(linePick, lineSize, lineBg, lineTop);
+    const lineAutoFit = elem('div', 'petcfg-line');
+    const autoFitLeft = elem('div', '');
+    autoFitLeft.append(
+      elem('div', 'lbl', T('내용 맞춤 높이 자동 조절 (↕️)', 'Auto-fit height to content (↕️)')),
+      elem('div', 'subdesc', T('승인·질문 카드나 답변 내용에 맞춰 미니위젯 높이를 자동으로 조절합니다 (하단 모서리를 고정한 채 위로 확장).',
+        'Automatically expands and shrinks the mini-widget height to fit question cards and replies (anchored at bottom, expanding upward).'))
+    );
+    const swAutoFit = elem('button', 'switch');
+    swAutoFit.setAttribute('role', 'switch');
+    swAutoFit.setAttribute('aria-label', T('내용 맞춤 높이 자동 조절', 'Auto-fit height to content'));
+    swAutoFit.addEventListener('click', () => setPetAutoFitHeight(!petAutoFitHeightOn()));
+    lineAutoFit.append(autoFitLeft, swAutoFit);
+
+    sub.append(linePick, lineSize, lineBg, lineTop, lineAutoFit);
     row.append(top, sub);
 
     return (locked) => {
-      swOn.disabled = swBg.disabled = swTop.disabled = sel.disabled = selSize.disabled = locked;
+      swOn.disabled = swBg.disabled = swTop.disabled = swAutoFit.disabled = sel.disabled = selSize.disabled = locked;
       swOn.setAttribute('aria-checked', String(!!petOn()));
       swBg.setAttribute('aria-checked', String(!!petNoBgOn()));
       swTop.setAttribute('aria-checked', String(!!petTopmostOn()));
+      swAutoFit.setAttribute('aria-checked', String(!!petAutoFitHeightOn()));
       selSize.value = getWidgetSize();
       if (document.activeElement !== sel) {
         const pref = petSessionPref();
@@ -16831,6 +16909,13 @@ if (REMOTE) {
     else if (m?.type === 'pet-topmost') {
       if (appSettings) appSettings.petTopmost = !!m.value;
       demoPetTopmost = !!m.value;
+      if (petOn()) renderPet();
+      refreshSettings();
+    }
+    else if (m?.type === 'pet-auto-fit-height') {
+      if (appSettings) appSettings.petAutoFitHeight = !!m.value;
+      demoPetAutoFitHeight = !!m.value;
+      if (WIDGET_WINDOW) syncPetHeight();
       if (petOn()) renderPet();
       refreshSettings();
     }

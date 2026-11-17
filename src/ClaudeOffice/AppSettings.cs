@@ -89,6 +89,8 @@ internal sealed class AppSettings
     public bool PetWalk { get; set; }
     /// <summary>미니위젯을 항상 위(Topmost)에 둘지. 해제 시 다른 일반 창 뒤로 숨는다.</summary>
     public bool PetTopmost { get; set; } = true;
+    /// <summary>질문·승인 카드나 답변 내용에 맞춰 미니위젯 높이를 자동으로 늘리고 줄일지 (하단 고정, 위로 확장).</summary>
+    public bool PetAutoFitHeight { get; set; } = true;
     /// <summary>바탕화면 미니위젯 위치·크기 (높이는 사용자 조절 가능, 폭은 360 고정).</summary>
     [System.Text.Json.Serialization.JsonPropertyName("PetWindow")]
     public WindowPlacement? MiniWidgetPlacement { get; set; }

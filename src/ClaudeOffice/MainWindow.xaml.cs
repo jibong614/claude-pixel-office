@@ -988,6 +988,7 @@ public partial class MainWindow : Window
             petIsland = s.PetIsland,
             petWalk = s.PetWalk,
             petTopmost = s.PetTopmost,
+            petAutoFitHeight = s.PetAutoFitHeight,
             appMode = s.AppMode,
             appIcon = s.AppIcon,
             sessionTarget = s.SessionTarget,
@@ -1221,6 +1222,16 @@ public partial class MainWindow : Window
                         Post(AppSettingsJson());
                     }
                     break;
+                case "pet-auto-fit-height":
+                    if (!App.DemoMode && root.TryGetProperty("value", out var pafh))
+                    {
+                        bool on = pafh.ValueKind == JsonValueKind.True;
+                        App.Settings.PetAutoFitHeight = on;
+                        TrySaveSettings();
+                        _widgetWindow?.Post(JsonSerializer.Serialize(new { type = "pet-auto-fit-height", value = on }));
+                        Post(AppSettingsJson());
+                    }
+                    break;
                 case "app-mode":
                     if (root.TryGetProperty("mode", out var mElem) && mElem.GetString() is { Length: > 0 } m)
                     {
@@ -1402,7 +1413,10 @@ public partial class MainWindow : Window
 
                 case "pet-size":
                     if (root.TryGetProperty("height", out var ph) && ph.TryGetDouble(out var pheight))
-                        _widgetWindow?.FitHeight(pheight);
+                    {
+                        bool hasAsks = root.TryGetProperty("hasAsks", out var ha) && ha.GetBoolean();
+                        _widgetWindow?.FitHeight(pheight, hasAsks);
+                    }
                     if (root.TryGetProperty("width", out var pw) && pw.TryGetDouble(out var pwidth))
                         _widgetWindow?.FitWidth(pwidth);
                     break;

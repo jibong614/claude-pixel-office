@@ -2579,7 +2579,7 @@ canvas#petCanvas {
   flex: 1 1 auto;
   min-width: 0;
 }
-.pet-asks { display: flex; flex-direction: column; gap: 5px; }
+.pet-asks { display: flex; flex-direction: column; gap: 5px; max-height: 320px; overflow-y: auto; }
 .pet-asks:empty { display: none; }
 .pet-ask {
   padding: 7px 8px;
