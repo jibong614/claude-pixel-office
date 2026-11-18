@@ -1334,17 +1334,38 @@ public partial class MainWindow : Window
                     }
                     break;
                 case "pet-say":
+                {
                     if (!App.DemoMode && root.TryGetProperty("sid", out var saySid) && root.TryGetProperty("text", out var sayTxt)
                         && saySid.GetString() is { Length: > 0 } sId && sayTxt.GetString() is { Length: > 0 } sText)
                     {
-                        _remote.SayFromPc(sId, sText);
+                        string? sessionEntry = null;
+                        if (_watcher.LastSnapshot is { } saySnap)
+                        {
+                            try
+                            {
+                                using var sayDoc = JsonDocument.Parse(saySnap);
+                                foreach (var s in sayDoc.RootElement.GetProperty("sessions").EnumerateArray())
+                                {
+                                    if (s.GetProperty("id").GetString() == sId)
+                                    {
+                                        sessionEntry = s.TryGetProperty("entry", out var eEntry) ? eEntry.GetString() : null;
+                                        break;
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+
+                        _remote.SayFromPc(sId, sText, aiProvider: sessionEntry);
                         if (sId.StartsWith("mcp_"))
                         {
+                            _remote.RegisterMcpSession(sId, sessionEntry);
                             _watcher.ApplyVirtualInstruction(sId, sText);
                             _ = DeliverToExternalAiWindowAsync(sId, sText);
                         }
                     }
                     break;
+                }
                 case "broadcast-say":
                 {
                     if (!App.DemoMode && root.TryGetProperty("text", out var bTxt) && bTxt.GetString() is { Length: > 0 } broadcastText)
@@ -1766,15 +1787,15 @@ public partial class MainWindow : Window
             catch { }
         }
 
-        var targetProcNames = (entry?.ToLowerInvariant()) switch
+        var (targetProcNames, targetTitleKeywords) = (entry?.ToLowerInvariant()) switch
         {
-            "antigravity" or "gemini" => new[] { "Antigravity" },
-            "cursor" => new[] { "Cursor" },
-            "windsurf" => new[] { "Windsurf" },
-            "chatgpt" => new[] { "ChatGPT" },
-            "deepseek" or "ollama" => new[] { "Local AI Studio", "DeepSeek", "ollama" },
-            "claude-desktop" => new[] { "Claude" },
-            _ => new[] { "Antigravity" }
+            "antigravity" or "gemini" => (new[] { "Antigravity" }, new[] { "Antigravity" }),
+            "cursor" => (new[] { "Cursor" }, new[] { "Cursor" }),
+            "windsurf" => (new[] { "Windsurf" }, new[] { "Windsurf" }),
+            "chatgpt" => (new[] { "ChatGPT" }, new[] { "ChatGPT" }),
+            "deepseek" or "ollama" => (new[] { "Local AI Studio", "DeepSeek", "ollama" }, new[] { "Local AI", "DeepSeek", "Ollama" }),
+            "claude-desktop" => (new[] { "Claude" }, new[] { "Claude" }),
+            _ => (new[] { "Antigravity" }, new[] { "Antigravity" })
         };
         string targetProc = targetProcNames[0];
 
@@ -1802,7 +1823,8 @@ public partial class MainWindow : Window
             if (!IsWindowVisible(hWnd)) return true;
             GetWindowThreadProcessId(hWnd, out uint pid);
             if (pid == 0 || pid == selfPid) return true;
-            if (targetPids.Count > 0 && !targetPids.Contains(pid)) return true;
+
+            bool pidMatch = targetPids.Contains(pid);
 
             bool isIconic = IsIconic(hWnd);
             RECT rc;
@@ -1814,26 +1836,26 @@ public partial class MainWindow : Window
             GetWindowText(hWnd, sb, sb.Capacity);
             var wTitle = sb.ToString();
 
+            bool titleMatch = targetTitleKeywords.Any(k => wTitle.Contains(k, StringComparison.OrdinalIgnoreCase));
+
+            // 대상 AI 프로세스 또는 대상 AI 윈도우 타이틀과 일치하지 않는 창(Claude 등)은 절대 매칭 금지!
+            if (!pidMatch && !titleMatch) return true;
+
             cb.Clear();
             GetClassName(hWnd, cb, cb.Capacity);
             var className = cb.ToString();
 
-            int score = 100;
-            if (className.Equals("Chrome_WidgetWin_1", StringComparison.OrdinalIgnoreCase))
-                score += 100;
+            int score = 0;
+            if (pidMatch) score += 100;
+            if (titleMatch) score += 80;
 
-            if (wTitle.Contains("Antigravity", StringComparison.OrdinalIgnoreCase) ||
-                wTitle.Contains("Local AI", StringComparison.OrdinalIgnoreCase) ||
-                wTitle.Contains("DeepSeek", StringComparison.OrdinalIgnoreCase) ||
-                wTitle.Contains("ChatGPT", StringComparison.OrdinalIgnoreCase) ||
-                wTitle.Contains("ClaudeOffice", StringComparison.OrdinalIgnoreCase) ||
-                wTitle.Contains("Claude", StringComparison.OrdinalIgnoreCase))
-                score += 50;
+            if (className.Equals("Chrome_WidgetWin_1", StringComparison.OrdinalIgnoreCase))
+                score += 30;
 
             if (!string.IsNullOrWhiteSpace(cwd) && wTitle.Contains(cwd, StringComparison.OrdinalIgnoreCase))
                 score += 40;
 
-            if (isIconic) score += 20;
+            if (isIconic) score += 10;
 
             if (score > bestScore)
             {
@@ -1844,7 +1866,16 @@ public partial class MainWindow : Window
         }, IntPtr.Zero);
 
         _remote.Log("deliver-end", sid, $"best=0x{bestHwnd:X}, score={bestScore}");
-        if (bestHwnd == IntPtr.Zero) return;
+        if (bestHwnd == IntPtr.Zero || bestScore <= 0)
+        {
+            Post(JsonSerializer.Serialize(new
+            {
+                type = "toast",
+                msg = $"실행 중인 {targetProc} 작업창을 찾을 수 없습니다. (프로그램이 켜져 있는지 확인해주세요)",
+                icon = "⚠️"
+            }));
+            return;
+        }
 
         try
         {

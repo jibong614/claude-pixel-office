@@ -2,6 +2,17 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.45 — 2026-11-18
+- **🛡️ Antigravity 등 외부 AI가 꺼져있을 때 지시 전송 시 Claude로 오전송되던 현상 완벽 차단**:
+  - `DeliverToExternalAiWindowAsync`: 대상 프로세스(Antigravity 등)가 종료되어 있어 `targetPids.Count == 0`일 때, 모든 윈도우가 검사를 통과하고 기본 점수 및 Electron/Claude 점수를 얻어 엉뚱하게 켜져 있던 Claude 창이 활성화되어 Ctrl+V/Enter가 전송되던 치명적 버그 해결
+  - 대상 AI별 프로세스 일치(`pidMatch`) 또는 고유 타이틀 일치(`titleMatch`)를 필수 전제조건으로 적용하고, 미일치 창(Claude 등)은 점수 0점으로 즉시 배제
+  - 대상 창을 찾지 못했을 때 엉뚱한 창으로 키 입력을 전달하지 않고 즉시 작업을 중단하며 `"실행 중인 {AI이름} 작업창을 찾을 수 없습니다"` 토스트 알림 노출
+- **🔒 MCP 대기 지시 큐(`PopPendingInstruction`) AI 제공자 격리 강화**:
+  - `RemoteHub`: 가상 세션 ID(`mcp_*`)별 AI 제공자(`aiProvider`) 매핑 테이블(`_mcpProviders`) 신설
+  - `mcpQueued` 단일 대기 지시 폴백 시, 호출한 AI 클라이언트(`claude-desktop`)와 대기 중인 세션의 AI(`antigravity`, `deepseek` 등)가 서로 다르면 가로채지 못하도록 검증 차단
+  - PC 지시 전송(`SayFromPc`) 및 `pet-say` 처리 시 세션의 AI 제공자 정보를 함께 등록하여 교차 전달 원천 방지
+
+
 ## 1.9.44 — 2026-11-17
 - **🔍 메인화면 사무실 크기 극소화 현상 해결 및 기본 맞춤 배율 정상화**:
   - `ensureLayout`의 `tight.k`에서 1단계가 중복 차감(`baseK = tight.k - 1`)되면서 일반 데스크톱 창 크기(1024x600 등)에서 픽셀 배율이 1배(K=1)로 떨어져 책상들이 상단에 손톱만하게 축소되고 바닥이 비정상적으로 넓어지던 버그 해결

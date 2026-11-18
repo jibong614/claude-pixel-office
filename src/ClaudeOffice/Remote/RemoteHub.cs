@@ -44,6 +44,7 @@ internal sealed class RemoteHub
     private readonly Dictionary<string, Said> _replies = new(StringComparer.Ordinal);          // 세션 → Claude 의 마지막 답(Stop 훅이 알려 줌)
     private readonly Dictionary<string, DateTime> _nonces = new(StringComparer.Ordinal);       // 이미 처리한 휴대폰 메시지(같은 것을 두 번 받지 않게)
     private readonly HashSet<string> _stopFlags = new(StringComparer.OrdinalIgnoreCase);        // 긴급 중단이 요청된 세션(PreToolUse 훅에서 도구 차단에 씀)
+    private readonly Dictionary<string, string> _mcpProviders = new(StringComparer.OrdinalIgnoreCase); // 가상 세션 ID -> AI 제공자 (antigravity, claude-desktop 등)
     private bool _away;
     private DateTime _awaySinceUtc;
     private bool _pcIdle;      // PC 를 아무도 안 쓰는 중(입력 없음·화면 잠금) — 이때만 휴대폰이 자리 비움을 켤 수 있다
@@ -261,11 +262,29 @@ internal sealed class RemoteHub
         if (changed) Notify();
     }
 
+    /// <summary>가상 세션 ID(mcp_*)와 AI 제공자(antigravity, deepseek, claude-desktop 등)의 매핑을 등록한다.</summary>
+    public void RegisterMcpSession(string sid, string? aiProvider, string? projectName = null, string? sessionName = null)
+    {
+        if (string.IsNullOrWhiteSpace(sid)) return;
+        lock (_lock)
+        {
+            if (!string.IsNullOrWhiteSpace(aiProvider))
+            {
+                _mcpProviders[sid] = aiProvider.Trim().ToLowerInvariant();
+            }
+        }
+    }
+
     /// <summary>세션 ID 또는 프로젝트명/세션명/AI 제공자에 대해 대기 중인 지시를 꺼내 간다 (Claude 데스크톱 MCP 도구 반환값용).</summary>
     public string? PopPendingInstruction(string sid, string? projectName = null, string? sessionName = null, string? aiProvider = null)
     {
         lock (_lock)
         {
+            if (!string.IsNullOrWhiteSpace(aiProvider))
+            {
+                _mcpProviders[sid] = aiProvider.Trim().ToLowerInvariant();
+            }
+
             if (_queued.TryGetValue(sid, out var list) && list.Count > 0)
             {
                 var text = string.Join("\n", list.Select(x => x.Text));
@@ -292,17 +311,29 @@ internal sealed class RemoteHub
                 }
             }
 
-            // 폴백: 가상 세션(mcp_*)용 대기 지시가 단 1개 있으면 안전하게 전달
+            // 폴백: 가상 세션(mcp_*)용 대기 지시 중 AI 제공자가 일치하는 것만 안전하게 전달
+            // (Antigravity/DeepSeek용 지시를 Claude Desktop이 가로채지 못하도록 원천 차단)
             var mcpQueued = _queued.Where(kv => kv.Key.StartsWith("mcp_") && kv.Value.Count > 0).ToList();
-            if (mcpQueued.Count == 1)
+            if (mcpQueued.Count > 0)
             {
-                var kvp = mcpQueued[0];
-                var text = string.Join("\n", kvp.Value.Select(x => x.Text));
-                _queued.Remove(kvp.Key);
-                _said[kvp.Key] = new Said(text, DateTime.UtcNow, "delivered");
-                Log("mcp-deliver", kvp.Key, text);
-                Notify();
-                return text;
+                var reqAi = aiProvider?.Trim().ToLowerInvariant();
+                foreach (var kvp in mcpQueued)
+                {
+                    _mcpProviders.TryGetValue(kvp.Key, out var targetAi);
+                    targetAi = targetAi?.Trim().ToLowerInvariant();
+
+                    if (!string.IsNullOrEmpty(reqAi) && !string.IsNullOrEmpty(targetAi) && reqAi != targetAi)
+                    {
+                        continue;
+                    }
+
+                    var text = string.Join("\n", kvp.Value.Select(x => x.Text));
+                    _queued.Remove(kvp.Key);
+                    _said[kvp.Key] = new Said(text, DateTime.UtcNow, "delivered");
+                    Log("mcp-deliver", kvp.Key, text);
+                    Notify();
+                    return text;
+                }
             }
 
             return null;
@@ -369,8 +400,12 @@ internal sealed class RemoteHub
     }
 
     /// <summary>PC 바탕화면 미니펫에서 보낸 지시 — 사용자가 직접 PC 에서 입력한 것이므로 자리 비움 여부와 상관없이 바로 전달·대기열에 넣는다.</summary>
-    public void SayFromPc(string sid, string text, int max = MaxText)
+    public void SayFromPc(string sid, string text, int max = MaxText, string? aiProvider = null)
     {
+        if (!string.IsNullOrWhiteSpace(aiProvider))
+        {
+            lock (_lock) { _mcpProviders[sid] = aiProvider.Trim().ToLowerInvariant(); }
+        }
         text = text.Trim();
         if (string.IsNullOrEmpty(sid) || string.IsNullOrEmpty(text)) return;
         if (text.Length > max) text = text[..max];

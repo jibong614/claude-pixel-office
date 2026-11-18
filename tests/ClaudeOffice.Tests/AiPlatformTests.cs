@@ -214,4 +214,23 @@ public class AiPlatformTests
         var fallbackInstruction = hub.PopPendingInstruction("mcp_different_id", "다른이름", "세션", aiClean);
         Assert.Equal("두 번째 테스트 지시입니다.", fallbackInstruction);
     }
+
+    [Fact]
+    public void RemoteHub_PopPendingInstruction_DoesNotDeliverAntigravityInstructionToClaudeDesktop()
+    {
+        var hub = new ClaudeOffice.Remote.RemoteHub(null);
+        var aiAntigravity = "antigravity";
+        var sid = "mcp_antigrav1";
+
+        // Antigravity 세션용으로 지시 등록
+        hub.SayFromPc(sid, "Antigravity 전용 지시입니다.", aiProvider: aiAntigravity);
+
+        // Claude Desktop이 대기 지시 확인을 호출했을 때 Antigravity 지시를 가로채지 못해야 함
+        var claudeInstruction = hub.PopPendingInstruction("mcp_claude_sid", "ClaudeProject", "메인", "claude-desktop");
+        Assert.Null(claudeInstruction);
+
+        // Antigravity가 호출했을 때는 정상적으로 지시를 꺼내갈 수 있어야 함
+        var antiInstruction = hub.PopPendingInstruction(sid, "ClaudeOffice", "메인", aiAntigravity);
+        Assert.Equal("Antigravity 전용 지시입니다.", antiInstruction);
+    }
 }
