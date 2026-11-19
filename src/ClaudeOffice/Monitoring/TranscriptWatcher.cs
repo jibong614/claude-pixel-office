@@ -119,7 +119,17 @@ public sealed class TranscriptWatcher : IDisposable
         _ = Task.Run(() => LoopAsync(ct));
     }
 
-    public void Dispose() => _cts?.Cancel();
+    public void Dispose()
+    {
+        if (_hookServer != null)
+        {
+            _hookServer.Received -= _hookQueue.Enqueue;
+            _hookServer.McpUpdated -= _mcpQueue.Enqueue;
+            _hookServer.McpInstructionQueued -= ApplyVirtualInstruction;
+        }
+        try { _cts?.Cancel(); } catch { }
+        try { _cts?.Dispose(); } catch { }
+    }
 
     private async Task LoopAsync(CancellationToken ct)
     {
@@ -207,8 +217,7 @@ public sealed class TranscriptWatcher : IDisposable
     {
         while (_virtualInstructionQueue.TryDequeue(out var inst))
         {
-            var target = _states.Values.FirstOrDefault(x => x.Id.Equals(inst.Sid, StringComparison.OrdinalIgnoreCase))
-                      ?? _states.Values.FirstOrDefault(x => x.IsVirtual);
+            var target = _states.Values.FirstOrDefault(x => x.Id.Equals(inst.Sid, StringComparison.OrdinalIgnoreCase));
             if (target != null)
             {
                 target.LastPrompt = inst.Text;
@@ -242,7 +251,7 @@ public sealed class TranscriptWatcher : IDisposable
             if (!_states.TryGetValue(key, out var s))
             {
                 // 같은 AI 플랫폼(provider)으로 이미 출근해 있는 가상 직원이 있으면 중복 생성하지 않고 해당 직원을 갱신한다
-                var existing = _states.Values.FirstOrDefault(x => x.IsVirtual && string.Equals(x.Entrypoint, provider, StringComparison.OrdinalIgnoreCase));
+                var existing = _states.Values.FirstOrDefault(x => (x.IsVirtual || x.Id.StartsWith("mcp_", StringComparison.OrdinalIgnoreCase)) && string.Equals(x.Entrypoint, provider, StringComparison.OrdinalIgnoreCase));
                 if (existing != null)
                 {
                     s = existing;
@@ -427,6 +436,7 @@ public sealed class TranscriptWatcher : IDisposable
     {
         foreach (var s in _states.Values)
         {
+            if (s.IsVirtual || string.IsNullOrWhiteSpace(s.FilePath) || s.FilePath.StartsWith("virtual:", StringComparison.OrdinalIgnoreCase)) continue;
             try
             {
                 var fi = new FileInfo(s.FilePath);

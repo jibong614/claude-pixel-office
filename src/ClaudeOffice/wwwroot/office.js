@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.45';
+const PAGE_VERSION = '1.9.46';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -394,7 +394,7 @@ function applyIconStyle() {
   }
 }
 
-function setIconStyle(v) {
+function setIconStyle(v, fromSync = false) {
   if (v !== 'pixel' && v !== 'emoji') v = 'pixel';
   iconStyle = v;
   store.set('iconStyle', v);
@@ -403,6 +403,9 @@ function setIconStyle(v) {
   if (widgetOn()) renderWidget();
   renderPanel();
   if (typeof renderCleanOffice === 'function' && appMode === 'office') renderCleanOffice();
+  if (!fromSync) {
+    send({ cmd: 'icon-style', style: v });
+  }
 }
 
 let showAway = store.get('showAway', true);
@@ -718,10 +721,94 @@ if (zoomBroadcast) {
   };
 }
 window.addEventListener('storage', (e) => {
-  if (e.key === STORE_PREFIX + 'zoom') {
+  if (!e.key || !e.key.startsWith(STORE_PREFIX)) return;
+  const k = e.key.slice(STORE_PREFIX.length);
+  if (k === 'zoom') {
     const newZ = Math.max(-2, Math.min(2, Math.round(Number(store.get('zoom', 0)) || 0)));
-    if (newZ !== zoom) {
-      setOfficeZoom(newZ, true);
+    if (newZ !== zoom) setOfficeZoom(newZ, true);
+  } else if (k === 'iconStyle') {
+    const nv = store.get('iconStyle', 'pixel');
+    if (nv !== iconStyle) setIconStyle(nv, true);
+  } else if (k === 'showAway') {
+    showAway = !!store.get('showAway', true);
+    layoutKey = '';
+    if (typeof refreshHud === 'function') refreshHud();
+    if (typeof renderPet === 'function' && petOn()) renderPet();
+    if (typeof refreshSettings === 'function') refreshSettings();
+  } else if (k === 'waitOnly') {
+    waitOnly = !!store.get('waitOnly', false);
+    layoutKey = '';
+    if (typeof refreshHud === 'function') refreshHud();
+    if (typeof renderPet === 'function' && petOn()) renderPet();
+    if (typeof refreshSettings === 'function') refreshSettings();
+  } else if (k === 'maxShown') {
+    maxShown = Math.min(SHOWN_MAX, Math.max(SHOWN_MIN, Number(store.get('maxShown', 8)) || 8));
+    layoutKey = '';
+    if (typeof refreshHud === 'function') refreshHud();
+    if (typeof refreshSettings === 'function') refreshSettings();
+  } else if (k === 'pickMode') {
+    pickMode = store.get('pickMode', 'recent') === 'manual' ? 'manual' : 'recent';
+    layoutKey = '';
+    if (typeof refreshHud === 'function') refreshHud();
+    if (typeof refreshSettings === 'function') refreshSettings();
+  } else if (k === 'picked') {
+    pickedIds.clear();
+    for (const id of (store.get('picked', []) || [])) pickedIds.add(id);
+    layoutKey = '';
+    if (typeof refreshHud === 'function') refreshHud();
+    if (typeof refreshSettings === 'function') refreshSettings();
+  } else if (k === 'officeName') {
+    officeName = String(store.get('officeName', '') || '').trim();
+    document.title = officeTitle();
+    layoutKey = '';
+    if (typeof refreshHud === 'function') refreshHud();
+    if (typeof refreshSettings === 'function') refreshSettings();
+  } else if (k === 'teams') {
+    const next = store.get('teams', {}) || {};
+    for (const key of Object.keys(teamPrefs)) delete teamPrefs[key];
+    Object.assign(teamPrefs, next);
+    teamRev++;
+    layoutKey = '';
+    if (typeof refreshHud === 'function') refreshHud();
+    if (typeof renderPanel === 'function') renderPanel();
+    if (typeof refreshSettings === 'function') refreshSettings();
+  } else if (k === 'teamOrder') {
+    teamOrder = store.get('teamOrder', []) || [];
+    teamRev++;
+    layoutKey = '';
+    if (typeof refreshSettings === 'function') refreshSettings();
+  } else if (k === 'seatOrder') {
+    seatOrder = store.get('seatOrder', []) || [];
+    teamRev++;
+    layoutKey = '';
+    if (typeof refreshSettings === 'function') refreshSettings();
+  } else if (k === 'windowHours') {
+    let wh = Number(store.get('windowHours', 12));
+    if (!WINDOW_CHOICES.some(([h]) => h === wh)) wh = 12;
+    windowHours = wh;
+    if (typeof refreshHud === 'function') refreshHud();
+    if (typeof refreshSettings === 'function') refreshSettings();
+  } else if (k === 'pinned') {
+    pinned = !!store.get('pinned', false);
+    if (typeof refreshHud === 'function') refreshHud();
+    if (typeof refreshSettings === 'function') refreshSettings();
+  } else if (k === 'lofiLayers' && typeof lofiBgmState !== 'undefined') {
+    const layers = store.get('lofiLayers', null);
+    if (layers && typeof layers === 'object') {
+      Object.assign(lofiBgmState.layers, layers);
+      if (typeof updateLofiUiDisplay === 'function') updateLofiUiDisplay();
+    }
+  } else if (k === 'lofiActiveTracks' && typeof lofiBgmState !== 'undefined') {
+    const tr = store.get('lofiActiveTracks', null);
+    if (Array.isArray(tr) && tr.length > 0) {
+      lofiBgmState.activeTracks = tr;
+      if (typeof updateLofiUiDisplay === 'function') updateLofiUiDisplay();
+    }
+  } else if (k === 'ytActiveTracks' && typeof lofiBgmState !== 'undefined') {
+    const yt = store.get('ytActiveTracks', null);
+    if (Array.isArray(yt) && yt.length > 0) {
+      lofiBgmState.activeYtTracks = yt;
+      if (typeof updateLofiUiDisplay === 'function') updateLofiUiDisplay();
     }
   }
 });
@@ -4532,7 +4619,11 @@ function toggleLofiLayer(layerKey) {
   const on = lofiBgmState.layers[layerKey];
   showToast(`${labels[layerKey] || layerKey} ${on ? T('켜짐', 'ON') : T('꺼짐', 'OFF')}`, on ? '🎶' : '🔇');
   if (on && !lofiBgmState.playing) {
-    startTurntableLofi();
+    if (SETTINGS_WINDOW) {
+      send({ cmd: 'bgm-control', action: 'set-playing', value: true });
+    } else {
+      startTurntableLofi();
+    }
     store.set('bgmAutoPlay', true);
   }
   updateLofiUiDisplay();
@@ -7075,7 +7166,7 @@ requestAnimationFrame(frame);
     return;
   }
   if (DEMO && petOn()) drawPetFrame(ts);
-  if (widgetOn()) return;   // 목록 보기일 때는 사무실 캔버스를 그리지 않는다
+  if (widgetOn() || appMode === 'office') return;   // 목록 보기·오피스 모드일 때는 숨겨진 픽셀 캔버스를 그리지 않는다
 
   ensureLayout();
   syncDesks();
@@ -12730,7 +12821,7 @@ function renderPet() {
   for (const ask of asks) {
     let el = petAskEls.get(ask.id);
     if (!el) { el = makePetAsk(s.id, ask); petAskEls.set(ask.id, el); }
-    petAsksEl.append(el);
+    if (el.parentNode !== petAsksEl) petAsksEl.append(el);
     el.querySelector('.age').textContent = ' · ' + fmtAgo(now() - ask.t);
     for (const b of el.querySelectorAll('button')) b.disabled = petAnswered.has(ask.id);
   }
@@ -12809,10 +12900,11 @@ function calcPetRequiredHeight() {
   if (!petEl || !WIDGET_WINDOW || petMode === 'island' || petMode === 'shimeji') return 0;
   try {
   const isCompact = petEl.classList.contains('compact');
+  const isNoBg = petEl.classList.contains('nobg');
   const headEl = petHeadEl || (petEl ? petEl.querySelector('.pet-head') : null);
-  const headH = (!isCompact && headEl && !headEl.hidden) ? (headEl.offsetHeight || 34) : 0;
+  const headH = (!isCompact && !isNoBg && headEl && !headEl.hidden) ? (headEl.offsetHeight || 34) : 0;
   const alertH = (petAlertEl && !petAlertEl.hidden) ? (petAlertEl.offsetHeight || 28) : 0;
-  const stageH = (petStageEl && !petStageEl.hidden) ? (petStageEl.offsetHeight || 160) : 160;
+  const stageH = (petStageEl && !petStageEl.hidden) ? (petStageEl.offsetHeight || 160) : 0;
   const emptyH = (petEmptyEl && !petEmptyEl.hidden) ? (petEmptyEl.offsetHeight || 40) : 0;
   let asksH = 0;
   if (petAsksEl && !petAsksEl.hidden && petAsksEl.children.length > 0) {
@@ -16933,6 +17025,14 @@ if (REMOTE) {
       if (typeof m.zoom === 'number' && m.zoom !== zoom) {
         setOfficeZoom(m.zoom, true);
       }
+    }
+    else if (m?.type === 'icon-style') {
+      if (m.style && m.style !== iconStyle) {
+        setIconStyle(m.style, true);
+      }
+    }
+    else if (m?.type === 'broadcast-result') {
+      // C# broadcast-say 완료 회신 (onSnapshot 폴스루 방지)
     }
     else if (m?.type === 'scanline-setting') {
       store.set('scanline_enabled', !!m.enabled);

@@ -93,8 +93,9 @@ internal sealed class HookServer : IDisposable
 
     public void Dispose()
     {
-        _cts.Cancel();
-        _listener?.Stop();
+        try { _cts.Cancel(); } catch { }
+        try { _listener?.Stop(); } catch { }
+        try { _cts.Dispose(); } catch { }
         Listening = false;
     }
 
@@ -202,6 +203,8 @@ internal sealed class HookServer : IDisposable
                 await stream.WriteAsync(respBytes, token);
                 return;
             }
+
+            if (isMcpInstruction && length < 0) length = 0;
 
             if (length < 0 || length > MaxBodyBytes)
             {
@@ -330,7 +333,7 @@ internal sealed class HookServer : IDisposable
                 }
                 catch { }
 
-                var respJson = "{\"ok\":true,\"message\":\"Status updated\",\"ai\":\"" + ai.ToLowerInvariant() + "\"}";
+                var respJson = $"{{\"ok\":true,\"message\":\"Status updated\",\"ai\":{JsonSerializer.Serialize(ai.ToLowerInvariant())}}}";
                 var respBytes = Encoding.UTF8.GetBytes(respJson);
                 var respHead = $"HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {respBytes.Length}\r\nConnection: close\r\n\r\n";
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(respHead), token);
@@ -417,17 +420,19 @@ internal sealed class HookServer : IDisposable
                     var r = doc.RootElement;
                     targetSid = ToolCatalog.Str(r, "sid");
                     var text = ToolCatalog.Str(r, "text") ?? ToolCatalog.Str(r, "message");
+                    var ai = (ToolCatalog.Str(r, "ai") ?? ToolCatalog.Str(r, "provider"))?.Trim().ToLowerInvariant();
                     if (string.IsNullOrWhiteSpace(targetSid))
                     {
-                        var ai = (ToolCatalog.Str(r, "ai") ?? "antigravity").Trim().ToLowerInvariant();
-                        var proj = (ToolCatalog.Str(r, "project") ?? (ai.ToUpperInvariant() + " Studio")).Trim().ToLowerInvariant();
+                        var aiResolved = !string.IsNullOrWhiteSpace(ai) ? ai : "antigravity";
+                        ai = aiResolved;
+                        var proj = (ToolCatalog.Str(r, "project") ?? (aiResolved.ToUpperInvariant() + " Studio")).Trim().ToLowerInvariant();
                         var sess = (ToolCatalog.Str(r, "session") ?? "Antigravity").Trim().ToLowerInvariant();
-                        var key = "virtual:mcp:" + ai + ":" + proj + ":" + sess;
+                        var key = "virtual:mcp:" + aiResolved + ":" + proj + ":" + sess;
                         targetSid = "mcp_" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..8].ToLowerInvariant();
                     }
                     if (!string.IsNullOrWhiteSpace(targetSid) && !string.IsNullOrWhiteSpace(text))
                     {
-                        Remote?.SayFromPc(targetSid, text);
+                        Remote?.SayFromPc(targetSid, text, aiProvider: ai);
                         if (targetSid.StartsWith("mcp_"))
                         {
                             McpInstructionQueued?.Invoke(targetSid, text);

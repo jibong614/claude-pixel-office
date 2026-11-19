@@ -36,6 +36,7 @@ internal sealed class RemoteHub
     private static readonly JsonSerializerOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private readonly object _lock = new();
+    private readonly object _logLock = new();
     private readonly string? _logPath;
     private readonly Dictionary<string, Listener> _listeners = new(StringComparer.Ordinal);    // 세션 → 기다리는 listen 훅
     private readonly Dictionary<string, Approval> _approvals = new(StringComparer.Ordinal);    // 요청 번호 → 답을 기다리는 승인
@@ -278,6 +279,7 @@ internal sealed class RemoteHub
     /// <summary>세션 ID 또는 프로젝트명/세션명/AI 제공자에 대해 대기 중인 지시를 꺼내 간다 (Claude 데스크톱 MCP 도구 반환값용).</summary>
     public string? PopPendingInstruction(string sid, string? projectName = null, string? sessionName = null, string? aiProvider = null)
     {
+        string? deliveredText = null;
         lock (_lock)
         {
             if (!string.IsNullOrWhiteSpace(aiProvider))
@@ -287,57 +289,73 @@ internal sealed class RemoteHub
 
             if (_queued.TryGetValue(sid, out var list) && list.Count > 0)
             {
-                var text = string.Join("\n", list.Select(x => x.Text));
+                deliveredText = string.Join("\n", list.Select(x => x.Text));
                 _queued.Remove(sid);
-                _said[sid] = new Said(text, DateTime.UtcNow, "delivered");
-                Log("mcp-deliver", sid, text);
-                Notify();
-                return text;
+                _said[sid] = new Said(deliveredText, DateTime.UtcNow, "delivered");
+                Log("mcp-deliver", sid, deliveredText);
             }
-
-            foreach (var kvp in _queued)
+            else
             {
-                var qSid = kvp.Key;
-                bool match = (sessionName != null && qSid.Contains(sessionName, StringComparison.OrdinalIgnoreCase))
-                          || (projectName != null && qSid.Contains(projectName, StringComparison.OrdinalIgnoreCase));
-                if (match && kvp.Value.Count > 0)
+                foreach (var kvp in _queued)
                 {
-                    var text = string.Join("\n", kvp.Value.Select(x => x.Text));
-                    _queued.Remove(qSid);
-                    _said[qSid] = new Said(text, DateTime.UtcNow, "delivered");
-                    Log("mcp-deliver", qSid, text);
-                    Notify();
-                    return text;
-                }
-            }
-
-            // 폴백: 가상 세션(mcp_*)용 대기 지시 중 AI 제공자가 일치하는 것만 안전하게 전달
-            // (Antigravity/DeepSeek용 지시를 Claude Desktop이 가로채지 못하도록 원천 차단)
-            var mcpQueued = _queued.Where(kv => kv.Key.StartsWith("mcp_") && kv.Value.Count > 0).ToList();
-            if (mcpQueued.Count > 0)
-            {
-                var reqAi = aiProvider?.Trim().ToLowerInvariant();
-                foreach (var kvp in mcpQueued)
-                {
-                    _mcpProviders.TryGetValue(kvp.Key, out var targetAi);
-                    targetAi = targetAi?.Trim().ToLowerInvariant();
-
-                    if (!string.IsNullOrEmpty(reqAi) && !string.IsNullOrEmpty(targetAi) && reqAi != targetAi)
+                    var qSid = kvp.Key;
+                    bool match = (sessionName != null && qSid.Contains(sessionName, StringComparison.OrdinalIgnoreCase))
+                              || (projectName != null && qSid.Contains(projectName, StringComparison.OrdinalIgnoreCase));
+                    if (match && kvp.Value.Count > 0)
                     {
-                        continue;
+                        deliveredText = string.Join("\n", kvp.Value.Select(x => x.Text));
+                        _queued.Remove(qSid);
+                        _said[qSid] = new Said(deliveredText, DateTime.UtcNow, "delivered");
+                        Log("mcp-deliver", qSid, deliveredText);
+                        break;
                     }
+                }
 
-                    var text = string.Join("\n", kvp.Value.Select(x => x.Text));
-                    _queued.Remove(kvp.Key);
-                    _said[kvp.Key] = new Said(text, DateTime.UtcNow, "delivered");
-                    Log("mcp-deliver", kvp.Key, text);
-                    Notify();
-                    return text;
+                // 폴백: 가상 세션(mcp_*)용 대기 지시 중 AI 제공자가 일치하는 것만 안전하게 전달
+                // (Antigravity/DeepSeek용 지시를 Claude Desktop이 가로채지 못하도록 원천 차단)
+                if (deliveredText == null)
+                {
+                    var mcpQueued = _queued.Where(kv => kv.Key.StartsWith("mcp_") && kv.Value.Count > 0).ToList();
+                    if (mcpQueued.Count > 0)
+                    {
+                        var reqAi = aiProvider?.Trim().ToLowerInvariant();
+                        foreach (var kvp in mcpQueued)
+                        {
+                            _mcpProviders.TryGetValue(kvp.Key, out var targetAi);
+                            targetAi = targetAi?.Trim().ToLowerInvariant();
+
+                            if (!string.IsNullOrEmpty(reqAi) && !string.IsNullOrEmpty(targetAi) && reqAi != targetAi)
+                            {
+                                continue;
+                            }
+
+                            deliveredText = string.Join("\n", kvp.Value.Select(x => x.Text));
+                            _queued.Remove(kvp.Key);
+                            _said[kvp.Key] = new Said(deliveredText, DateTime.UtcNow, "delivered");
+                            Log("mcp-deliver", kvp.Key, deliveredText);
+                            break;
+                        }
+                    }
                 }
             }
-
-            return null;
         }
+        if (deliveredText != null) Notify();
+        return deliveredText;
+    }
+
+    /// <summary>외부 AI 창으로 GUI 붙여넣기 전달이 완료되었을 때 대기열을 비워 MCP 중복 전달을 방지한다.</summary>
+    public void MarkDeliveredFromWindow(string sid, string text)
+    {
+        if (string.IsNullOrWhiteSpace(sid)) return;
+        bool changed = false;
+        lock (_lock)
+        {
+            if (_queued.Remove(sid)) changed = true;
+            _said[sid] = new Said(text.Trim(), DateTime.UtcNow, "delivered");
+            Log("window-deliver", sid, text);
+            changed = true;
+        }
+        if (changed) Notify();
     }
 
     /// <summary>외부 AI(MCP) 세션이 상태/응답을 보고했을 때 마지막 답(_replies)을 갱신한다.</summary>
@@ -348,10 +366,6 @@ internal sealed class RemoteHub
         lock (_lock)
         {
             _replies[sid] = new Said(clean, DateTime.UtcNow, "reply");
-            foreach (var k in _said.Keys.Where(k => k.StartsWith("mcp_", StringComparison.OrdinalIgnoreCase)).ToList())
-            {
-                _replies[k] = new Said(clean, DateTime.UtcNow, "reply");
-            }
         }
         Notify();
     }
@@ -525,7 +539,7 @@ internal sealed class RemoteHub
             bool isExternal = sid.StartsWith("mcp_", StringComparison.OrdinalIgnoreCase);
 
             // 자리 비움이 아니어도 PC 를 아무도 안 쓰고 있거나 외부 AI 세션이면 보내는 순간 켠다
-            if ((!_away && _pcIdle) || isExternal) TurnAwayOn("phone-say");
+            if (!_away && _pcIdle) TurnAwayOn("phone-say");
 
             if (!_away && !isExternal)
             {
@@ -949,14 +963,17 @@ internal sealed class RemoteHub
     {
         if (_logPath is null) return;
         var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\t{what}\t{sid}\t{text.Replace("\r", " ").Replace("\n", " ")}\r\n";
-        try
+        lock (_logLock)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
-            var fi = new FileInfo(_logPath);
-            if (fi.Exists && fi.Length > LogMaxBytes) File.Move(_logPath, Path.ChangeExtension(_logPath, ".old.log"), overwrite: true);
-            File.AppendAllText(_logPath, line);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
+                var fi = new FileInfo(_logPath);
+                if (fi.Exists && fi.Length > LogMaxBytes) File.Move(_logPath, Path.ChangeExtension(_logPath, ".old.log"), overwrite: true);
+                File.AppendAllText(_logPath, line);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 }
 

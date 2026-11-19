@@ -2,6 +2,29 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.46 — 2026-11-19
+- **🛡️ 다중 외부 AI(Antigravity · DeepSeek · Claude Desktop) 격리 및 백엔드/MCP 안정화**:
+  - `RemoteHub.OnMcpReply`: 한 외부 AI가 응답을 보고할 때 다른 모든 `mcp_*` 직원의 마지막 답변까지 덮어쓰던 버그 수정 (본인 세션 ID에만 격리 저장)
+  - `RemoteHub.PopPendingInstruction`: `lock` 내부 `Notify()` 호출을 락 바깥으로 분리하여 재진입/데드락 위험 제거
+  - `RemoteHub.Say`: PC 사용 중 휴대폰에서 외부 AI에 지시를 보낼 때 강제로 자리 비움 모드가 켜지던 부수효과 제거
+  - `RemoteHub.Log`: 전용 `_logLock`을 추가하여 멀티스레드 로그 파일 롤오버·기록 경합 방지
+  - `HookServer`: `GET /mcp/instruction` 요청 시 `Content-Length` 부재로 항상 `413 Payload Too Large`를 반환하던 버그 수정, `/mcp/say`에 `aiProvider` 전달 및 `Dispose()` 리소스 정리 보강
+  - `TranscriptWatcher`: `Poll()`에 가상 세션(`IsVirtual`/`virtual:`) 가드 추가, `ApplyVirtualInstruction`의 타 가상 직원 덮어쓰기 폴백 제거, `ApplyMcpUpdates`의 Antigravity 직원 중복 생성 방지 및 `Dispose()` 이벤트 구독 해제
+- **🎯 외부 AI 창 전달(`DeliverToExternalAiWindowAsync`) 및 포커스(`FocusSessionWindow`) 오발송·누수 차단**:
+  - `DeliverToExternalAiWindowAsync`: 동시 입력 직렬화(`SemaphoreSlim`), 알 수 없는 `entry`의 Antigravity 강제 폴백 제거, 웹 브라우저(Chrome/Edge 등) 탭 제목 키워드 오매칭 차단
+  - 포그라운드 전환 성공 여부(`GetForegroundWindow() == bestHwnd`)를 검증해 실패 시 엉뚱한 창에 `Ctrl+V/Enter` 오입력 방지, 창 전달 성공 시 `MarkDeliveredFromWindow()`로 MCP 대기열을 정리해 중복 지시 차단
+  - `FocusSessionWindow` / `DeliverToExternalAiWindowAsync`: `Process` 객체 `Dispose()` 적용으로 OS 핸들 누수 제거, `JsonDocument.Parse` 예외 보호 및 `claude://` 중복 실행 제거
+  - `broadcast-say`: `try/catch` 보호 및 각 세션의 `aiProvider` 정보 전달
+- **🎛️ 독립 설정창(`SettingsWindow`) ↔ 메인창/위젯 실시간 동기화 전면 보강**:
+  - `office.js`: 통합 `storage` 이벤트 동기화로 `아이콘 표시 방식(iconStyle)`, `퇴근 직원 보이기(showAway)`, `기다리는 직원만 보기(waitOnly)`, `보일 인원(maxShown)`, `고르는 방식(pickMode)`, `직접 고르기(pickedIds)`, `사무실 이름(officeName)`, `팀 관리(teams/teamOrder/seatOrder)`, `표시 기간(windowHours)`, `항상 위(pinned)`, `BGM 레이어/트랙` 실시간 반영
+  - `setIconStyle` ↔ C# `icon-style` 양방향 IPC 연결 및 `MainWindow.Post()` 중복 전송 정리
+- **📐 미니위젯 자동 높이 조절 및 렌더링 최적화**:
+  - `WidgetWindow.FitHeight`: 자동 높이 조절(`PetAutoFitHeight`)로 일시 확장된 높이가 설정 파일에 영구 저장되어 이후 축소되지 않던 래칫 버그 해결
+  - `calcPetRequiredHeight`: 빈 위젯(`petStageEl.hidden`) 시 유령 높이 160px 제거 및 배경 숨김(`nobg`) 오버레이 헤더 높이 제외
+  - `renderPet`: 승인/질문 카드 불필요한 DOM 재삽입 방지로 입력 중 포커스 보존
+  - `frame()`: 오피스 모드(`appMode === 'office'`)에서 숨겨진 픽셀 캔버스 30fps 렌더링 스킵
+
+
 ## 1.9.45 — 2026-11-18
 - **🛡️ Antigravity 등 외부 AI가 꺼져있을 때 지시 전송 시 Claude로 오전송되던 현상 완벽 차단**:
   - `DeliverToExternalAiWindowAsync`: 대상 프로세스(Antigravity 등)가 종료되어 있어 `targetPids.Count == 0`일 때, 모든 윈도우가 검사를 통과하고 기본 점수 및 Electron/Claude 점수를 얻어 엉뚱하게 켜져 있던 Claude 창이 활성화되어 Ctrl+V/Enter가 전송되던 치명적 버그 해결

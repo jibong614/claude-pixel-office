@@ -1258,8 +1258,6 @@ public partial class MainWindow : Window
 
                         _widgetWindow?.SetWidgetSize(wsz);
 
-                        _widgetWindow?.Post(JsonSerializer.Serialize(new { type = "widget-size-mode", size = wsz }));
-
                         Post(JsonSerializer.Serialize(new { type = "widget-size-mode", size = wsz }));
 
                     }
@@ -1268,7 +1266,6 @@ public partial class MainWindow : Window
                     if (root.TryGetProperty("zoom", out var zElem) && zElem.TryGetInt32(out var zVal))
                     {
                         var zMsg = JsonSerializer.Serialize(new { type = "zoom-setting", zoom = zVal });
-                        if (!ReferenceEquals(sender, _settingsWindow)) _settingsWindow?.Post(zMsg);
                         Post(zMsg);
                     }
                     break;
@@ -1276,7 +1273,6 @@ public partial class MainWindow : Window
                     if (root.TryGetProperty("style", out var istElem) && istElem.GetString() is { Length: > 0 } ist)
                     {
                         var iconMsg = JsonSerializer.Serialize(new { type = "icon-style", style = ist });
-                        _widgetWindow?.Post(iconMsg);
                         _widgetWindow?.ReloadLanguage();
                         Post(iconMsg);
                     }
@@ -1289,7 +1285,6 @@ public partial class MainWindow : Window
                             enabled = root.TryGetProperty("enabled", out var enElem) && enElem.GetBoolean(),
                             style = root.TryGetProperty("style", out var stElem) ? stElem.GetString() : "soft"
                         });
-                        _widgetWindow?.Post(scMsg);
                         Post(scMsg);
                     }
                     break;
@@ -1373,24 +1368,30 @@ public partial class MainWindow : Window
                         int sentCount = 0;
                         if (_watcher.LastSnapshot is { } bSnap)
                         {
-                            using var snapDoc = JsonDocument.Parse(bSnap);
-                            if (snapDoc.RootElement.TryGetProperty("sessions", out var sessArr))
+                            try
                             {
-                                foreach (var sItem in sessArr.EnumerateArray())
+                                using var snapDoc = JsonDocument.Parse(bSnap);
+                                if (snapDoc.RootElement.TryGetProperty("sessions", out var sessArr))
                                 {
-                                    var sid = sItem.TryGetProperty("id", out var sidProp) ? sidProp.GetString() : null;
-                                    var act = sItem.TryGetProperty("act", out var actProp) ? actProp.GetString() : null;
-                                    if (!string.IsNullOrEmpty(sid) && act != "away")
+                                    foreach (var sItem in sessArr.EnumerateArray())
                                     {
-                                        _remote.SayFromPc(sid, broadcastText);
-                                        if (sid.StartsWith("mcp_"))
+                                        var sid = sItem.TryGetProperty("id", out var sidProp) ? sidProp.GetString() : null;
+                                        var act = sItem.TryGetProperty("act", out var actProp) ? actProp.GetString() : null;
+                                        var sEntry = sItem.TryGetProperty("entry", out var entryProp) ? entryProp.GetString() : null;
+                                        if (!string.IsNullOrEmpty(sid) && act != "away")
                                         {
-                                            _watcher.ApplyVirtualInstruction(sid, broadcastText);
+                                            _remote.SayFromPc(sid, broadcastText, aiProvider: sEntry);
+                                            if (sid.StartsWith("mcp_"))
+                                            {
+                                                _remote.RegisterMcpSession(sid, sEntry);
+                                                _watcher.ApplyVirtualInstruction(sid, broadcastText);
+                                            }
+                                            sentCount++;
                                         }
-                                        sentCount++;
                                     }
                                 }
                             }
+                            catch { }
                         }
                         Post(JsonSerializer.Serialize(new { type = "broadcast-result", count = sentCount }));
                     }
@@ -1716,6 +1717,15 @@ public partial class MainWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    private readonly SemaphoreSlim _deliverLock = new(1, 1);
+    private static readonly HashSet<string> BrowserProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "chrome", "msedge", "firefox", "whale", "brave", "opera", "vivaldi", "arc"
+    };
+
     [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
     private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
 
@@ -1767,173 +1777,212 @@ public partial class MainWindow : Window
     {
         if (App.Offscreen || string.IsNullOrWhiteSpace(text)) return;
 
-        string? entry = null;
-        string? cwd = null;
-        if (_watcher.LastSnapshot is { } snap)
+        await _deliverLock.WaitAsync();
+        try
         {
+            string? entry = null;
+            string? cwd = null;
+            if (_watcher.LastSnapshot is { } snap)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(snap);
+                    foreach (var s in doc.RootElement.GetProperty("sessions").EnumerateArray())
+                    {
+                        if (s.GetProperty("id").GetString() == sid)
+                        {
+                            entry = s.TryGetProperty("entry", out var e) ? e.GetString() : null;
+                            cwd = s.TryGetProperty("cwd", out var c) ? c.GetString() : null;
+                            break;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // 알 수 없는 entry를 무조건 Antigravity로 오매칭하지 않도록 차단
+            var entryLower = entry?.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(entryLower)) return;
+
+            var (targetProcNames, targetTitleKeywords) = entryLower switch
+            {
+                "antigravity" or "gemini" => (new[] { "Antigravity" }, new[] { "Antigravity" }),
+                "cursor" => (new[] { "Cursor" }, new[] { "Cursor" }),
+                "windsurf" => (new[] { "Windsurf" }, new[] { "Windsurf" }),
+                "chatgpt" => (new[] { "ChatGPT" }, new[] { "ChatGPT" }),
+                "deepseek" or "ollama" => (new[] { "Local AI Studio", "DeepSeek", "ollama" }, new[] { "Local AI", "DeepSeek", "Ollama" }),
+                "claude-desktop" => (new[] { "Claude" }, new[] { "Claude" }),
+                _ => (new[] { entryLower }, new[] { entryLower })
+            };
+            string targetProc = targetProcNames[0];
+
+            uint selfPid = (uint)Environment.ProcessId;
+            IntPtr bestHwnd = IntPtr.Zero;
+            int bestScore = 0;
+            var sb = new System.Text.StringBuilder(512);
+            var cb = new System.Text.StringBuilder(256);
+
+            var targetPids = new HashSet<uint>();
             try
             {
-                using var doc = JsonDocument.Parse(snap);
-                foreach (var s in doc.RootElement.GetProperty("sessions").EnumerateArray())
+                foreach (var pName in targetProcNames)
                 {
-                    if (s.GetProperty("id").GetString() == sid)
+                    foreach (var p in Process.GetProcessesByName(pName))
                     {
-                        entry = s.TryGetProperty("entry", out var e) ? e.GetString() : null;
-                        cwd = s.TryGetProperty("cwd", out var c) ? c.GetString() : null;
-                        break;
+                        using (p) { targetPids.Add((uint)p.Id); }
                     }
                 }
             }
             catch { }
-        }
 
-        var (targetProcNames, targetTitleKeywords) = (entry?.ToLowerInvariant()) switch
-        {
-            "antigravity" or "gemini" => (new[] { "Antigravity" }, new[] { "Antigravity" }),
-            "cursor" => (new[] { "Cursor" }, new[] { "Cursor" }),
-            "windsurf" => (new[] { "Windsurf" }, new[] { "Windsurf" }),
-            "chatgpt" => (new[] { "ChatGPT" }, new[] { "ChatGPT" }),
-            "deepseek" or "ollama" => (new[] { "Local AI Studio", "DeepSeek", "ollama" }, new[] { "Local AI", "DeepSeek", "Ollama" }),
-            "claude-desktop" => (new[] { "Claude" }, new[] { "Claude" }),
-            _ => (new[] { "Antigravity" }, new[] { "Antigravity" })
-        };
-        string targetProc = targetProcNames[0];
+            _remote.Log("deliver-start", sid, $"target={string.Join(",", targetProcNames)}, pids={targetPids.Count}");
 
-        uint selfPid = (uint)Environment.ProcessId;
-        IntPtr bestHwnd = IntPtr.Zero;
-        int bestScore = 0;
-        var sb = new System.Text.StringBuilder(512);
-        var cb = new System.Text.StringBuilder(256);
-
-        var targetPids = new HashSet<uint>();
-        try
-        {
-            foreach (var pName in targetProcNames)
+            EnumWindows((hWnd, _) =>
             {
-                foreach (var p in Process.GetProcessesByName(pName))
-                    targetPids.Add((uint)p.Id);
-            }
-        }
-        catch { }
+                if (!IsWindowVisible(hWnd)) return true;
+                GetWindowThreadProcessId(hWnd, out uint pid);
+                if (pid == 0 || pid == selfPid) return true;
 
-        _remote.Log("deliver-start", sid, $"target={string.Join(",", targetProcNames)}, pids={targetPids.Count}");
+                bool pidMatch = targetPids.Contains(pid);
 
-        EnumWindows((hWnd, _) =>
-        {
-            if (!IsWindowVisible(hWnd)) return true;
-            GetWindowThreadProcessId(hWnd, out uint pid);
-            if (pid == 0 || pid == selfPid) return true;
+                bool isIconic = IsIconic(hWnd);
+                RECT rc;
+                GetWindowRect(hWnd, out rc);
+                if (!isIconic && ((rc.Right - rc.Left) < 300 || (rc.Bottom - rc.Top) < 200))
+                    return true;
 
-            bool pidMatch = targetPids.Contains(pid);
+                sb.Clear();
+                GetWindowText(hWnd, sb, sb.Capacity);
+                var wTitle = sb.ToString();
 
-            bool isIconic = IsIconic(hWnd);
-            RECT rc;
-            GetWindowRect(hWnd, out rc);
-            if (!isIconic && ((rc.Right - rc.Left) < 300 || (rc.Bottom - rc.Top) < 200))
+                bool titleMatch = targetTitleKeywords.Any(k => wTitle.Contains(k, StringComparison.OrdinalIgnoreCase));
+
+                // 대상 AI 프로세스 또는 대상 AI 윈도우 타이틀과 일치하지 않는 창(Claude 등)은 절대 매칭 금지!
+                if (!pidMatch && !titleMatch) return true;
+
+                // 프로세스 불일치 시 일반 웹 브라우저(Chrome/Edge 등) 탭 제목에 키워드가 있다고 오매칭되는 것 방지
+                if (!pidMatch)
+                {
+                    string procName = "";
+                    try { using var proc = Process.GetProcessById((int)pid); procName = proc.ProcessName; }
+                    catch { }
+                    if (BrowserProcesses.Contains(procName)) return true;
+                }
+
+                cb.Clear();
+                GetClassName(hWnd, cb, cb.Capacity);
+                var className = cb.ToString();
+
+                int score = 0;
+                if (pidMatch) score += 100;
+                if (titleMatch) score += 80;
+
+                if (className.Equals("Chrome_WidgetWin_1", StringComparison.OrdinalIgnoreCase))
+                    score += 30;
+
+                if (!string.IsNullOrWhiteSpace(cwd) && wTitle.Contains(cwd, StringComparison.OrdinalIgnoreCase))
+                    score += 40;
+
+                if (!isIconic) score += 10;
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestHwnd = hWnd;
+                }
                 return true;
+            }, IntPtr.Zero);
 
-            sb.Clear();
-            GetWindowText(hWnd, sb, sb.Capacity);
-            var wTitle = sb.ToString();
-
-            bool titleMatch = targetTitleKeywords.Any(k => wTitle.Contains(k, StringComparison.OrdinalIgnoreCase));
-
-            // 대상 AI 프로세스 또는 대상 AI 윈도우 타이틀과 일치하지 않는 창(Claude 등)은 절대 매칭 금지!
-            if (!pidMatch && !titleMatch) return true;
-
-            cb.Clear();
-            GetClassName(hWnd, cb, cb.Capacity);
-            var className = cb.ToString();
-
-            int score = 0;
-            if (pidMatch) score += 100;
-            if (titleMatch) score += 80;
-
-            if (className.Equals("Chrome_WidgetWin_1", StringComparison.OrdinalIgnoreCase))
-                score += 30;
-
-            if (!string.IsNullOrWhiteSpace(cwd) && wTitle.Contains(cwd, StringComparison.OrdinalIgnoreCase))
-                score += 40;
-
-            if (isIconic) score += 10;
-
-            if (score > bestScore)
+            _remote.Log("deliver-end", sid, $"best=0x{bestHwnd:X}, score={bestScore}");
+            if (bestHwnd == IntPtr.Zero || bestScore <= 0)
             {
-                bestScore = score;
-                bestHwnd = hWnd;
+                Post(JsonSerializer.Serialize(new
+                {
+                    type = "toast",
+                    msg = $"실행 중인 {targetProc} 작업창을 찾을 수 없습니다. (프로그램이 켜져 있는지 확인해주세요)",
+                    icon = "⚠️"
+                }));
+                return;
             }
-            return true;
-        }, IntPtr.Zero);
-
-        _remote.Log("deliver-end", sid, $"best=0x{bestHwnd:X}, score={bestScore}");
-        if (bestHwnd == IntPtr.Zero || bestScore <= 0)
-        {
-            Post(JsonSerializer.Serialize(new
-            {
-                type = "toast",
-                msg = $"실행 중인 {targetProc} 작업창을 찾을 수 없습니다. (프로그램이 켜져 있는지 확인해주세요)",
-                icon = "⚠️"
-            }));
-            return;
-        }
-
-        try
-        {
-            _remote.Log("deliver-window", sid, $"target={targetProc}, hwnd=0x{bestHwnd:X}");
-
-            for (int i = 0; i < 5; i++)
-            {
-                try { Clipboard.SetDataObject(text, true); break; }
-                catch { Thread.Sleep(30); }
-            }
-
-            uint targetThread = GetWindowThreadProcessId(bestHwnd, out _);
-            uint curThread = GetCurrentThreadId();
-            bool attached = false;
-            if (targetThread != 0 && targetThread != curThread)
-                attached = AttachThreadInput(curThread, targetThread, true);
 
             try
             {
-                if (IsIconic(bestHwnd)) ShowWindow(bestHwnd, 9); // SW_RESTORE
-                ShowWindow(bestHwnd, 5); // SW_SHOW
-                SetForegroundWindow(bestHwnd);
-                BringWindowToTop(bestHwnd);
-            }
-            finally
-            {
-                if (attached) AttachThreadInput(curThread, targetThread, false);
-            }
+                _remote.Log("deliver-window", sid, $"target={targetProc}, hwnd=0x{bestHwnd:X}");
 
-            await Task.Delay(250);
+                for (int i = 0; i < 5; i++)
+                {
+                    try { Clipboard.SetDataObject(text, true); break; }
+                    catch { await Task.Delay(30); }
+                }
 
-            // Cursor / Windsurf: 먼저 Ctrl + L 로 AI 채팅/에이전트 입력창에 포커스를 맞춤
-            if (targetProc.Equals("Cursor", StringComparison.OrdinalIgnoreCase) ||
-                targetProc.Equals("Windsurf", StringComparison.OrdinalIgnoreCase))
-            {
+                uint targetThread = GetWindowThreadProcessId(bestHwnd, out _);
+                uint curThread = GetCurrentThreadId();
+                bool attached = false;
+                if (targetThread != 0 && targetThread != curThread)
+                    attached = AttachThreadInput(curThread, targetThread, true);
+
+                try
+                {
+                    if (IsIconic(bestHwnd)) ShowWindow(bestHwnd, 9); // SW_RESTORE
+                    ShowWindow(bestHwnd, 5); // SW_SHOW
+                    SetForegroundWindow(bestHwnd);
+                    BringWindowToTop(bestHwnd);
+                }
+                finally
+                {
+                    if (attached) AttachThreadInput(curThread, targetThread, false);
+                }
+
+                await Task.Delay(250);
+
+                // 실제 포그라운드 창이 대상 창으로 전환되었는지 검증 (실패 시 엉뚱한 창에 Ctrl+V/Enter 오입력 방지)
+                if (GetForegroundWindow() != bestHwnd)
+                {
+                    _remote.Log("deliver-focus-fail", sid, $"target={targetProc}, fg=0x{GetForegroundWindow():X}, best=0x{bestHwnd:X}");
+                    Post(JsonSerializer.Serialize(new
+                    {
+                        type = "toast",
+                        msg = $"{targetProc} 창 활성화에 실패했습니다. 지시가 클립보드에 복사되었으니 직접 붙여넣어 주세요.",
+                        icon = "📋"
+                    }));
+                    return;
+                }
+
+                // Cursor / Windsurf: 먼저 Ctrl + L 로 AI 채팅/에이전트 입력창에 포커스를 맞춤
+                if (targetProc.Equals("Cursor", StringComparison.OrdinalIgnoreCase) ||
+                    targetProc.Equals("Windsurf", StringComparison.OrdinalIgnoreCase))
+                {
+                    keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
+                    keybd_event(VK_L, 0, 0, UIntPtr.Zero);
+                    await Task.Delay(50);
+                    keybd_event(VK_L, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                    await Task.Delay(200);
+                }
+
+                // Ctrl + V
                 keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
-                keybd_event(VK_L, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_V, 0, 0, UIntPtr.Zero);
                 await Task.Delay(50);
-                keybd_event(VK_L, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
                 keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-                await Task.Delay(200);
+
+                await Task.Delay(150);
+
+                // Enter
+                keybd_event(VK_RETURN, 0, 0, UIntPtr.Zero);
+                await Task.Delay(50);
+                keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+
+                // 창 붙여넣기 전달 완료 후 MCP 대기열을 정리하여 중복 전달 방지
+                _remote.MarkDeliveredFromWindow(sid, text);
             }
-
-            // Ctrl + V
-            keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
-            keybd_event(VK_V, 0, 0, UIntPtr.Zero);
-            await Task.Delay(50);
-            keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-            keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-
-            await Task.Delay(150);
-
-            // Enter
-            keybd_event(VK_RETURN, 0, 0, UIntPtr.Zero);
-            await Task.Delay(50);
-            keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+            catch { }
         }
-        catch { }
+        finally
+        {
+            _deliverLock.Release();
+        }
     }
 
     /// <summary>세션의 작업 폴더명·세션명·실행 위치(VS Code/Claude 데스크톱/터미널/외부 AI)를 바탕으로 해당 실행 창을 찾아 맨 앞으로 활성화한다.</summary>
@@ -1941,8 +1990,9 @@ public partial class MainWindow : Window
     {
         if (string.IsNullOrEmpty(id) || _watcher.LastSnapshot is not { } snap) return;
         string? cwd = null, name = null, title = null, entry = null, team = null;
-        using (var doc = JsonDocument.Parse(snap))
+        try
         {
+            using var doc = JsonDocument.Parse(snap);
             foreach (var s in doc.RootElement.GetProperty("sessions").EnumerateArray())
             {
                 if (s.GetProperty("id").GetString() != id) continue;
@@ -1954,6 +2004,7 @@ public partial class MainWindow : Window
                 break;
             }
         }
+        catch { return; }
 
         var leaf = !string.IsNullOrWhiteSpace(cwd)
             ? Path.GetFileName(cwd.TrimEnd('\\', '/'))
@@ -1999,7 +2050,7 @@ public partial class MainWindow : Window
             var wTitle = sb.ToString();
 
             string procName = "";
-            try { procName = Process.GetProcessById((int)pid).ProcessName; }
+            try { using var proc = Process.GetProcessById((int)pid); procName = proc.ProcessName; }
             catch { }
 
             bool isTermOrIde = TerminalOrIdeProcesses.Contains(procName);
@@ -2123,11 +2174,6 @@ public partial class MainWindow : Window
                 duration = 3500
             });
             Post(toastMsg);
-            _widgetWindow?.Post(toastMsg);
-        }
-        else if (preferDesktop)
-        {
-            try { Process.Start(new ProcessStartInfo("claude://") { UseShellExecute = true }); } catch { }
         }
         else if (!preferVsCode && !string.IsNullOrWhiteSpace(cwd) && Directory.Exists(cwd))
         {

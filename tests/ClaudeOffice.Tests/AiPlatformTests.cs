@@ -233,4 +233,26 @@ public class AiPlatformTests
         var antiInstruction = hub.PopPendingInstruction(sid, "ClaudeOffice", "메인", aiAntigravity);
         Assert.Equal("Antigravity 전용 지시입니다.", antiInstruction);
     }
+
+    [Fact]
+    public void RemoteHub_OnMcpReply_IsolatesRepliesPerSessionAndWindowDeliverClearsQueue()
+    {
+        var hub = new ClaudeOffice.Remote.RemoteHub(null);
+        hub.SayFromPc("mcp_anti1", "지시 1", aiProvider: "antigravity");
+        hub.SayFromPc("mcp_deep1", "지시 2", aiProvider: "deepseek");
+
+        // Antigravity만 응답 보고 -> DeepSeek의 reply가 덮어씌워지지 않아야 함
+        hub.OnMcpReply("mcp_anti1", "Antigravity 완료");
+        hub.OnMcpReply("mcp_deep1", "DeepSeek 완료");
+
+        var stateJson = hub.StateJson();
+        using var doc = System.Text.Json.JsonDocument.Parse(stateJson);
+        var sObj = doc.RootElement.GetProperty("s");
+        Assert.Equal("Antigravity 완료", sObj.GetProperty("mcp_anti1").GetProperty("reply").GetProperty("text").GetString());
+        Assert.Equal("DeepSeek 완료", sObj.GetProperty("mcp_deep1").GetProperty("reply").GetProperty("text").GetString());
+
+        // 창 붙여넣기 전달 완료(MarkDeliveredFromWindow) 후 MCP 폴링 시 중복 전달되지 않아야 함
+        hub.MarkDeliveredFromWindow("mcp_anti1", "지시 1");
+        Assert.Null(hub.PopPendingInstruction("mcp_anti1", "Proj", "Sess", "antigravity"));
+    }
 }

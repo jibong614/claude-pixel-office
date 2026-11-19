@@ -521,10 +521,8 @@ internal sealed class WidgetWindow : Window
             var wa = SystemParameters.WorkArea;
             Top = Math.Clamp(bottom - target, wa.Top + 8, wa.Bottom - target - 8);
         }
-        if (!hasAsks && App.Settings.PetAutoFitHeight)
-        {
-            SaveWidgetPlacement();
-        }
+        // 자동 높이 조절(PetAutoFitHeight)로 일시 확장된 높이는 사용자 기준 높이(MiniWidgetPlacement)에 영구 덮어쓰지 않는다
+        // (그래야 컨텐츠가 다시 짧아졌을 때 원래 기준 높이로 자연스럽게 축소 복귀함)
     }
 
     /// <summary>미니위젯 내용 너비에 창 너비를 맞춘다.</summary>
