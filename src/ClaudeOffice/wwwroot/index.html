@@ -852,10 +852,60 @@
     </div>
   </div>
 
+  <!-- 🎵 메인화면 하단 우측 플로팅 코딩 BGM 플레이바 -->
+  <div id="bgmMainAnchor" class="bgm-main-anchor" hidden>
+    <div id="bgmPopover" class="bgm-popover" hidden>
+      <div class="bgm-pop-head">
+        <div class="bgm-pop-tabs">
+          <button type="button" id="bgmPopTabInternal" class="bgm-pop-tab active">🎹 내장 Lo-Fi</button>
+          <button type="button" id="bgmPopTabYoutube" class="bgm-pop-tab">📺 YouTube</button>
+        </div>
+        <button type="button" id="bgmPopClose" class="bgm-pop-close" title="닫기">✕</button>
+      </div>
+      <div id="bgmPopList" class="bgm-pop-list"></div>
+    </div>
+
+    <div id="bgmPlayerBar" class="bgm-player-bar">
+      <div class="bgm-bar-vinyl-wrap">
+        <div id="bgmBarVinyl" class="bgm-vinyl paused"><div class="bgm-vinyl-core"></div></div>
+      </div>
+      <div class="bgm-bar-info">
+        <div class="bgm-bar-title-row">
+          <span id="bgmBarSrcPill" class="bgm-src-pill">LO-FI</span>
+          <span id="bgmBarTitle" class="bgm-bar-title">Midnight Coffee ☕</span>
+          <span id="bgmBarEq" class="bgm-eq paused"><i></i><i></i><i></i></span>
+        </div>
+        <div class="bgm-bar-prog-row">
+          <div class="bgm-prog-track"><div id="bgmBarProg" class="bgm-prog-fill" style="width:0%"></div></div>
+          <span id="bgmBarTime" class="bgm-bar-time">00:00 / 04:00</span>
+        </div>
+      </div>
+      <div class="bgm-bar-transport">
+        <button type="button" id="bgmBarPrev" class="bgm-icon-btn" title="이전 곡">⏮</button>
+        <button type="button" id="bgmBarPlay" class="bgm-play-btn" title="재생 / 일시정지">▶</button>
+        <button type="button" id="bgmBarNext" class="bgm-icon-btn" title="다음 곡">⏭</button>
+      </div>
+      <div class="bgm-bar-divider"></div>
+      <div class="bgm-bar-utils">
+        <button type="button" id="bgmBarMute" class="bgm-icon-btn" title="음소거">🔊</button>
+        <input type="range" id="bgmBarVol" class="bgm-vol-slider" min="0" max="100" value="70" title="볼륨" />
+        <button type="button" id="bgmBarListBtn" class="bgm-icon-btn bgm-list-btn" title="플레이리스트 열기">☰</button>
+        <button type="button" id="bgmBarCollapseBtn" class="bgm-icon-btn" title="알약 모드로 접기">▾</button>
+      </div>
+    </div>
+
+    <div id="bgmCompactPill" class="bgm-compact-pill" hidden>
+      <button type="button" id="bgmPillPlay" class="bgm-pill-play" title="재생 / 일시정지">▶</button>
+      <span id="bgmPillEq" class="bgm-eq paused"><i></i><i></i><i></i></span>
+      <span id="bgmPillTitle" class="bgm-pill-title">Midnight Coffee ☕</span>
+      <button type="button" id="bgmPillExpand" class="bgm-pill-expand" title="플레이바 펼치기">▲</button>
+    </div>
+  </div>
+
   <div id="questToast" class="quest-toast" hidden></div>
 
   <!-- QR 코드(휴대폰 보기 설정용) — qrcode-generator 1.4.4, MIT, Kazuhiko Arase -->
   <script src="vendor/qrcode.js"></script>
-  <script src="office.js?v=1.9.46"></script>
+  <script src="office.js?v=1.9.47"></script>
 </body>
 </html>

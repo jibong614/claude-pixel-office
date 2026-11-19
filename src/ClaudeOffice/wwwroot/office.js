@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.46';
+const PAGE_VERSION = '1.9.47';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -3741,11 +3741,168 @@ let lofiBgmState = {
   timer: null,
   crackleNode: null,
   furniturePos: null,
+  // 볼륨 & 메인화면 플레이바 상태
+  volume: Math.max(0, Math.min(100, Number(store.get('bgmVolume', 70)) ?? 70)),
+  muted: !!store.get('bgmMuted', false),
+  showMainBar: store.get('bgmShowMainBar', true) !== false,
+  barCompact: !!store.get('bgmBarCompact', false),
+  popoverOpen: false,
   // YouTube 코딩음악 관련 상태
   ytPlaying: false,
   curYtTrackId: store.get('ytCurTrack', 1),   // 1 ~ 3
   activeYtTracks: store.get('ytActiveTracks', [1, 2, 3])
 };
+
+// 🎵 BGM 창 간 실시간 동기화 채널 (설정창 <-> 메인화면 플레이바)
+const bgmBroadcast = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('co_bgm') : null;
+function broadcastBgmState() {
+  if (!bgmBroadcast) return;
+  try {
+    bgmBroadcast.postMessage({
+      enabled: lofiBgmState.enabled,
+      source: lofiBgmState.source,
+      playing: lofiBgmState.playing,
+      ytPlaying: lofiBgmState.ytPlaying,
+      curTrackId: lofiBgmState.curTrackId,
+      curYtTrackId: lofiBgmState.curYtTrackId,
+      barIndex: lofiBgmState.barIndex,
+      volume: lofiBgmState.volume,
+      muted: lofiBgmState.muted,
+      showMainBar: lofiBgmState.showMainBar
+    });
+  } catch (_) {}
+}
+if (bgmBroadcast) {
+  bgmBroadcast.onmessage = (e) => {
+    const d = e.data;
+    if (!d) return;
+    if (SETTINGS_WINDOW) {
+      if (typeof d.enabled === 'boolean') lofiBgmState.enabled = d.enabled;
+      if (d.source) lofiBgmState.source = d.source;
+      if (typeof d.playing === 'boolean') lofiBgmState.playing = d.playing;
+      if (typeof d.ytPlaying === 'boolean') lofiBgmState.ytPlaying = d.ytPlaying;
+      if (typeof d.curTrackId === 'number') lofiBgmState.curTrackId = d.curTrackId;
+      if (typeof d.curYtTrackId === 'number') lofiBgmState.curYtTrackId = d.curYtTrackId;
+      if (typeof d.barIndex === 'number') lofiBgmState.barIndex = d.barIndex;
+      if (typeof d.volume === 'number') lofiBgmState.volume = d.volume;
+      if (typeof d.muted === 'boolean') lofiBgmState.muted = d.muted;
+      if (typeof d.showMainBar === 'boolean') lofiBgmState.showMainBar = d.showMainBar;
+      updateLofiUiDisplay();
+      if (typeof refreshSettings === 'function') refreshSettings();
+    } else if (!WIDGET_WINDOW && !REMOTE) {
+      if (typeof d.showMainBar === 'boolean' && d.showMainBar !== lofiBgmState.showMainBar) {
+        lofiBgmState.showMainBar = d.showMainBar;
+        updateLofiUiDisplay();
+      }
+      if (typeof d.volume === 'number' && d.volume !== lofiBgmState.volume) {
+        setBgmVolume(d.volume, true);
+      }
+      if (typeof d.muted === 'boolean' && d.muted !== lofiBgmState.muted) {
+        lofiBgmState.muted = d.muted;
+        applyBgmVolume();
+        updateLofiUiDisplay();
+      }
+    }
+  };
+}
+
+let lofiMasterGain = null;
+let lofiMasterGainCtx = null;
+function getBgmMasterNode(ctx) {
+  if (!ctx) return null;
+  if (!lofiMasterGain || lofiMasterGainCtx !== ctx) {
+    lofiMasterGain = ctx.createGain();
+    lofiMasterGain.connect(ctx.destination);
+    lofiMasterGainCtx = ctx;
+    applyBgmVolume();
+  }
+  return lofiMasterGain;
+}
+
+function applyBgmVolume() {
+  const effVol = lofiBgmState.muted ? 0 : Math.max(0, Math.min(100, lofiBgmState.volume));
+  if (lofiMasterGain && lofiMasterGainCtx) {
+    try {
+      lofiMasterGain.gain.setTargetAtTime((effVol / 100) * 1.25, lofiMasterGainCtx.currentTime, 0.03);
+    } catch {
+      lofiMasterGain.gain.value = (effVol / 100) * 1.25;
+    }
+  }
+  const iframe = document.getElementById('ytAudioIframe') || ytIframe;
+  if (iframe && iframe.contentWindow) {
+    try {
+      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: effVol === 0 ? 'mute' : 'unMute', args: '' }), '*');
+      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [effVol] }), '*');
+    } catch {}
+  }
+}
+
+function setBgmVolume(vol, fromSync = false) {
+  const v = Math.max(0, Math.min(100, Math.round(Number(vol) || 0)));
+  lofiBgmState.volume = v;
+  lofiBgmState.muted = v === 0;
+  store.set('bgmVolume', v);
+  store.set('bgmMuted', lofiBgmState.muted);
+  if (SETTINGS_WINDOW && !fromSync) {
+    send({ cmd: 'bgm-control', action: 'set-volume', volume: v, muted: lofiBgmState.muted });
+  } else {
+    applyBgmVolume();
+  }
+  if (!fromSync) broadcastBgmState();
+  updateLofiUiDisplay();
+}
+
+function toggleBgmMute(fromSync = false) {
+  lofiBgmState.muted = !lofiBgmState.muted;
+  if (!lofiBgmState.muted && lofiBgmState.volume === 0) {
+    lofiBgmState.volume = 60;
+    store.set('bgmVolume', 60);
+  }
+  store.set('bgmMuted', lofiBgmState.muted);
+  if (SETTINGS_WINDOW && !fromSync) {
+    send({ cmd: 'bgm-control', action: 'set-muted', muted: lofiBgmState.muted, volume: lofiBgmState.volume });
+  } else {
+    applyBgmVolume();
+  }
+  if (!fromSync) broadcastBgmState();
+  updateLofiUiDisplay();
+}
+
+function setBgmShowMainBar(on, fromSync = false) {
+  lofiBgmState.showMainBar = !!on;
+  store.set('bgmShowMainBar', lofiBgmState.showMainBar);
+  if (SETTINGS_WINDOW && !fromSync) {
+    send({ cmd: 'bgm-control', action: 'set-show-bar', value: lofiBgmState.showMainBar });
+  }
+  if (!fromSync) broadcastBgmState();
+  updateLofiUiDisplay();
+  if (typeof refreshSettings === 'function') refreshSettings();
+}
+
+function setBgmBarCompact(on) {
+  lofiBgmState.barCompact = !!on;
+  if (lofiBgmState.barCompact) lofiBgmState.popoverOpen = false;
+  store.set('bgmBarCompact', lofiBgmState.barCompact);
+  updateLofiUiDisplay();
+}
+
+function stepBgmTrack(dir, fromSync = false) {
+  if (SETTINGS_WINDOW && !fromSync) {
+    send({ cmd: 'bgm-control', action: 'step-track', dir: dir >= 0 ? 1 : -1 });
+    return;
+  }
+  if (lofiBgmState.source === 'youtube') {
+    const active = lofiBgmState.activeYtTracks && lofiBgmState.activeYtTracks.length > 0 ? lofiBgmState.activeYtTracks : [1, 2, 3];
+    const curIdx = active.indexOf(lofiBgmState.curYtTrackId);
+    const nextIdx = (curIdx + (dir >= 0 ? 1 : -1) + active.length) % active.length;
+    selectYtTrack(active[nextIdx], true);
+  } else {
+    const active = lofiBgmState.activeTracks && lofiBgmState.activeTracks.length > 0 ? lofiBgmState.activeTracks : [1, 2, 3, 4, 5];
+    const curIdx = active.indexOf(lofiBgmState.curTrackId);
+    const nextIdx = (curIdx + (dir >= 0 ? 1 : -1) + active.length) % active.length;
+    selectLofiTrack(active[nextIdx], true);
+  }
+}
 
 // 트랙 5가 추가되었으므로 저장된 activeTracks에 5가 없으면 추가
 if (!lofiBgmState.activeTracks.includes(5)) {
@@ -3809,8 +3966,9 @@ function playYouTubeVideo() {
     }
     setTimeout(() => {
       try {
-        iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: '' }), '*');
-        iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
+        const ytVol = lofiBgmState.muted ? 0 : Math.max(0, Math.min(100, lofiBgmState.volume));
+        iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: ytVol === 0 ? 'mute' : 'unMute', args: '' }), '*');
+        iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [ytVol] }), '*');
         iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: '' }), '*');
       } catch (e) {}
     }, 600);
@@ -4076,7 +4234,7 @@ function startTurntableLofi(b) {
       crackleGain.gain.value = 0.12;
       whiteNoise.connect(filter);
       filter.connect(crackleGain);
-      crackleGain.connect(ctx.destination);
+      crackleGain.connect(getBgmMasterNode(ctx));
       whiteNoise.start(0);
       lofiBgmState.crackleNode = whiteNoise;
     } catch {}
@@ -4118,7 +4276,7 @@ function startTurntableLofi(b) {
 
             osc.connect(filt);
             filt.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(getBgmMasterNode(ctx));
 
             osc.start(noteStart);
             osc.stop(t0 + chordDuration);
@@ -4159,7 +4317,7 @@ function startTurntableLofi(b) {
 
             osc.connect(filt);
             filt.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(getBgmMasterNode(ctx));
 
             osc.start(noteTime);
             osc.stop(noteTime + dur);
@@ -4190,7 +4348,7 @@ function startTurntableLofi(b) {
 
             osc.connect(filt);
             filt.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(getBgmMasterNode(ctx));
 
             osc.start(bTime);
             osc.stop(bTime + dur);
@@ -4277,7 +4435,7 @@ function playBoomBapDrums(ctx, t0, barSec, density) {
       const vol = ((idx % 2 === 1) ? 0.016 : 0.009) * density;
       gain.gain.setValueAtTime(vol, hTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, hTime + 0.045);
-      osc.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+      osc.connect(filt); filt.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(hTime); osc.stop(hTime + 0.05);
     } catch {}
   });
@@ -4294,7 +4452,7 @@ function playBoomBapDrums(ctx, t0, barSec, density) {
       osc.frequency.exponentialRampToValueAtTime(42, kTime + 0.09);
       gain.gain.setValueAtTime(0.11 * density, kTime);
       gain.gain.exponentialRampToValueAtTime(0.001, kTime + 0.12);
-      osc.connect(gain); gain.connect(ctx.destination);
+      osc.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(kTime); osc.stop(kTime + 0.13);
     } catch {}
   });
@@ -4313,7 +4471,7 @@ function playBoomBapDrums(ctx, t0, barSec, density) {
       filt.frequency.setValueAtTime(1200, sTime);
       gain.gain.setValueAtTime(0.045 * density, sTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, sTime + 0.08);
-      osc.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+      osc.connect(filt); filt.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(sTime); osc.stop(sTime + 0.09);
     } catch {}
   });
@@ -4333,7 +4491,7 @@ function playSynthwaveDrums(ctx, t0, barSec, density) {
       osc.frequency.exponentialRampToValueAtTime(48, kTime + 0.08);
       gain.gain.setValueAtTime(0.14 * density, kTime);
       gain.gain.exponentialRampToValueAtTime(0.001, kTime + 0.11);
-      osc.connect(gain); gain.connect(ctx.destination);
+      osc.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(kTime); osc.stop(kTime + 0.12);
     } catch {}
   }
@@ -4352,7 +4510,7 @@ function playSynthwaveDrums(ctx, t0, barSec, density) {
       filt.frequency.setValueAtTime(2500, sTime);
       gain.gain.setValueAtTime(0.085 * density, sTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, sTime + 0.13);
-      osc.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+      osc.connect(filt); filt.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(sTime); osc.stop(sTime + 0.14);
     } catch {}
   });
@@ -4372,7 +4530,7 @@ function playSynthwaveDrums(ctx, t0, barSec, density) {
       const vol = ((i % 4 === 2) ? 0.018 : 0.008) * density;
       gain.gain.setValueAtTime(vol, hTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, hTime + 0.035);
-      osc.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+      osc.connect(filt); filt.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(hTime); osc.stop(hTime + 0.04);
     } catch {}
   }
@@ -4395,7 +4553,7 @@ function playBossaDrums(ctx, t0, barSec, density) {
       filt.frequency.setValueAtTime(1400, rTime);
       gain.gain.setValueAtTime(0.055 * density, rTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, rTime + 0.035);
-      osc.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+      osc.connect(filt); filt.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(rTime); osc.stop(rTime + 0.04);
     } catch {}
   });
@@ -4411,7 +4569,7 @@ function playBossaDrums(ctx, t0, barSec, density) {
       osc.frequency.exponentialRampToValueAtTime(45, kTime + 0.09);
       gain.gain.setValueAtTime(0.08 * density, kTime);
       gain.gain.exponentialRampToValueAtTime(0.001, kTime + 0.11);
-      osc.connect(gain); gain.connect(ctx.destination);
+      osc.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(kTime); osc.stop(kTime + 0.12);
     } catch {}
   });
@@ -4431,7 +4589,7 @@ function playBossaDrums(ctx, t0, barSec, density) {
       const vol = (i % 2 === 1 ? 0.012 : 0.006) * density;
       gain.gain.setValueAtTime(vol, sTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, sTime + 0.03);
-      osc.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+      osc.connect(filt); filt.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(sTime); osc.stop(sTime + 0.035);
     } catch {}
   }
@@ -4450,7 +4608,7 @@ function playAmbientDrums(ctx, t0, barSec, density, barIndex) {
       gain.gain.setValueAtTime(0.001, t0);
       gain.gain.linearRampToValueAtTime(0.09 * density, t0 + 0.05);
       gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
-      osc.connect(gain); gain.connect(ctx.destination);
+      osc.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(t0); osc.stop(t0 + 0.45);
     } catch {}
   }
@@ -4469,7 +4627,7 @@ function playAmbientDrums(ctx, t0, barSec, density, barIndex) {
       filt.Q.setValueAtTime(8, cTime);
       gain.gain.setValueAtTime(0.02 * density, cTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, cTime + 0.08);
-      osc.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+      osc.connect(filt); filt.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(cTime); osc.stop(cTime + 0.09);
     } catch {}
   });
@@ -4490,7 +4648,7 @@ function playArcadeDrums(ctx, t0, barSec, density) {
       osc.frequency.exponentialRampToValueAtTime(40, kTime + 0.06);
       gain.gain.setValueAtTime(0.11 * density, kTime);
       gain.gain.exponentialRampToValueAtTime(0.001, kTime + 0.09);
-      osc.connect(gain); gain.connect(ctx.destination);
+      osc.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(kTime); osc.stop(kTime + 0.1);
     } catch {}
   });
@@ -4510,7 +4668,7 @@ function playArcadeDrums(ctx, t0, barSec, density) {
       filt.Q.setValueAtTime(2.0, sTime);
       gain.gain.setValueAtTime(0.075 * density, sTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, sTime + 0.08);
-      osc.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+      osc.connect(filt); filt.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(sTime); osc.stop(sTime + 0.09);
     } catch {}
   });
@@ -4530,7 +4688,7 @@ function playArcadeDrums(ctx, t0, barSec, density) {
       const vol = (i % 2 === 1 ? 0.02 : 0.01) * density;
       gain.gain.setValueAtTime(vol, hTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, hTime + 0.025);
-      osc.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+      osc.connect(filt); filt.connect(gain); gain.connect(getBgmMasterNode(ctx));
       osc.start(hTime); osc.stop(hTime + 0.03);
     } catch {}
   }
@@ -4645,6 +4803,12 @@ function updateLofiUiDisplay() {
   lofiUiUpdateCallbacks.forEach((cb) => {
     try { cb(); } catch {}
   });
+  if (typeof updateMainBgmBar === 'function') {
+    try { updateMainBgmBar(); } catch {}
+  }
+  if (!SETTINGS_WINDOW && !WIDGET_WINDOW && !REMOTE) {
+    broadcastBgmState();
+  }
 }
 
 
@@ -13857,6 +14021,14 @@ const SETTINGS = [
         get: () => lofiBgmState.source === 'youtube',
         set: (v) => setBgmSource(v ? 'youtube' : 'internal')
       },
+      {
+        type: 'toggle',
+        name: T('🎛️ 메인화면 BGM 플레이바 표시', '🎛️ Show BGM Player Bar on Main Screen'),
+        desc: T('메인 사무실 하단 우측에 플로팅 BGM 플레이바(재생·정지·볼륨·플레이리스트·알약 접기)를 띄웁니다.',
+                'Shows a floating BGM player bar (play/pause, volume, playlist popover, compact pill) at the bottom-right of the main office.'),
+        get: () => lofiBgmState.showMainBar,
+        set: (v) => setBgmShowMainBar(v)
+      },
       { type: 'lofi_mixer' }
     ],
   },
@@ -14252,35 +14424,82 @@ const RENDER = {
   },
 
   lofi_mixer(it, row) {
-    const wrap = elem('div', 'lofi-mixer-wrap');
+    row.classList.add('stack');
+    const wrap = elem('div', 'bgm-studio-wrap');
 
-    // 0. BGM 음악 소스 전환 탭 [ 🎹 내장 Lo-Fi 5곡 ] | [ 📺 YouTube 코딩음악 3선 ]
-    const srcTabWrap = elem('div', 'bgm-source-tabs');
-    const tabInternal = elem('button', 'bgm-src-tab', '🎹 ' + T('내장 Lo-Fi (5곡)', 'Built-in Lo-Fi (5)'));
-    const tabYoutube = elem('button', 'bgm-src-tab youtube-tab', '📺 ' + T('YouTube 코딩음악 (3선)', 'YouTube Coding Music (3)'));
+    // 0. 소스 전환 세그먼트 탭
+    const tabWrap = elem('div', 'bgm-studio-tabs');
+    const tabInternal = elem('button', 'bgm-studio-tab');
     tabInternal.type = 'button';
+    tabInternal.innerHTML = '🎹 ' + T('내장 Lo-Fi 스튜디오', 'Built-in Lo-Fi') + ' <span class="bgm-tab-cnt">5</span>';
+    const tabYoutube = elem('button', 'bgm-studio-tab yt');
     tabYoutube.type = 'button';
+    tabYoutube.innerHTML = '📺 ' + T('YouTube 코딩음악', 'YouTube Coding') + ' <span class="bgm-tab-cnt">3</span>';
     tabInternal.addEventListener('click', () => setBgmSource('internal'));
     tabYoutube.addEventListener('click', () => setBgmSource('youtube'));
-    srcTabWrap.append(tabInternal, tabYoutube);
+    tabWrap.append(tabInternal, tabYoutube);
 
-    // 1. 현재 재생 중인 상태 안내 배지
-    const nowPlayingBadge = elem('div', 'lofi-now-playing-badge');
+    // 1. 통합 Now Playing 히어로 카드
+    const heroCard = elem('div', 'bgm-hero-card');
+    const heroTop = elem('div', 'bgm-hero-top');
+    const heroLeft = elem('div', 'bgm-hero-left');
+    const heroVinyl = elem('div', 'bgm-vinyl hero-size paused');
+    heroVinyl.innerHTML = '<div class="bgm-vinyl-core"></div>';
+    const heroMeta = elem('div', 'bgm-hero-meta');
+    const heroStatusRow = elem('div', 'bgm-hero-status-row');
+    const heroChip = elem('span', 'bgm-status-chip', '⏸ PAUSED');
+    const heroGenre = elem('span', 'bgm-hero-genre');
+    heroStatusRow.append(heroChip, heroGenre);
+    const heroTitle = elem('div', 'bgm-hero-title');
+    const heroSub = elem('div', 'bgm-hero-sub');
+    heroMeta.append(heroStatusRow, heroTitle, heroSub);
+    heroLeft.append(heroVinyl, heroMeta);
 
-    // ─────────────────────────────────────────────────────────
-    // [A] 내장 Lo-Fi 음악 전용 뷰 (4대 악기 스택 + 5곡 수직 리스트)
-    // ─────────────────────────────────────────────────────────
-    const internalView = elem('div', 'bgm-internal-view');
+    const heroCtrls = elem('div', 'bgm-hero-controls');
+    const heroPrev = elem('button', 'bgm-hero-step-btn', '⏮');
+    heroPrev.type = 'button'; heroPrev.title = T('이전 곡', 'Previous');
+    const heroPlay = elem('button', 'bgm-hero-play-btn');
+    heroPlay.type = 'button';
+    const heroNext = elem('button', 'bgm-hero-step-btn', '⏭');
+    heroNext.type = 'button'; heroNext.title = T('다음 곡', 'Next');
 
-    // (A-1) 4대 악기 스택 스위치 [코드] [멜로디] [베이스] [심벌/드럼]
+    heroPrev.addEventListener('click', () => stepBgmTrack(-1));
+    heroPlay.addEventListener('click', () => setBgmPlaying(!lofiBgmState.enabled));
+    heroNext.addEventListener('click', () => stepBgmTrack(1));
+    heroCtrls.append(heroPrev, heroPlay, heroNext);
+    heroTop.append(heroLeft, heroCtrls);
+
+    const heroBottom = elem('div', 'bgm-hero-bottom');
+    const heroProgWrap = elem('div', 'bgm-hero-prog-wrap');
+    const heroCurTime = elem('span', 'bgm-bar-time', '00:00');
+    const heroProgTrack = elem('div', 'bgm-prog-track');
+    const heroProgFill = elem('div', 'bgm-prog-fill');
+    heroProgTrack.append(heroProgFill);
+    const heroTotTime = elem('span', 'bgm-bar-time', '04:00');
+    heroProgWrap.append(heroCurTime, heroProgTrack, heroTotTime);
+
+    const heroVolWrap = elem('div', 'bgm-hero-vol-wrap');
+    const heroMute = elem('button', 'bgm-icon-btn', '🔊');
+    heroMute.type = 'button'; heroMute.title = T('음소거', 'Mute');
+    const heroVol = document.createElement('input');
+    heroVol.type = 'range'; heroVol.min = '0'; heroVol.max = '100'; heroVol.className = 'bgm-vol-slider';
+    const heroVolPct = elem('span', 'bgm-vol-pct', '70%');
+    heroMute.addEventListener('click', () => toggleBgmMute());
+    heroVol.addEventListener('input', (e) => setBgmVolume(e.target.value));
+    heroVolWrap.append(heroMute, heroVol, heroVolPct);
+
+    heroBottom.append(heroProgWrap, heroVolWrap);
+    heroCard.append(heroTop, heroBottom);
+
+    // 2. 4대 악기 스템 믹서 (내장 Lo-Fi 전용)
     const stemSec = elem('div', 'lofi-stem-sec');
-    const stemHead = elem('div', 'lofi-sec-title', T('🎛️ 악기 레이어 스택 (실시간 악기 온/오프)', '🎛️ Live Instrument Stems'));
+    const stemHead = elem('div', 'lofi-sec-title', T('🎛️ 실시간 악기 레이어 믹서 (온/오프)', '🎛️ Live Instrument Stems'));
     const stemGrid = elem('div', 'lofi-stem-grid');
     const stemDefs = [
       { key: 'chords', icon: '🎹', name: T('코드 (화음)', 'Chords') },
-      { key: 'melody', icon: '✨', name: T('멜로디 (리드)', 'Melody') },
-      { key: 'bass', icon: '🎸', name: T('베이스 (저음)', 'Bass') },
-      { key: 'drums', icon: '🥁', name: T('심벌 & 드럼', 'Cymbal/Drums') }
+      { key: 'melody', icon: '✨', name: T('멜로디', 'Melody') },
+      { key: 'bass', icon: '🎸', name: T('베이스', 'Bass') },
+      { key: 'drums', icon: '🥁', name: T('심벌 & 드럼', 'Drums') }
     ];
     const stemBtns = [];
     stemDefs.forEach((stem) => {
@@ -14293,205 +14512,131 @@ const RENDER = {
     });
     stemSec.append(stemHead, stemGrid);
 
-    // (A-2) 내장 5곡 수직 리스트 (v체크 포함)
-    const trackSec = elem('div', 'lofi-track-sec');
-    const trackHead = elem('div', 'lofi-sec-title', T('🎶 내장 플레이리스트 (✓체크: 순차 재생 포함/제외, 클릭: 바로 듣기)', '🎶 Playlist (✓: toggle repeat, Click: play now)'));
-    const trackListEl = elem('div', 'bgm-playlist-list');
-
-    const internalTrackRows = [];
-    LOFI_TRACKS.forEach((tr) => {
-      const itemEl = elem('div', 'bgm-track-item');
-      
-      // v체크 버튼 (클릭 시 순차 재생 포함 / 제외)
-      const checkBtn = elem('button', 'bgm-check-btn checked', '✓');
-      checkBtn.type = 'button';
-      checkBtn.title = T('✓ 클릭: 순차 재생에 포함 / 제외', 'Toggle include in playlist loop');
-      checkBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleLofiActiveTrack(tr.id);
-      });
-
-      // 번호 뱃지
-      const numSpan = elem('span', 'bgm-track-num', String(tr.id));
-
-      // 곡 정보 (제목, 장르 뱃지, 4분 길이)
-      const infoDiv = elem('div', 'bgm-track-info');
-      const titleDiv = elem('div', 'bgm-track-title', T(tr.name, tr.enName));
-      const subDiv = elem('div', 'bgm-track-sub');
-      const badgeSpan = elem('span', 'bgm-track-badge', tr.genre || 'Lo-Fi');
-      const durSpan = elem('span', 'bgm-track-duration', '04:00');
-      subDiv.append(badgeSpan, durSpan);
-      infoDiv.append(titleDiv, subDiv);
-
-      // 재생 상태 텍스트
-      const stateBadge = elem('div', 'bgm-track-state-badge');
-
-      itemEl.append(checkBtn, numSpan, infoDiv, stateBadge);
-
-      // 트랙 항목 클릭 시 즉시 해당 트랙 점프 재생
-      itemEl.addEventListener('click', () => {
-        selectLofiTrack(tr.id, true);
-      });
-
-      trackListEl.append(itemEl);
-      internalTrackRows.push({ itemEl, checkBtn, stateBadge, trackId: tr.id });
-    });
-
-    trackSec.append(trackHead, trackListEl);
-    internalView.append(stemSec, trackSec);
-
-    // ─────────────────────────────────────────────────────────
-    // [B] YouTube 코딩음악 전용 뷰 (재생 컨트롤 + 3선 수직 리스트)
-    // ─────────────────────────────────────────────────────────
-    const ytView = elem('div', 'bgm-youtube-view');
-
-    // (B-1) YouTube 제어 바
-    const ytControlBar = elem('div', 'bgm-yt-control-bar');
-    const ytPrevBtn = elem('button', 'bgm-yt-btn', '⏮️ ' + T('이전곡', 'Prev'));
-    const isInitialYtPlaying = lofiBgmState.enabled && lofiBgmState.source === 'youtube';
-    const ytPlayBtn = elem('button', 'bgm-yt-btn play-btn' + (isInitialYtPlaying ? ' is-playing' : ''), isInitialYtPlaying ? '■ ' + T('정지', 'Stop') : '▶ ' + T('재생', 'Play'));
-    const ytNextBtn = elem('button', 'bgm-yt-btn', T('다음곡', 'Next') + ' ⏭️');
-    ytPrevBtn.type = 'button'; ytPlayBtn.type = 'button'; ytNextBtn.type = 'button';
-
-    ytPrevBtn.addEventListener('click', () => {
-      const active = lofiBgmState.activeYtTracks || [1, 2, 3];
-      const curIdx = active.indexOf(lofiBgmState.curYtTrackId);
-      const prevIdx = (curIdx - 1 + active.length) % active.length;
-      selectYtTrack(active[prevIdx], true);
-    });
-    ytPlayBtn.addEventListener('click', () => {
-      if (lofiBgmState.enabled && lofiBgmState.source === 'youtube') {
-        setBgmPlaying(false);
-      } else {
-        lofiBgmState.source = 'youtube';
-        store.set('bgmSource', 'youtube');
-        setBgmPlaying(true);
-      }
-    });
-    ytNextBtn.addEventListener('click', () => {
-      advanceToNextYtTrack();
-    });
-
-    ytControlBar.append(ytPrevBtn, ytPlayBtn, ytNextBtn);
-
-    // (B-2) YouTube 3선 수직 리스트
-    const ytSec = elem('div', 'lofi-track-sec');
-    const ytHead = elem('div', 'lofi-sec-title', T('📺 YouTube 인기 코딩음악 (✓체크: 순차 재생 포함/제외, 클릭: 바로 듣기)', '📺 YouTube Playlists (✓: toggle loop, Click: play now)'));
+    // 3. 플레이리스트 섹션 (내장 5곡 / YouTube 3선)
+    const listSec = elem('div', 'lofi-track-sec');
+    const listHead = elem('div', 'lofi-sec-title', T('🎶 플레이리스트 (✓체크: 순차 재생 포함 · 클릭: 즉시 재생)', '🎶 Playlist (✓: loop toggle · Click: play now)'));
+    const internalListEl = elem('div', 'bgm-playlist-list');
     const ytListEl = elem('div', 'bgm-playlist-list');
 
-    const ytTrackRows = [];
-    YOUTUBE_TRACKS.forEach((yTr) => {
-      const itemEl = elem('div', 'bgm-track-item yt-item');
-
-      // v체크 버튼
-      const checkBtn = elem('button', 'bgm-check-btn checked', '✓');
-      checkBtn.type = 'button';
-      checkBtn.title = T('✓ 클릭: 순차 재생에 포함 / 제외', 'Toggle include in playlist loop');
-      checkBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleYtActiveTrack(yTr.id);
-      });
-
-      // 번호 뱃지
-      const numSpan = elem('span', 'bgm-track-num', String(yTr.id));
-
-      // 영상 정보 (제목, 채널명, 재생 시간)
-      const infoDiv = elem('div', 'bgm-track-info');
-      const titleDiv = elem('div', 'bgm-track-title', T(yTr.title, yTr.enTitle));
-      const subDiv = elem('div', 'bgm-track-sub');
-      const badgeSpan = elem('span', 'bgm-track-badge', yTr.badge || yTr.author);
-      const durSpan = elem('span', 'bgm-track-duration', yTr.duration);
-      subDiv.append(badgeSpan, durSpan);
-      infoDiv.append(titleDiv, subDiv);
-
-      // 재생 상태 텍스트
-      const stateBadge = elem('div', 'bgm-track-state-badge');
-
-      itemEl.append(checkBtn, numSpan, infoDiv, stateBadge);
-
-      // 항목 클릭 시 즉시 해당 YouTube 영상 재생
-      itemEl.addEventListener('click', () => {
-        selectYtTrack(yTr.id, true);
-      });
-
-      ytListEl.append(itemEl);
-      ytTrackRows.push({ itemEl, checkBtn, stateBadge, trackId: yTr.id });
+    const internalRows = LOFI_TRACKS.map((tr) => {
+      const itemEl = elem('div', 'bgm-track-row');
+      const chk = elem('button', 'bgm-row-chk checked', '✓');
+      chk.type = 'button';
+      chk.addEventListener('click', (e) => { e.stopPropagation(); toggleLofiActiveTrack(tr.id); });
+      const idxEl = elem('div', 'bgm-row-idx', String(tr.id));
+      const infoEl = elem('div', 'bgm-row-info');
+      const tEl = elem('div', 'bgm-row-title', T(tr.name, tr.enName));
+      const subEl = elem('div', 'bgm-row-sub');
+      subEl.innerHTML = `<span class="bgm-row-chip">${tr.genre || 'Lo-Fi'}</span><span class="bgm-row-dur">${tr.tempo || 75} BPM</span>`;
+      infoEl.append(tEl, subEl);
+      const durEl = elem('span', 'bgm-row-dur', '04:00');
+      const stEl = elem('span', 'bgm-row-state', '▶');
+      itemEl.append(chk, idxEl, infoEl, durEl, stEl);
+      itemEl.addEventListener('click', () => selectLofiTrack(tr.id, true));
+      internalListEl.append(itemEl);
+      return { itemEl, chk, idxEl, stEl, trackId: tr.id };
     });
 
-    ytSec.append(ytHead, ytListEl);
-    ytView.append(ytControlBar, ytSec);
+    const ytRows = YOUTUBE_TRACKS.map((yTr) => {
+      const itemEl = elem('div', 'bgm-track-row yt');
+      const chk = elem('button', 'bgm-row-chk checked', '✓');
+      chk.type = 'button';
+      chk.addEventListener('click', (e) => { e.stopPropagation(); toggleYtActiveTrack(yTr.id); });
+      const idxEl = elem('div', 'bgm-row-idx', String(yTr.id));
+      const infoEl = elem('div', 'bgm-row-info');
+      const tEl = elem('div', 'bgm-row-title', T(yTr.title, yTr.enTitle));
+      const subEl = elem('div', 'bgm-row-sub');
+      subEl.innerHTML = `<span class="bgm-row-chip">${yTr.badge || yTr.author}</span>`;
+      infoEl.append(tEl, subEl);
+      const durEl = elem('span', 'bgm-row-dur', yTr.duration || 'LIVE');
+      const stEl = elem('span', 'bgm-row-state', '▶');
+      itemEl.append(chk, idxEl, infoEl, durEl, stEl);
+      itemEl.addEventListener('click', () => selectYtTrack(yTr.id, true));
+      ytListEl.append(itemEl);
+      return { itemEl, chk, idxEl, stEl, trackId: yTr.id };
+    });
 
-    wrap.append(srcTabWrap, nowPlayingBadge, internalView, ytView);
+    listSec.append(listHead, internalListEl, ytListEl);
+    wrap.append(tabWrap, heroCard, stemSec, listSec);
     row.append(wrap);
+
+    const eqHtml = '<span class="bgm-eq"><i></i><i></i><i></i></span>';
 
     const updateUi = () => {
       const isYt = lofiBgmState.source === 'youtube';
+      const activeNow = lofiBgmState.enabled;
+      const effVol = lofiBgmState.muted ? 0 : Math.max(0, Math.min(100, lofiBgmState.volume));
 
-      // 1. 소스 탭 토글
       tabInternal.classList.toggle('active', !isYt);
       tabYoutube.classList.toggle('active', isYt);
-      internalView.hidden = isYt;
-      ytView.hidden = !isYt;
+      stemSec.hidden = isYt;
+      internalListEl.hidden = isYt;
+      ytListEl.hidden = !isYt;
+
+      heroVinyl.classList.toggle('paused', !activeNow);
+      heroChip.classList.toggle('playing', activeNow);
+      heroChip.textContent = activeNow ? '● PLAYING' : '⏸ PAUSED';
+      heroPlay.textContent = activeNow ? ('⏸ ' + T('일시정지', 'Pause')) : ('▶ ' + T('재생하기', 'Play'));
+      heroMute.textContent = effVol === 0 ? '🔇' : effVol < 40 ? '🔉' : '🔊';
+      heroVol.value = String(effVol);
+      heroVolPct.textContent = effVol + '%';
 
       if (!isYt) {
-        // [내장 Lo-Fi 갱신]
-        const active = lofiBgmState.activeTracks || [1, 2, 3, 4, 5];
-        internalTrackRows.forEach(({ itemEl, checkBtn, stateBadge, trackId }) => {
-          const isAct = active.includes(trackId);
-          const isPlaying = lofiBgmState.playing && lofiBgmState.curTrackId === trackId;
-          itemEl.classList.toggle('playing', isPlaying);
-          itemEl.classList.toggle('excluded', !isAct);
-          checkBtn.classList.toggle('checked', isAct);
-          checkBtn.textContent = isAct ? '✓' : '';
-          stateBadge.textContent = isPlaying ? '▶ ' + T('재생 중', 'Playing') : '';
-        });
-
         const curTr = getCurLofiTrack();
-        const isActivelyPlaying = lofiBgmState.enabled && lofiBgmState.playing;
-        const statusIcon = isActivelyPlaying ? '▶' : '⏸️';
-        const totalSec = Math.floor((curTr.totalBars * curTr.barDuration) / 1000);
-        const curSec = Math.min(totalSec, Math.floor((lofiBgmState.barIndex * curTr.barDuration) / 1000));
-        const curMinStr = `${Math.floor(curSec / 60)}:${String(curSec % 60).padStart(2, '0')}`;
-        const totMinStr = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
+        const active = lofiBgmState.activeTracks || [1, 2, 3, 4, 5];
+        const totalSec = Math.floor(((curTr.totalBars || 72) * (curTr.barDuration || 3333)) / 1000);
+        const curSec = Math.min(totalSec, Math.floor((lofiBgmState.barIndex * (curTr.barDuration || 3333)) / 1000));
+        const pct = totalSec > 0 ? Math.min(100, Math.round((curSec / totalSec) * 100)) : 0;
         const barData = getTrackBar(curTr, lofiBgmState.barIndex);
         const secName = barData && barData.secName ? barData.secName : '';
 
-        nowPlayingBadge.textContent = isActivelyPlaying
-          ? `${statusIcon} ${T('내장 재생 중', 'Built-in Playing')}: [${curTr.id}] ${T(curTr.name, curTr.enName)} · ${curMinStr} / ${totMinStr} (${secName}) · ${active.length}${T('곡 순차 재생', ' tracks')}`
-          : `${statusIcon} ${T('정지됨 (스위치 꺼짐)', 'Stopped')} · [${curTr.id}] ${T(curTr.name, curTr.enName)} ${totMinStr} ${T('대기 중', 'ready')}`;
+        heroGenre.textContent = `${curTr.genre || 'Lo-Fi'} · ${curTr.tempo || 75} BPM`;
+        heroTitle.textContent = T(curTr.name, curTr.enName);
+        heroSub.textContent = (secName ? secName + ' · ' : '') + active.length + T('곡 순차 재생', ' tracks loop');
+        heroCurTime.textContent = `${String(Math.floor(curSec / 60)).padStart(2, '0')}:${String(curSec % 60).padStart(2, '0')}`;
+        heroTotTime.textContent = `${String(Math.floor(totalSec / 60)).padStart(2, '0')}:${String(totalSec % 60).padStart(2, '0')}`;
+        heroProgFill.style.width = pct + '%';
 
-        stemBtns.forEach(({ sBtn, key }) => {
-          const on = !!lofiBgmState.layers[key];
-          sBtn.classList.toggle('active', on);
+        stemBtns.forEach(({ sBtn, key }) => sBtn.classList.toggle('active', !!lofiBgmState.layers[key]));
+        internalRows.forEach(({ itemEl, chk, idxEl, stEl, trackId }) => {
+          const isAct = active.includes(trackId);
+          const isCur = lofiBgmState.curTrackId === trackId;
+          const isPlay = activeNow && isCur;
+          itemEl.classList.toggle('active', isCur);
+          itemEl.classList.toggle('excluded', !isAct);
+          chk.classList.toggle('checked', isAct);
+          chk.textContent = isAct ? '✓' : '';
+          idxEl.innerHTML = isPlay ? eqHtml : String(trackId);
+          stEl.classList.toggle('playing', isPlay);
+          stEl.textContent = isPlay ? T('재생 중', 'Playing') : '▶';
         });
       } else {
-        // [YouTube 갱신]
-        const ytActive = lofiBgmState.activeYtTracks || [1, 2, 3];
-        ytTrackRows.forEach(({ itemEl, checkBtn, stateBadge, trackId }) => {
-          const isAct = ytActive.includes(trackId);
-          const isPlaying = lofiBgmState.ytPlaying && lofiBgmState.curYtTrackId === trackId;
-          itemEl.classList.toggle('yt-playing', isPlaying);
-          itemEl.classList.toggle('excluded', !isAct);
-          checkBtn.classList.toggle('checked', isAct);
-          checkBtn.textContent = isAct ? '✓' : '';
-          stateBadge.textContent = isPlaying ? '▶ ' + T('재생 중', 'Playing') : '';
-        });
-
         const curYt = getCurYtTrack();
-        const isYtActivelyPlaying = lofiBgmState.enabled && lofiBgmState.ytPlaying;
-        const ytStatusIcon = isYtActivelyPlaying ? '▶' : '⏸️';
-        nowPlayingBadge.textContent = isYtActivelyPlaying
-          ? `${ytStatusIcon} YouTube: [${curYt.id}] ${T(curYt.title, curYt.enTitle)} (${curYt.author} · ${curYt.duration}) · ${ytActive.length}${T('곡 순차 재생', ' tracks')}`
-          : `${ytStatusIcon} YouTube ${T('일시 정지됨 (대기)', 'Paused (Ready)')}: [${curYt.id}] ${T(curYt.title, curYt.enTitle)}`;
+        const ytActive = lofiBgmState.activeYtTracks || [1, 2, 3];
+        heroGenre.textContent = `${curYt.badge || curYt.author} · YouTube`;
+        heroTitle.textContent = T(curYt.title, curYt.enTitle);
+        heroSub.textContent = `${curYt.author} · ${ytActive.length}${T('곡 순차 재생', ' tracks loop')}`;
+        heroCurTime.textContent = activeNow ? 'LIVE' : '00:00';
+        heroTotTime.textContent = curYt.duration || 'LIVE';
+        heroProgFill.style.width = activeNow ? '100%' : '0%';
 
-        ytPlayBtn.textContent = isYtActivelyPlaying ? '■ ' + T('정지', 'Stop') : '▶ ' + T('재생', 'Play');
-        ytPlayBtn.classList.toggle('is-playing', isYtActivelyPlaying);
+        ytRows.forEach(({ itemEl, chk, idxEl, stEl, trackId }) => {
+          const isAct = ytActive.includes(trackId);
+          const isCur = lofiBgmState.curYtTrackId === trackId;
+          const isPlay = activeNow && isCur;
+          itemEl.classList.toggle('active', isCur);
+          itemEl.classList.toggle('excluded', !isAct);
+          chk.classList.toggle('checked', isAct);
+          chk.textContent = isAct ? '✓' : '';
+          idxEl.innerHTML = isPlay ? eqHtml : String(trackId);
+          stEl.classList.toggle('playing', isPlay);
+          stEl.textContent = isPlay ? T('재생 중', 'Playing') : '▶';
+        });
       }
     };
 
     lofiUiUpdateCallbacks = [updateUi];
     updateUi();
-
     return () => updateUi();
   },
 
@@ -17056,6 +17201,15 @@ if (REMOTE) {
       else if (m.action === 'set-source') setBgmSource(m.source);
       else if (m.action === 'select-track') selectLofiTrack(m.trackId);
       else if (m.action === 'select-yt-track') selectYtTrack(m.trackId);
+      else if (m.action === 'set-volume') setBgmVolume(m.volume, true);
+      else if (m.action === 'set-muted') {
+        if (typeof m.volume === 'number') lofiBgmState.volume = m.volume;
+        lofiBgmState.muted = !!m.muted;
+        applyBgmVolume();
+        updateLofiUiDisplay();
+      }
+      else if (m.action === 'step-track') stepBgmTrack(m.dir || 1, true);
+      else if (m.action === 'set-show-bar') setBgmShowMainBar(m.value, true);
     }
     else if (m?.type === 'pet-topmost') {
       if (appSettings) appSettings.petTopmost = !!m.value;
@@ -17086,3 +17240,156 @@ document.addEventListener('click', (e) => {
     }
   }
 });
+
+
+// ─────────────────────────────────────────────────────────────
+// 🎵 메인화면 하단 우측 플로팅 코딩 BGM 플레이바 (v1.9.47)
+// ─────────────────────────────────────────────────────────────
+const bgmMainAnchor = document.getElementById('bgmMainAnchor');
+const bgmPlayerBar = document.getElementById('bgmPlayerBar');
+const bgmCompactPill = document.getElementById('bgmCompactPill');
+const bgmPopover = document.getElementById('bgmPopover');
+const bgmPopList = document.getElementById('bgmPopList');
+const bgmPopTabInternal = document.getElementById('bgmPopTabInternal');
+const bgmPopTabYoutube = document.getElementById('bgmPopTabYoutube');
+const bgmPopClose = document.getElementById('bgmPopClose');
+const bgmBarVinyl = document.getElementById('bgmBarVinyl');
+const bgmBarSrcPill = document.getElementById('bgmBarSrcPill');
+const bgmBarTitle = document.getElementById('bgmBarTitle');
+const bgmBarEq = document.getElementById('bgmBarEq');
+const bgmBarProg = document.getElementById('bgmBarProg');
+const bgmBarTime = document.getElementById('bgmBarTime');
+const bgmBarPrev = document.getElementById('bgmBarPrev');
+const bgmBarPlay = document.getElementById('bgmBarPlay');
+const bgmBarNext = document.getElementById('bgmBarNext');
+const bgmBarMute = document.getElementById('bgmBarMute');
+const bgmBarVol = document.getElementById('bgmBarVol');
+const bgmBarListBtn = document.getElementById('bgmBarListBtn');
+const bgmBarCollapseBtn = document.getElementById('bgmBarCollapseBtn');
+const bgmPillPlay = document.getElementById('bgmPillPlay');
+const bgmPillEq = document.getElementById('bgmPillEq');
+const bgmPillTitle = document.getElementById('bgmPillTitle');
+const bgmPillExpand = document.getElementById('bgmPillExpand');
+
+function updateMainBgmBar() {
+  if (!bgmMainAnchor) return;
+  const shouldShow = !SETTINGS_WINDOW && !WIDGET_WINDOW && !REMOTE && lofiBgmState.showMainBar && !widgetOn();
+  bgmMainAnchor.hidden = !shouldShow;
+  if (!shouldShow) return;
+
+  const isYt = lofiBgmState.source === 'youtube';
+  const activeNow = lofiBgmState.enabled;
+  const effVol = lofiBgmState.muted ? 0 : Math.max(0, Math.min(100, lofiBgmState.volume));
+
+  if (bgmPlayerBar) bgmPlayerBar.hidden = !!lofiBgmState.barCompact;
+  if (bgmCompactPill) bgmCompactPill.hidden = !lofiBgmState.barCompact;
+  if (bgmPopover) bgmPopover.hidden = !lofiBgmState.popoverOpen || !!lofiBgmState.barCompact;
+  if (bgmBarListBtn) bgmBarListBtn.classList.toggle('open', !!lofiBgmState.popoverOpen);
+
+  if (bgmBarVinyl) bgmBarVinyl.classList.toggle('paused', !activeNow);
+  if (bgmBarEq) bgmBarEq.classList.toggle('paused', !activeNow);
+  if (bgmPillEq) bgmPillEq.classList.toggle('paused', !activeNow);
+
+  if (bgmBarSrcPill) {
+    bgmBarSrcPill.textContent = isYt ? 'YOUTUBE' : 'LO-FI';
+    bgmBarSrcPill.classList.toggle('yt', isYt);
+  }
+  if (bgmBarPlay) bgmBarPlay.textContent = activeNow ? '⏸' : '▶';
+  if (bgmPillPlay) bgmPillPlay.textContent = activeNow ? '⏸' : '▶';
+  if (bgmBarMute) bgmBarMute.textContent = effVol === 0 ? '🔇' : effVol < 40 ? '🔉' : '🔊';
+  if (bgmBarVol && document.activeElement !== bgmBarVol) bgmBarVol.value = String(effVol);
+
+  let title = '';
+  if (!isYt) {
+    const curTr = getCurLofiTrack();
+    title = T(curTr.name, curTr.enName);
+    const totalSec = Math.floor(((curTr.totalBars || 72) * (curTr.barDuration || 3333)) / 1000);
+    const curSec = Math.min(totalSec, Math.floor((lofiBgmState.barIndex * (curTr.barDuration || 3333)) / 1000));
+    const pct = totalSec > 0 ? Math.min(100, Math.round((curSec / totalSec) * 100)) : 0;
+    if (bgmBarProg) bgmBarProg.style.width = pct + '%';
+    if (bgmBarTime) bgmBarTime.textContent = `${String(Math.floor(curSec / 60)).padStart(2, '0')}:${String(curSec % 60).padStart(2, '0')} / ${String(Math.floor(totalSec / 60)).padStart(2, '0')}:${String(totalSec % 60).padStart(2, '0')}`;
+  } else {
+    const curYt = getCurYtTrack();
+    title = T(curYt.title, curYt.enTitle);
+    if (bgmBarProg) bgmBarProg.style.width = activeNow ? '100%' : '0%';
+    if (bgmBarTime) bgmBarTime.textContent = curYt.duration || 'LIVE';
+  }
+  if (bgmBarTitle) bgmBarTitle.textContent = title;
+  if (bgmPillTitle) bgmPillTitle.textContent = title;
+
+  if (bgmPopTabInternal) bgmPopTabInternal.classList.toggle('active', !isYt);
+  if (bgmPopTabYoutube) {
+    bgmPopTabYoutube.classList.add('yt');
+    bgmPopTabYoutube.classList.toggle('active', isYt);
+  }
+
+  if (lofiBgmState.popoverOpen && bgmPopList) {
+    const tracks = isYt ? YOUTUBE_TRACKS : LOFI_TRACKS;
+    const activeIds = isYt ? (lofiBgmState.activeYtTracks || [1, 2, 3]) : (lofiBgmState.activeTracks || [1, 2, 3, 4, 5]);
+    const curId = isYt ? lofiBgmState.curYtTrackId : lofiBgmState.curTrackId;
+    const eqHtml = '<span class="bgm-eq"><i></i><i></i><i></i></span>';
+    bgmPopList.innerHTML = '';
+    tracks.forEach((t) => {
+      const isAct = activeIds.includes(t.id);
+      const isCur = curId === t.id;
+      const isPlay = activeNow && isCur;
+      const rowEl = document.createElement('div');
+      rowEl.className = 'bgm-track-row compact' + (isYt ? ' yt' : '') + (isCur ? ' active' : '') + (!isAct ? ' excluded' : '');
+      const chk = document.createElement('button');
+      chk.type = 'button';
+      chk.className = 'bgm-row-chk' + (isAct ? ' checked' : '');
+      chk.textContent = isAct ? '✓' : '';
+      chk.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (isYt) toggleYtActiveTrack(t.id);
+        else toggleLofiActiveTrack(t.id);
+      });
+      const idx = document.createElement('div');
+      idx.className = 'bgm-row-idx';
+      idx.innerHTML = isPlay ? eqHtml : String(t.id);
+      const info = document.createElement('div');
+      info.className = 'bgm-row-info';
+      const titleDiv = document.createElement('div');
+      titleDiv.className = 'bgm-row-title';
+      titleDiv.textContent = isYt ? T(t.title, t.enTitle) : T(t.name, t.enName);
+      info.append(titleDiv);
+      const dur = document.createElement('span');
+      dur.className = 'bgm-row-dur';
+      dur.textContent = isYt ? (t.duration || 'LIVE') : '04:00';
+      rowEl.append(chk, idx, info, dur);
+      rowEl.addEventListener('click', () => {
+        if (isYt) selectYtTrack(t.id, true);
+        else selectLofiTrack(t.id, true);
+      });
+      bgmPopList.append(rowEl);
+    });
+  }
+}
+
+if (bgmMainAnchor) {
+  bgmBarPlay?.addEventListener('click', () => setBgmPlaying(!lofiBgmState.enabled));
+  bgmPillPlay?.addEventListener('click', () => setBgmPlaying(!lofiBgmState.enabled));
+  bgmBarPrev?.addEventListener('click', () => stepBgmTrack(-1));
+  bgmBarNext?.addEventListener('click', () => stepBgmTrack(1));
+  bgmBarMute?.addEventListener('click', () => toggleBgmMute());
+  bgmBarVol?.addEventListener('input', (e) => setBgmVolume(e.target.value));
+  bgmBarListBtn?.addEventListener('click', () => {
+    lofiBgmState.popoverOpen = !lofiBgmState.popoverOpen;
+    updateMainBgmBar();
+  });
+  bgmPopClose?.addEventListener('click', () => {
+    lofiBgmState.popoverOpen = false;
+    updateMainBgmBar();
+  });
+  bgmPopTabInternal?.addEventListener('click', () => setBgmSource('internal'));
+  bgmPopTabYoutube?.addEventListener('click', () => setBgmSource('youtube'));
+  bgmBarCollapseBtn?.addEventListener('click', () => setBgmBarCompact(true));
+  bgmPillExpand?.addEventListener('click', () => setBgmBarCompact(false));
+  document.addEventListener('pointerdown', (e) => {
+    if (lofiBgmState.popoverOpen && bgmMainAnchor && !bgmMainAnchor.contains(e.target)) {
+      lofiBgmState.popoverOpen = false;
+      updateMainBgmBar();
+    }
+  });
+  updateMainBgmBar();
+}

@@ -1526,16 +1526,22 @@ public partial class MainWindow : Window
                                 case "bgm-control":
                     {
                         var bgmAct = root.TryGetProperty("action", out var aProp) ? aProp.GetString() : null;
-                        var bgmVal = root.TryGetProperty("value", out var vProp) && vProp.GetBoolean();
+                        var bgmVal = root.TryGetProperty("value", out var vProp) && vProp.ValueKind == JsonValueKind.True;
                         var bgmSrc = root.TryGetProperty("source", out var sProp) ? sProp.GetString() : null;
-                        int? bgmTrk = root.TryGetProperty("trackId", out var tProp) ? tProp.GetInt32() : null;
+                        int? bgmTrk = root.TryGetProperty("trackId", out var tProp) && tProp.TryGetInt32(out var tid) ? tid : null;
+                        int? bgmVol = root.TryGetProperty("volume", out var volProp) && volProp.TryGetInt32(out var vv) ? vv : null;
+                        bool? bgmMuted = root.TryGetProperty("muted", out var mutProp) && (mutProp.ValueKind == JsonValueKind.True || mutProp.ValueKind == JsonValueKind.False) ? mutProp.GetBoolean() : null;
+                        int? bgmDir = root.TryGetProperty("dir", out var dirProp) && dirProp.TryGetInt32(out var dv) ? dv : null;
                         Web.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(new
                         {
                             type = "bgm-control",
                             action = bgmAct,
                             value = bgmVal,
                             source = bgmSrc,
-                            trackId = bgmTrk
+                            trackId = bgmTrk,
+                            volume = bgmVol,
+                            muted = bgmMuted,
+                            dir = bgmDir
                         }));
                     }
                     break;
