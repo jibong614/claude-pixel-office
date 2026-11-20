@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.47';
+const PAGE_VERSION = '1.9.48';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -3722,8 +3722,72 @@ const YOUTUBE_TRACKS = [
     author: '인프런 inflearn',
     duration: '4시간 (4 Hours)',
     badge: '✍️ 피아노 몰입'
+  },
+  {
+    id: 4,
+    videoId: 'jfKfPfyJRdk',
+    title: 'lofi hip hop radio 📚 beats to relax/study to',
+    enTitle: 'lofi hip hop radio 📚 beats to relax/study to',
+    author: 'Lofi Girl · 6.5억 뷰',
+    duration: '24/7 LIVE',
+    badge: '📻 24/7 로파이'
+  },
+  {
+    id: 5,
+    videoId: 'lTRiuFIWV54',
+    title: '1 A.M Study Session 📚 [lofi hip hop]',
+    enTitle: '1 A.M Study Session 📚 [lofi hip hop]',
+    author: 'Lofi Girl · 1.3억 뷰',
+    duration: '1시간 1분',
+    badge: '🌙 새벽 1시 몰입'
+  },
+  {
+    id: 6,
+    videoId: '4xDzrJKXOOY',
+    title: 'synthwave radio 🌌 beats to chill/game to',
+    enTitle: 'synthwave radio 🌌 beats to chill/game to',
+    author: 'Lofi Girl · 7,199만 뷰',
+    duration: '24/7 LIVE',
+    badge: '🌌 신스웨이브'
+  },
+  {
+    id: 7,
+    videoId: 'n61ULEU7CO0',
+    title: 'Best of lofi hip hop ✨ [6시간 베스트 믹스]',
+    enTitle: 'Best of lofi hip hop ✨ [beats to relax/study to]',
+    author: 'Lofi Girl · 5,885만 뷰',
+    duration: '6시간 10분',
+    badge: '✨ 베스트 로파이'
+  },
+  {
+    id: 8,
+    videoId: 'M5QY2_8704o',
+    title: 'Lock In and Start Coding — Deep Focus Chillstep',
+    enTitle: 'Lock In and Start Coding — Deep Focus Chillstep',
+    author: 'Chill Music Lab · 1,326만 뷰',
+    duration: '1시간 42분',
+    badge: '⚡ 칠스텝 코딩'
+  },
+  {
+    id: 9,
+    videoId: 'f02mOEt11OQ',
+    title: 'code-fi / lofi beats to code/relax to',
+    enTitle: 'code-fi / lofi beats to code/relax to',
+    author: 'The AMP Channel · 908만 뷰',
+    duration: '1시간',
+    badge: '💻 코드파이'
+  },
+  {
+    id: 10,
+    videoId: '_ITiwPMUzho',
+    title: '3 AM Coding Session — Lofi Hip Hop Mix',
+    enTitle: '3 AM Coding Session — Lofi Hip Hop Mix',
+    author: 'Lofi Ghostie · 554만 뷰',
+    duration: '1시간 34분',
+    badge: '🌃 새벽 3시 코딩'
   }
 ];
+const ALL_YT_TRACK_IDS = YOUTUBE_TRACKS.map((t) => t.id);
 
 let ytPlayer = null;
 let ytApiLoaded = false;
@@ -3750,7 +3814,7 @@ let lofiBgmState = {
   // YouTube 코딩음악 관련 상태
   ytPlaying: false,
   curYtTrackId: store.get('ytCurTrack', 1),   // 1 ~ 3
-  activeYtTracks: store.get('ytActiveTracks', [1, 2, 3])
+  activeYtTracks: store.get('ytActiveTracks', ALL_YT_TRACK_IDS)
 };
 
 // 🎵 BGM 창 간 실시간 동기화 채널 (설정창 <-> 메인화면 플레이바)
@@ -3892,7 +3956,7 @@ function stepBgmTrack(dir, fromSync = false) {
     return;
   }
   if (lofiBgmState.source === 'youtube') {
-    const active = lofiBgmState.activeYtTracks && lofiBgmState.activeYtTracks.length > 0 ? lofiBgmState.activeYtTracks : [1, 2, 3];
+    const active = lofiBgmState.activeYtTracks && lofiBgmState.activeYtTracks.length > 0 ? lofiBgmState.activeYtTracks : ALL_YT_TRACK_IDS;
     const curIdx = active.indexOf(lofiBgmState.curYtTrackId);
     const nextIdx = (curIdx + (dir >= 0 ? 1 : -1) + active.length) % active.length;
     selectYtTrack(active[nextIdx], true);
@@ -3908,6 +3972,14 @@ function stepBgmTrack(dir, fromSync = false) {
 if (!lofiBgmState.activeTracks.includes(5)) {
   lofiBgmState.activeTracks.push(5);
   lofiBgmState.activeTracks.sort((a, b) => a - b);
+}
+if (!store.get('ytTracksMigrated10', false)) {
+  for (const id of ALL_YT_TRACK_IDS) {
+    if (!lofiBgmState.activeYtTracks.includes(id)) lofiBgmState.activeYtTracks.push(id);
+  }
+  lofiBgmState.activeYtTracks.sort((a, b) => a - b);
+  store.set('ytActiveTracks', lofiBgmState.activeYtTracks);
+  store.set('ytTracksMigrated10', true);
 }
 
 let ytIframe = null;
@@ -4063,7 +4135,7 @@ function toggleYtActiveTrack(trackId) {
 function advanceToNextYtTrack() {
   const active = lofiBgmState.activeYtTracks && lofiBgmState.activeYtTracks.length > 0
     ? lofiBgmState.activeYtTracks
-    : [1, 2, 3];
+    : ALL_YT_TRACK_IDS;
   const curIdx = active.indexOf(lofiBgmState.curYtTrackId);
   const nextIdx = (curIdx + 1) % active.length;
   selectYtTrack(active[nextIdx], true);
@@ -14434,7 +14506,7 @@ const RENDER = {
     tabInternal.innerHTML = '🎹 ' + T('내장 Lo-Fi 스튜디오', 'Built-in Lo-Fi') + ' <span class="bgm-tab-cnt">5</span>';
     const tabYoutube = elem('button', 'bgm-studio-tab yt');
     tabYoutube.type = 'button';
-    tabYoutube.innerHTML = '📺 ' + T('YouTube 코딩음악', 'YouTube Coding') + ' <span class="bgm-tab-cnt">3</span>';
+    tabYoutube.innerHTML = '📺 ' + T('YouTube 코딩음악', 'YouTube Coding') + ' <span class="bgm-tab-cnt">10</span>';
     tabInternal.addEventListener('click', () => setBgmSource('internal'));
     tabYoutube.addEventListener('click', () => setBgmSource('youtube'));
     tabWrap.append(tabInternal, tabYoutube);
@@ -14612,7 +14684,7 @@ const RENDER = {
         });
       } else {
         const curYt = getCurYtTrack();
-        const ytActive = lofiBgmState.activeYtTracks || [1, 2, 3];
+        const ytActive = lofiBgmState.activeYtTracks || ALL_YT_TRACK_IDS;
         heroGenre.textContent = `${curYt.badge || curYt.author} · YouTube`;
         heroTitle.textContent = T(curYt.title, curYt.enTitle);
         heroSub.textContent = `${curYt.author} · ${ytActive.length}${T('곡 순차 재생', ' tracks loop')}`;
@@ -17325,7 +17397,7 @@ function updateMainBgmBar() {
 
   if (lofiBgmState.popoverOpen && bgmPopList) {
     const tracks = isYt ? YOUTUBE_TRACKS : LOFI_TRACKS;
-    const activeIds = isYt ? (lofiBgmState.activeYtTracks || [1, 2, 3]) : (lofiBgmState.activeTracks || [1, 2, 3, 4, 5]);
+    const activeIds = isYt ? (lofiBgmState.activeYtTracks || ALL_YT_TRACK_IDS) : (lofiBgmState.activeTracks || [1, 2, 3, 4, 5]);
     const curId = isYt ? lofiBgmState.curYtTrackId : lofiBgmState.curTrackId;
     const eqHtml = '<span class="bgm-eq"><i></i><i></i><i></i></span>';
     bgmPopList.innerHTML = '';
