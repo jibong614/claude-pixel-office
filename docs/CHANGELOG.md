@@ -2,6 +2,17 @@
 
 버전 규칙은 [CLAUDE.md](../CLAUDE.md) — 요청 하나마다 패치 +1, x.y.9 다음은 x.(y+1).0. 최신이 위.
 
+## 1.9.49 — 2026-11-23
+- **📱 모바일(`REMOTE`) 및 PC 설정창 코딩 BGM(내장 Lo-Fi · YouTube) 재생 불능 버그 수정**:
+  - `startTurntableLofi` 및 `playYouTubeVideo`: 첫 줄에 걸려 있던 `|| REMOTE` 가드로 인해 모바일 페이지에서 내장 Lo-Fi와 YouTube를 재생해도 실제 오디오 엔진 및 YouTube 플레이어가 즉시 조기 종료(`return`)되어 소리가 나지 않던 치명적 버그 해결
+  - `updateMainBgmBar`: 모바일 화면에서도 메인화면 하단 플로팅 BGM 플레이바가 정상 노출되도록 `&& !REMOTE` 제한 해제 및 모바일 좁은 화면(560px 이하) 반응형 레이아웃 최적화
+  - `getRetroAudioCtx` / `startTurntableLofi`: 모바일 브라우저(iOS Safari / Android Chrome) 터치 시 1-샘플 무음 버퍼 언락 및 첫 노트 `+0.03s` 오프셋 스케줄링 적용으로 모바일 Web Audio 즉시 재생 보장
+  - **YouTube 플레이어 핸드셰이크 및 설정창 도킹 프리뷰 지원**:
+    - YouTube 임베드 로드 완료(`onload`) 및 다단계 타이머에서 `{"event":"listening"}` 핸드셰이크 후 `unMute` · `setVolume` · `playVideo` 명령을 연속 전송하고 `onReady` 이벤트 수신 시 즉시 재생 연동
+    - 설정 → 코딩 BGM → YouTube 탭 활성화 시 DOM 재이동(리로드) 없이 `#ytAudioIframe`을 설정 카드 내 프리뷰 슬롯(`.bgm-yt-preview-slot`) 위치에 고정 도킹하여 영상 재생 상태를 직관적으로 확인하고, iOS 등 모바일 브라우저가 직접 터치를 요구할 때도 원터치로 재생 가능하도록 개선 (설정창을 닫으면 백그라운드 오디오 모드로 끊김 없이 전환)
+  - `App.xaml.cs`: WebView2 공유 환경 생성 시 `--autoplay-policy=no-user-gesture-required` 옵션을 추가하여 PC 독립 설정창(`SettingsWindow`)에서 조작할 때도 `MainWindow` 오디오가 차단 없이 즉시 재생되도록 보강
+
+
 ## 1.9.48 — 2026-11-20
 - **📺 YouTube 코딩음악 플레이리스트 3선 → 인기 고조회수 10선 확장**:
   - 실제 조회수 검증 및 YouTube 임베드 재생 가능 여부를 전수 확인한 인기 코딩·집중 음악 7곡을 추가하여 총 10곡으로 확장

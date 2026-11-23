@@ -14,7 +14,7 @@
  */
 
 // 이 화면 파일의 버전 — csproj 의 <Version> 과 같아야 한다(다르면 빌드가 멈춘다). 휴대폰 화면이 최신인지 설정 맨 위에 보여 준다
-const PAGE_VERSION = '1.9.48';
+const PAGE_VERSION = '1.9.49';
 
 // ───────────────────────────── 연결 ─────────────────────────────
 
@@ -971,7 +971,14 @@ function getRetroAudioCtx() {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (AC) retroAudioCtx = new AC();
     }
-    if (retroAudioCtx && retroAudioCtx.state === 'suspended') {
+    if (retroAudioCtx && retroAudioCtx.state !== 'running') {
+      try {
+        const silentBuf = retroAudioCtx.createBuffer(1, 1, 22050);
+        const silentSrc = retroAudioCtx.createBufferSource();
+        silentSrc.buffer = silentBuf;
+        silentSrc.connect(retroAudioCtx.destination);
+        silentSrc.start(0);
+      } catch {}
       retroAudioCtx.resume().catch(() => {});
     }
     return retroAudioCtx;
@@ -1004,7 +1011,7 @@ function playRetroSound(kind, force = false) {
   const ctx = getRetroAudioCtx();
   if (!ctx) return;
 
-  const t0 = ctx.currentTime;
+  const t0 = ctx.currentTime + 0.03;
   if (kind === 'ask') {
     // ✋ 승인·질문 대기: 경쾌한 2단 띵-동 (D5 587Hz -> A5 880Hz)
     playTone(ctx, 587.33, t0, 0.075, 'triangle', 0.15);
@@ -3725,12 +3732,12 @@ const YOUTUBE_TRACKS = [
   },
   {
     id: 4,
-    videoId: 'jfKfPfyJRdk',
-    title: 'lofi hip hop radio 📚 beats to relax/study to',
-    enTitle: 'lofi hip hop radio 📚 beats to relax/study to',
-    author: 'Lofi Girl · 6.5억 뷰',
-    duration: '24/7 LIVE',
-    badge: '📻 24/7 로파이'
+    videoId: 'wAPCSnAhhC8',
+    title: '2 A.M Study Session 📚 [lofi hip hop]',
+    enTitle: '2 A.M Study Session 📚 [lofi hip hop]',
+    author: 'Lofi Girl · 2,502만 뷰',
+    duration: '1시간 2분',
+    badge: '🌌 새벽 2시 몰입'
   },
   {
     id: 5,
@@ -3983,6 +3990,63 @@ if (!store.get('ytTracksMigrated10', false)) {
 }
 
 let ytIframe = null;
+let ytPreviewSlotEl = null;
+
+function kickYtPlayback() {
+  const iframe = document.getElementById('ytAudioIframe') || ytIframe;
+  if (!iframe || !iframe.contentWindow) return;
+  try {
+    iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
+    if (lofiBgmState.enabled && lofiBgmState.source === 'youtube') {
+      const ytVol = lofiBgmState.muted ? 0 : Math.max(0, Math.min(100, lofiBgmState.volume));
+      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: ytVol === 0 ? 'mute' : 'unMute', args: [] }), '*');
+      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [ytVol] }), '*');
+      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+    }
+  } catch {}
+}
+
+function syncYtIframePosition() {
+  if (SETTINGS_WINDOW || WIDGET_WINDOW) return;
+  const iframe = document.getElementById('ytAudioIframe') || ytIframe;
+  if (!iframe) return;
+  const sModal = document.getElementById('settings');
+  const sBodyEl = document.getElementById('sBody');
+  const settingsOpenOnMusic = sModal && !sModal.hidden && typeof settingsTab !== 'undefined' && settingsTab === 'music';
+  const showDocked = settingsOpenOnMusic && lofiBgmState.source === 'youtube' && ytPreviewSlotEl && !ytPreviewSlotEl.hidden;
+  if (showDocked) {
+    const rect = ytPreviewSlotEl.getBoundingClientRect();
+    const bodyRect = sBodyEl ? sBodyEl.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    const visTop = Math.max(rect.top, bodyRect.top);
+    const visBottom = Math.min(rect.bottom, bodyRect.bottom);
+    if (rect.width > 40 && rect.height > 40 && visBottom - visTop > 24) {
+      iframe.className = 'yt-iframe-docked';
+      iframe.style.left = Math.round(rect.left) + 'px';
+      iframe.style.top = Math.round(rect.top) + 'px';
+      iframe.style.width = Math.round(rect.width) + 'px';
+      iframe.style.height = Math.round(rect.height) + 'px';
+      iframe.style.right = 'auto';
+      iframe.style.bottom = 'auto';
+      const clipTop = Math.max(0, Math.round(bodyRect.top - rect.top));
+      const clipBottom = Math.max(0, Math.round(rect.bottom - bodyRect.bottom));
+      iframe.style.clipPath = (clipTop > 0 || clipBottom > 0) ? `inset(${clipTop}px 0px ${clipBottom}px 0px round 12px)` : '';
+      const curYt = getCurYtTrack();
+      if (!iframe.src || iframe.src === 'about:blank') {
+        const auto = lofiBgmState.enabled ? 1 : 0;
+        iframe.src = `https://www.youtube.com/embed/${curYt.videoId}?enablejsapi=1&autoplay=${auto}&playsinline=1&controls=1&rel=0&origin=${encodeURIComponent(location.origin)}`;
+      }
+      return;
+    }
+  }
+  iframe.className = 'yt-iframe-bg';
+  iframe.style.left = '';
+  iframe.style.top = '';
+  iframe.style.width = '';
+  iframe.style.height = '';
+  iframe.style.right = '';
+  iframe.style.bottom = '';
+  iframe.style.clipPath = '';
+}
 
 function ensureYtContainer() {
   if (!ytIframe) {
@@ -3992,18 +4056,26 @@ function ensureYtContainer() {
     ytIframe = document.createElement('iframe');
     ytIframe.id = 'ytAudioIframe';
     ytIframe.title = 'YouTube BGM Audio Player';
+    ytIframe.className = 'yt-iframe-bg';
     ytIframe.src = 'about:blank';
-    ytIframe.allow = 'autoplay; encrypted-media';
-    // 화면에 조그마한 창이나 팝업이 노출되지 않도록 투명 백그라운드 배치
-    ytIframe.style.cssText = 'position:fixed!important;bottom:0!important;right:0!important;width:200px!important;height:200px!important;opacity:0.001!important;pointer-events:none!important;z-index:-9999!important;border:none!important;';
+    ytIframe.allow = 'autoplay; encrypted-media; picture-in-picture';
+    ytIframe.referrerPolicy = 'strict-origin-when-cross-origin';
+    ytIframe.addEventListener('load', () => {
+      [0, 250, 700, 1400, 2400].forEach((ms) => setTimeout(kickYtPlayback, ms));
+    });
     document.body.appendChild(ytIframe);
 
-    // YouTube iframe postMessage 응답 리스너 (재생 상태 및 자동 다음곡)
+    // YouTube iframe postMessage 응답 리스너 (onReady, 재생 상태 및 자동 다음곡)
     window.addEventListener('message', (event) => {
       try {
         if (!event.origin || !event.origin.includes('youtube')) return;
         const msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        if (msg && msg.event === 'onStateChange') {
+        if (!msg) return;
+        if (msg.event === 'onReady' || msg.event === 'initialDelivery') {
+          if (lofiBgmState.enabled && lofiBgmState.source === 'youtube') {
+            kickYtPlayback();
+          }
+        } else if (msg.event === 'onStateChange') {
           if (msg.info === 1) { // PLAYING
             lofiBgmState.ytPlaying = true;
             updateLofiUiDisplay();
@@ -4013,6 +4085,8 @@ function ensureYtContainer() {
           } else if (msg.info === 0) { // ENDED
             advanceToNextYtTrack();
           }
+        } else if (msg.event === 'onError') {
+          advanceToNextYtTrack();
         }
       } catch (e) {}
     });
@@ -4022,32 +4096,27 @@ function ensureYtContainer() {
 
 function showYtContainer(show) {
   ensureYtContainer();
+  syncYtIframePosition();
 }
 
 function playYouTubeVideo() {
-  if (SETTINGS_WINDOW || WIDGET_WINDOW || REMOTE) return;
+  if (SETTINGS_WINDOW || WIDGET_WINDOW) return;
   const curYt = getCurYtTrack();
   const iframe = ensureYtContainer();
-  const targetEmbed = `https://www.youtube-nocookie.com/embed/${curYt.videoId}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&origin=${encodeURIComponent(location.origin)}`;
+  const targetEmbed = `https://www.youtube.com/embed/${curYt.videoId}?enablejsapi=1&autoplay=1&playsinline=1&controls=1&rel=0&origin=${encodeURIComponent(location.origin)}`;
 
   try {
     if (!iframe.src || !iframe.src.includes(curYt.videoId)) {
       iframe.src = targetEmbed;
     } else {
-      iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: '' }), '*');
+      kickYtPlayback();
     }
-    setTimeout(() => {
-      try {
-        const ytVol = lofiBgmState.muted ? 0 : Math.max(0, Math.min(100, lofiBgmState.volume));
-        iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: ytVol === 0 ? 'mute' : 'unMute', args: '' }), '*');
-        iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [ytVol] }), '*');
-        iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: '' }), '*');
-      } catch (e) {}
-    }, 600);
+    [250, 700, 1400, 2400].forEach((ms) => setTimeout(kickYtPlayback, ms));
   } catch (err) {
     iframe.src = targetEmbed;
   }
   lofiBgmState.ytPlaying = true;
+  syncYtIframePosition();
   updateLofiUiDisplay();
 }
 
@@ -4217,7 +4286,7 @@ function setBgmSource(src) {
 }
 
 // 저장된 bgmAutoPlay 가 true이면 첫 사용자 인터랙션(클릭/터치) 시 자동 재생 (메인 창에서만 동작)
-if (lofiBgmState.enabled && !SETTINGS_WINDOW && !WIDGET_WINDOW && !REMOTE) {
+if (lofiBgmState.enabled && !SETTINGS_WINDOW && !WIDGET_WINDOW) {
   const onFirstAutoPlay = () => {
     window.removeEventListener('pointerdown', onFirstAutoPlay);
     window.removeEventListener('keydown', onFirstAutoPlay);
@@ -4276,7 +4345,7 @@ function toggleTurntableLofi(b) {
 }
 
 function startTurntableLofi(b) {
-  if (SETTINGS_WINDOW || WIDGET_WINDOW || REMOTE) return;
+  if (SETTINGS_WINDOW || WIDGET_WINDOW) return;
   if (b) lofiBgmState.furniturePos = { x: b.x, y: b.y };
   if (lofiBgmState.playing) stopTurntableLofi();
 
@@ -4877,6 +4946,9 @@ function updateLofiUiDisplay() {
   });
   if (typeof updateMainBgmBar === 'function') {
     try { updateMainBgmBar(); } catch {}
+  }
+  if (typeof syncYtIframePosition === 'function') {
+    try { syncYtIframePosition(); } catch {}
   }
   if (!SETTINGS_WINDOW && !WIDGET_WINDOW && !REMOTE) {
     broadcastBgmState();
@@ -14086,15 +14158,6 @@ const SETTINGS = [
       },
       {
         type: 'toggle',
-        name: T('📻 BGM 음악 소스 (내장 5곡 ⇄ YouTube)', '📻 Music Source (Built-in ⇄ YouTube)'),
-        desc: () => (lofiBgmState.source === 'youtube'
-          ? T('📺 [YouTube 인기 코딩음악] 재생 모드입니다. 끄면 내장 5곡으로 전환됩니다.', 'Playing [YouTube Coding Music]. Turn off to switch to built-in tracks.')
-          : T('🎹 [내장 절차적 Lo-Fi 5곡] 재생 모드입니다. 켜면 YouTube 코딩음악으로 전환됩니다.', 'Playing [Built-in Lo-Fi 5 Tracks]. Turn on to switch to YouTube.')),
-        get: () => lofiBgmState.source === 'youtube',
-        set: (v) => setBgmSource(v ? 'youtube' : 'internal')
-      },
-      {
-        type: 'toggle',
         name: T('🎛️ 메인화면 BGM 플레이바 표시', '🎛️ Show BGM Player Bar on Main Screen'),
         desc: T('메인 사무실 하단 우측에 플로팅 BGM 플레이바(재생·정지·볼륨·플레이리스트·알약 접기)를 띄웁니다.',
                 'Shows a floating BGM player bar (play/pause, volume, playlist popover, compact pill) at the bottom-right of the main office.'),
@@ -14628,7 +14691,9 @@ const RENDER = {
       return { itemEl, chk, idxEl, stEl, trackId: yTr.id };
     });
 
-    listSec.append(listHead, internalListEl, ytListEl);
+    const ytSlot = elem('div', 'bgm-yt-preview-slot', '📺 ' + T('YouTube 플레이어 로딩 중... (모바일에서 자동 재생이 막히면 화면을 한 번 터치하세요)', 'Loading YouTube Player... (Tap video once if mobile browser blocks autoplay)'));
+    ytPreviewSlotEl = ytSlot;
+    listSec.append(ytSlot, listHead, internalListEl, ytListEl);
     wrap.append(tabWrap, heroCard, stemSec, listSec);
     row.append(wrap);
 
@@ -14644,6 +14709,11 @@ const RENDER = {
       stemSec.hidden = isYt;
       internalListEl.hidden = isYt;
       ytListEl.hidden = !isYt;
+      ytSlot.hidden = !isYt;
+      if (isYt && !SETTINGS_WINDOW && !WIDGET_WINDOW) {
+        ensureYtContainer();
+        requestAnimationFrame(syncYtIframePosition);
+      }
 
       heroVinyl.classList.toggle('paused', !activeNow);
       heroChip.classList.toggle('playing', activeNow);
@@ -15371,6 +15441,8 @@ function showSettingsTab(id, remember = true) {
   }
   settingsBody.scrollTop = 0;
   refreshSettings();
+  if (typeof syncYtIframePosition === "function") { syncYtIframePosition(); requestAnimationFrame(syncYtIframePosition); }
+  if (typeof updateMainBgmBar === "function") updateMainBgmBar();
 }
 
 /** 버전 "1.1.2" 비교: a 가 더 새것이면 양수 */
@@ -15440,7 +15512,9 @@ function setSettingsOpen(open, tab) {
     return;
   }
   settingsEl.hidden = !open;
-  btnSettings.classList.toggle('on', open);
+  btnSettings.classList.toggle("on", open);
+  if (typeof syncYtIframePosition === "function") { syncYtIframePosition(); requestAnimationFrame(syncYtIframePosition); }
+  if (typeof updateMainBgmBar === "function") updateMainBgmBar();
   if (open) {
     tooltipEl.hidden = true;
     if (tab) showSettingsTab(tab);
@@ -17317,35 +17391,37 @@ document.addEventListener('click', (e) => {
 // ─────────────────────────────────────────────────────────────
 // 🎵 메인화면 하단 우측 플로팅 코딩 BGM 플레이바 (v1.9.47)
 // ─────────────────────────────────────────────────────────────
-const bgmMainAnchor = document.getElementById('bgmMainAnchor');
-const bgmPlayerBar = document.getElementById('bgmPlayerBar');
-const bgmCompactPill = document.getElementById('bgmCompactPill');
-const bgmPopover = document.getElementById('bgmPopover');
-const bgmPopList = document.getElementById('bgmPopList');
-const bgmPopTabInternal = document.getElementById('bgmPopTabInternal');
-const bgmPopTabYoutube = document.getElementById('bgmPopTabYoutube');
-const bgmPopClose = document.getElementById('bgmPopClose');
-const bgmBarVinyl = document.getElementById('bgmBarVinyl');
-const bgmBarSrcPill = document.getElementById('bgmBarSrcPill');
-const bgmBarTitle = document.getElementById('bgmBarTitle');
-const bgmBarEq = document.getElementById('bgmBarEq');
-const bgmBarProg = document.getElementById('bgmBarProg');
-const bgmBarTime = document.getElementById('bgmBarTime');
-const bgmBarPrev = document.getElementById('bgmBarPrev');
-const bgmBarPlay = document.getElementById('bgmBarPlay');
-const bgmBarNext = document.getElementById('bgmBarNext');
-const bgmBarMute = document.getElementById('bgmBarMute');
-const bgmBarVol = document.getElementById('bgmBarVol');
-const bgmBarListBtn = document.getElementById('bgmBarListBtn');
-const bgmBarCollapseBtn = document.getElementById('bgmBarCollapseBtn');
-const bgmPillPlay = document.getElementById('bgmPillPlay');
-const bgmPillEq = document.getElementById('bgmPillEq');
-const bgmPillTitle = document.getElementById('bgmPillTitle');
-const bgmPillExpand = document.getElementById('bgmPillExpand');
+var bgmMainAnchor = document.getElementById('bgmMainAnchor');
+var bgmPlayerBar = document.getElementById('bgmPlayerBar');
+var bgmCompactPill = document.getElementById('bgmCompactPill');
+var bgmPopover = document.getElementById('bgmPopover');
+var bgmPopList = document.getElementById('bgmPopList');
+var bgmPopTabInternal = document.getElementById('bgmPopTabInternal');
+var bgmPopTabYoutube = document.getElementById('bgmPopTabYoutube');
+var bgmPopClose = document.getElementById('bgmPopClose');
+var bgmBarVinyl = document.getElementById('bgmBarVinyl');
+var bgmBarSrcPill = document.getElementById('bgmBarSrcPill');
+var bgmBarTitle = document.getElementById('bgmBarTitle');
+var bgmBarEq = document.getElementById('bgmBarEq');
+var bgmBarProg = document.getElementById('bgmBarProg');
+var bgmBarTime = document.getElementById('bgmBarTime');
+var bgmBarPrev = document.getElementById('bgmBarPrev');
+var bgmBarPlay = document.getElementById('bgmBarPlay');
+var bgmBarNext = document.getElementById('bgmBarNext');
+var bgmBarMute = document.getElementById('bgmBarMute');
+var bgmBarVol = document.getElementById('bgmBarVol');
+var bgmBarListBtn = document.getElementById('bgmBarListBtn');
+var bgmBarCollapseBtn = document.getElementById('bgmBarCollapseBtn');
+var bgmPillPlay = document.getElementById('bgmPillPlay');
+var bgmPillEq = document.getElementById('bgmPillEq');
+var bgmPillTitle = document.getElementById('bgmPillTitle');
+var bgmPillExpand = document.getElementById('bgmPillExpand');
 
 function updateMainBgmBar() {
   if (!bgmMainAnchor) return;
-  const shouldShow = !SETTINGS_WINDOW && !WIDGET_WINDOW && !REMOTE && lofiBgmState.showMainBar && !widgetOn();
+  const sModal = document.getElementById('settings');
+  const settingsCovering = sModal && !sModal.hidden;
+  const shouldShow = !SETTINGS_WINDOW && !WIDGET_WINDOW && !settingsCovering && lofiBgmState.showMainBar && !widgetOn();
   bgmMainAnchor.hidden = !shouldShow;
   if (!shouldShow) return;
 
@@ -17465,3 +17541,12 @@ if (bgmMainAnchor) {
   });
   updateMainBgmBar();
 }
+
+if (typeof settingsBody !== 'undefined' && settingsBody) {
+  settingsBody.addEventListener('scroll', () => {
+    if (typeof syncYtIframePosition === 'function') syncYtIframePosition();
+  }, { passive: true });
+}
+window.addEventListener('resize', () => {
+  if (typeof syncYtIframePosition === 'function') syncYtIframePosition();
+});

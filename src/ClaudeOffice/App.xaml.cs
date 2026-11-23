@@ -52,8 +52,13 @@ public partial class App : Application
         await _envLock.WaitAsync();
         try
         {
+            var extraArgs = Environment.GetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS");
+            var browserArgs = string.IsNullOrWhiteSpace(extraArgs)
+                ? "--autoplay-policy=no-user-gesture-required"
+                : $"{extraArgs} --autoplay-policy=no-user-gesture-required";
+            var opts = new Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions(browserArgs);
             return _sharedEnv ??= await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
-                null, Path.Combine(DataDir, "WebView2"));
+                null, Path.Combine(DataDir, "WebView2"), opts);
         }
         finally
         {
